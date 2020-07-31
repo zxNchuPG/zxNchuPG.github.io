@@ -1,0 +1,132 @@
+# Site settings
+title: Ekko Blog
+SEOTitle: 时荒院舍 | Ekko Blog
+header-img: img/home-bg-attack-2.jpg
+email: xinh9579@gmail.com
+description: "南昌航空大学-软件工程 | 这里是 @周祥 的个人博客，与你一起发现我的世界。"
+keyword: "周祥 | 帅气 | 可爱 | 迷人"
+url: "https://zxNchuPG.github.io"              # your host, for absolute URL
+baseurl: ""                                  # for example, '/blog' if your blog hosted on 'host/blog'
+
+# Publish posts or collection documents with a future date.
+future: true
+
+# 社交账号的用户名
+# SNS settings
+RSS: false
+# weibo_username:     
+zhihu_username:     zxnchupg
+github_username:    zxNchuPG
+# twitter_username:   
+# facebook_username:  
+# linkedin_username:  firstname-lastname-idxxxx
+
+
+
+# Build settings
+# from 2016, 'pygments' is unsupported on GitHub Pages. Use 'rouge' for highlighting instead.
+highlighter: rouge
+permalink: pretty
+paginate: 10
+exclude: ["less","node_modules","Gruntfile.js","package.json","README.md","README.zh.md"]
+anchorjs: true                          # 如果你想自定义锚. check out line:181 of `post.html`
+# 如果您在中国有时区问题（例如＃68），请取消注释以使用此选项：
+# timezone: CN  
+
+
+
+# Gems
+# from PR#40, to support local preview for Jekyll 3.0
+# 确保你安装了这个gem
+# `$ gem install jekyll-paginate`
+plugins: [jekyll-paginate]
+
+
+
+# Markdown settings
+# 将redcarpet替换为kramdown,
+# 虽然redcarpet可以自动突出显示代码，但缺少header-id会使目录无法实现，所以我切换到了kramdown
+# 文档: http://jekyllrb.com/docs/configuration/#kramdown
+markdown: kramdown
+kramdown:
+  input: GFM                            # 使用Github Flavored Markdown！重要
+  syntax_highlighter_opts:
+    span:
+      line_numbers: false
+    block:
+      line_numbers: true
+      start_line: 1
+
+
+
+# Disqus 设置
+# disqus_username: hux
+
+# Netease 设置
+netease_comment: false
+
+
+
+# Analytics settings
+# Baidu Analytics 
+#ba_track_id: 991ef2ae0b497b3386028930aae7e091
+
+# Google Analytics
+# ga_track_id: 'UA-49627206-1'            # Format: UA-xxxxxx-xx
+# ga_domain: huangxuan.me
+
+
+# Disqus settings（https://disqus.com/）
+# 如果没有VPN没有开，网址登陆不了就注释掉
+# disqus_username: Ekko
+
+
+# 补充工具栏设置
+sidebar: true                               # 是否开启侧边栏.
+sidebar-about-description: "Believe to be extreme<br>一个热衷健身的码畜"
+sidebar-avatar: /img/avatar-ekko-ny.jpg      # 你的个人头像 这里你可以改成我在img文件夹中的两张备用照片 img/avatar-m 或 avatar-g
+
+
+
+#  这个模块现在是独立的，可以呈现在所有页面，包括主页和发表的每一篇文章标题的头上。
+featured-tags: true                     # 是否使用Feature-Tags
+featured-condition-size: 1              # 如果标签的大小超过此条件值，则会显示标签
+
+
+
+# Progressive Web Apps
+chrome-tab-theme-color: "#000000"
+service-worker: true
+
+
+
+# MathJax rendering for layout:page (e.g. post preview)
+page-mathjax: false
+
+
+
+# Friends
+friends: [
+    {
+        title: "个人简历",
+        href: "https://zxNchuPG.github.io/cv.html"
+    },{
+        title: "廖雪峰的官方网站",
+        href: "https://www.liaoxuefeng.com/"
+    },{
+        title: "阿里中间件团队博客",
+        href: "http://jm.taobao.org/"
+    },{
+        title: "美团技术团队博客 ",
+        href: "https://tech.meituan.com/"
+    },{
+        title: "阮一峰的网络日志",
+        href: "http://www.ruanyifeng.com/blog/"
+    },{
+        title: "可以放你的主页哦~",
+        href: "https://zxNchuPG.github.io"
+    },{
+        title: "这是我的荒原",
+        href: "https://zxNchuPG.github.io/404.html"
+    }
+]

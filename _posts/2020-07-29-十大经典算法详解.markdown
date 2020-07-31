@@ -1,0 +1,747 @@
+---
+layout:      post
+title:       "十大经典算法详解"
+subtitle:    "Algorithm"
+author:      "Ekko"
+header-img:  "img/notes/bg-zuo-algorithm.jpg"
+catalog:     true
+tags:
+  - 工作
+  - 算法
+  - 学习笔记
+---
+
+> 这个[博客](https://blog.csdn.net/kuaizi_sophia/article/details/87954222)总结的不错。
+
+![algorithm](https://img-blog.csdnimg.cn/20190305221243271.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L2t1YWl6aV9zb3BoaWE=,size_16,color_FFFFFF,t_70)
+
+> 结合其他博客与相关内容，此篇文章逐渐被完善，便于读者理解。
+
+[TOC]
+
+----
+
+## 冒泡排序
+
+时间复杂度`O(n^2)`，空间复杂度`O(1)`，稳定。
+
+从头开始，每次两个相邻的元素，若大者在前，则交换两元素直至数组末尾
+此时最大元素为数组最后的元素
+重复以上步骤，从头开始至上一轮比较的末尾元素；
+
+```java
+public static void bubbleSort(int[] array) {
+        if (array.length < 2) {
+            return;
+        }
+        // 每轮询一遍，都将最大的元素移到最后一位，所以end--
+        for (int end = array.length - 1; end > 0; end--) {
+            // 每次都从数组的第一位开始遍历
+            for (int i = 0; i < end; i++) {
+                if (array[i] > array[i + 1]) {
+                    swap(array, i, i + 1);
+                }
+            }
+        }
+    }
+```
+
+数据的顺序排好之后，冒泡算法仍然会继续进行下一轮的比较，直到arr.length-1次，后面的比较没有意义的
+设置标志位，防止后面不必要的遍历
+
+```java
+ public static void bubbleSort2(int[] array) {
+        if (array.length < 2) {
+            return;
+        }
+        // 每轮询一遍，都将最大的元素移到最后一位，所以end--
+        for (int end = array.length - 1; end > 0; end--) {
+            // 这样当一轮比较结束后如果flag仍为false，即：这一轮没有发生交换，说明数据的顺序已经排好，没有必要继续进行下去。
+            boolean ixExchanged = false;
+            // 每次都从数组的第一位开始遍历
+            for (int i = 0; i < end; i++) {
+                if (array[i] > array[i + 1]) {
+                    swap(array, i, i + 1);
+                    ixExchanged = true;
+                }
+            }
+            if (!ixExchanged) {
+                break;
+            }
+        }
+    }
+```
+
+```java
+/**
+ * 交换元素位置
+ *
+ * @param array
+ * @param index
+ * @param nextIndex
+*/
+private static void swap(int[] array, int index, int nextIndex) {
+    int temp = array[index];
+    array[index] = array[nextIndex];
+    array[nextIndex] = temp;
+}
+```
+
+----
+
+## 选择排序
+
+时间复杂度`O(n^2)`，空间复杂度`O(1)`，不稳定。
+
+第一次从待排序的数据元素中选出最小（或最大）的一个元素，存放在序列的起始位置
+然后再从剩余的未排序元素中寻找到最小（大）元素，然后放到已排序的序列的末尾
+以此类推，直到全部待排序的数据元素的个数为零
+
+```cpp
+// 选择排序
+void selectSort(vector<int>& array){
+    for (size_t i = 0; i < array.size(); i++){
+        size_t minIndex = i;
+        for (size_t j = i + 1; j < array.size(); j++){
+            if (array[minIndex] > array[j]){
+                minIndex = j;
+            }
+        }
+        if (minIndex != i){
+            swap(array[i], array[minIndex]);
+        }
+    }
+}
+```
+
+----
+
+## 插入排序
+
+时间复杂度`O(n^2)`，空间复杂度`O(1)`，稳定。
+
+将第一个元素看作有序序列，后续元素当作无需序列，依次将无序序列元素插入有序序列当中；
+
+InsertionSort 和打扑克牌时，从牌桌上逐一拿起扑克牌，在手上排序的进程相同。举例：
+Input:` {4, 3, 8, 5, 2, 6, 1, 7}`
+首先拿起第一张牌, 手上有 `{4}`。
+拿起第二张牌 3, 把 3 insert 到手上的牌 `{4}`, 得到 `{3 ，4}`。
+拿起第三张牌 8, 把 8 insert 到手上的牌 `{3，4 }`, 得到 `{3 ，4，8}`。
+
+插入排序由N-1趟排序组成。对于p=1到N-1趟排序后，插入排序保证从位置0到位置p上的元素为已排序状态。即插入排序利用了从位置0到p-1位置上已经有序的条件，将位置p上的元素向前查找适当的位置插入此元素。
+
+```cpp
+void insertionSort(vector<int>& array) {
+	if (array.size() < 2) {
+		return ;
+	}
+	for (int i = 1; i < array.size(); i++) {
+	        // 往后进行比较，找到合适的位置交换
+        	// 其实就是一个往后插入的逆向冒泡排序的过程
+		for (int j = i - 1; j >= 0 && array[j] > array[j + 1]; j--) {
+			swap(array[j], array[j+1]);
+		}
+	}
+}
+```
+
+```cpp
+// 插入排序
+void insertionSort(vector<int>& array){
+    // i 代表无序序列首元素（无序序列前为有序序列）
+    size_t i = 1;
+    while (i < array.size()){
+        size_t j = i - 1;
+        int itermToInsert = array[i];
+        while (j >= 0){
+            if (array[j] >= itermToInsert){
+                array[j + 1] = array[j];
+                j--;
+            }
+            else{
+                break;
+            }
+        }
+        array[j + 1] = itermToInsert;
+        i++;
+    }
+}
+```
+
+----
+
+## 希尔排序
+
+时间复杂度`O(nlogn)`，空间复杂度`O(1)`，不稳定。
+
+选择一个增量序列，初始增量`gap=length/2`，后续元素依次为前一元素除2，直至`gap=1`；每轮以`gap`为步长，在列表上进行采样，将列表分为`gap`个小组，在每个小组内进行选择排序；重复第二步，直至`gap=1`；辅助理解参考[博客园](https://www.cnblogs.com/chengxiao/p/6104371.html)
+
+```cpp
+// 希尔排序
+void shellSort(vector<int>& array){
+    int n = array.size();
+    for (int gap = n / 2; gap >= 1; gap /= 2){
+        for (int i = gap; i < n; i++){
+            // 使用插入排序算法，将元素依次插入所在小组的已排序列表中
+            // 待插入元素
+            int itermToInsert = array[i];
+            int j = i - gap;
+            while (j >= 0 && array[j] >= itermToInsert){
+                array[j + gap] = array[j];
+                j -= gap;
+            }
+            array[j + gap] = itermToInsert;
+        }
+    }
+}
+```
+
+----
+
+## 归并排序
+
+时间复杂度`O(nlogn)`，空间复杂度`O(n)`，稳定。
+
+将列表从正中间分为两个子列表；按照第一步，递归拆分每个子列表，直至子列表最大长度为1；按照拆分层级，依次按大小合并各子列表，直至全部合并完成。
+
+![121](https://gss3.bdstatic.com/7Po3dSag_xI4khGkpoWK1HF6hhy/baike/c0%3Dbaike92%2C5%2C5%2C92%2C30/sign=236fa62859b5c9ea76fe0bb1b450dd65/c8177f3e6709c93d673b9ed49d3df8dcd00054c3.jpg)
+
+递归版本：
+
+```cpp
+// 归并排序
+// 合并两有序序列，两序列分别为array的0到mid部分和mid+1到末尾部分。
+void merge(vector<int>& array, vector<int>& copyArray, int left, int right) {
+	int mid = (left + right) / 2;
+	int i = left, j = mid + 1, k = 0;
+	while (i <= mid || j <= right) {
+		if (i > mid) {
+			copyArray[k] = array[j];
+			j++;
+		}
+		else if (j > right) {
+			copyArray[k] = array[i];
+			i++;
+		}
+		else if (array[i] > array[j]) {
+			copyArray[k] = array[j];
+			j++;
+		}
+		else {
+			copyArray[k] = array[i];
+			i++;
+		}
+		k++;
+	}
+
+	for (size_t i = left; i <= right; i++) {
+		array[i] = copyArray[i - left];
+	}
+
+}
+void mergeSortHelp(vector<int>& array, vector<int>& copyArray, int left, int right) {
+	if (left < right) {
+		int mid = (left + right) / 2;
+		mergeSortHelp(array, copyArray, left, mid);
+		mergeSortHelp(array, copyArray, mid + 1, right);
+		merge(array, copyArray, left, right);
+	}
+}
+// 归并排序 递归实现
+void mergeSort(vector<int>& array) {
+	vector<int> copyArray(array);
+	mergeSortHelp(array, copyArray, 0, array.size() - 1);
+}
+```
+
+```c
+#include <iostream>
+#include <vector>
+
+using namespace std;
+
+void Merge(vector<int> &input, int left, int mid, int right, vector<int> temp){
+	int i = left;				// i是第一段序列的下标
+	int j = mid + 1;			// j是第二段序列的下标
+	int k = 0;					// k是临时存放合并序列的下标
+	
+	// 扫描第一段和第二段序列，直到有一个扫描结束
+	while (i <= mid && j <= right){
+		// 判断第一段和第二段取出的数哪个更小，将其存入合并序列，并继续向下扫描
+		if (input[i] <= input[j]){
+			temp[k++] = input[i++];
+		}
+		else{
+			temp[k++] = input[j++];
+		}
+	}
+	// 若第一段序列还没扫描完，将其全部复制到合并序列
+	while (i <= mid){
+		temp[k++] = input[i++];
+	}
+
+	// 若第二段序列还没扫描完，将其全部复制到合并序列
+	while (j <= right){
+		temp[k++] = input[j++];
+	}
+
+	k = 0;
+	// 将合并序列复制到原始序列中
+	while (left <= right){
+		input[left++] = temp[k++];
+	}
+}
+
+void MergeSort(vector<int> &input, int left, int right, vector<int> temp){
+	if (left < right){
+		int mid = (right + left) >> 1;
+		MergeSort(input, left, mid, temp);
+		MergeSort(input, mid + 1, right, temp);
+		Merge(input, left, mid, right, temp);
+	}
+}
+
+void mergesort(vector<int> &input){
+	// 在排序前，先建好一个长度等于原数组长度的临时数组，避免递归中频繁开辟空间
+	vector<int> temp(input.size());				
+	MergeSort(input, 0, input.size() - 1, temp);
+}
+
+void main(){
+	int arr[] = { 6, 4, 8, 9, 2, 3, 1};
+	vector<int> test(arr, arr + sizeof(arr) / sizeof(arr[0]));
+	cout << "排序前:";
+	for (int i = 0; i < test.size(); i++){
+		cout << test[i] << " ";
+	}
+	cout << endl;
+	
+	vector<int> result = test;
+	mergesort(result);
+	cout << "排序后:";
+	for (int i = 0; i < result.size(); i++){
+		cout << result[i] << " ";
+	}
+	cout << endl;
+	system("pause");
+}
+```
+
+迭代实现：
+
+```cpp
+// 归并排序 迭代实现
+void mergeSortIteration(vector<int>& array) {
+	vector<int> copyArray(array);
+	int left = 0, right = array.size() - 1;
+	stack<vector<int>> boundaries;
+	while (left < right || !boundaries.empty()) {
+		if (left < right) {
+			boundaries.push({ left, right });
+			right = (left + right) / 2;
+		}
+		else {
+			vector<int> boundary = boundaries.top();
+			boundaries.pop();
+			left = boundary[0];
+			right = boundary[1];
+			merge(array, copyArray, left, right);
+
+			if (boundaries.empty()) {
+				break;
+			}
+			boundary = boundaries.top();
+			left = right + 1;
+			right = boundary[1];
+		}
+	}
+}
+```
+
+----
+
+## 快速排序
+
+最差时间复杂度为`O(n^2)`，最优时间复杂度`O(nlogn)`，空间复杂度`O(logn)`【每次记录断点值，最好的情况就每次记录一半的断点，类似于二分法，左侧用完的断点用完可以释放，右侧同理，如果是最差的情况，即选择了边界值，所以最差的空间复杂度为`O(n)`】，不稳定。(论文级别的可以做到稳定性《01 stable sort》)
+
+1. 从列表中选出一个元素，作为“基准”pivot，基准一般随机选择，或采用最左端、最右端和中间位置3元素的中值；
+2. 将小于基准的元素排在基准前面，大于基准的元素排在基准后面，此时基准元素所在位置即为其最终排序完成时的位置；
+3. 以基准元素为界，将列表分为两个子列表；
+4. 递归地对子列表重复上述操作。
+
+在工程上是使用随机选择，从概率的角度讲，时间复杂度为`O(nlogn)`。划分值的值尽量可以等分数组，如果为边界值，则算法会退化成`O(n^2)`。
+
+**左程云算法**：利用一个左边界小于区，最开始在-1位置，然后与最后一个数进行比较，然后左边的指针与最后一个数进行比较，如果比他更小，则当前的值与小于区的下一个位置进行交换，再将小于区的位置增加1。
+
+
+递归版本：
+
+左程云版本：
+
+```java
+public static void quickSort(int[] arr) {
+    if (arr == null || arr.length < 2) {
+        return;
+    }
+    quickSort(arr, 0, arr.length - 1);
+}
+
+public static void quickSort(int[] arr, int l, int r) {
+    if (l < r) {
+        swap(arr, l + (int) (Math.random() * (r - l + 1)), r);
+        int[] p = partition(arr, l, r);
+        quickSort(arr, l, p[0] - 1);
+        quickSort(arr, p[1] + 1, r);
+    }
+}
+
+public static int[] partition(int[] arr, int l, int r) {
+    int less = l - 1;
+    int more = r;
+    while (l < more) {
+        if (arr[l] < arr[r]) {
+            swap(arr, ++less, l++);
+        } else if (arr[l] > arr[r]) {
+            swap(arr, --more, l);
+        } else {
+            l++;
+        }
+    }
+    swap(arr, more, r);
+    return new int[] { less + 1, more };
+}
+```
+
+```cpp
+// 快速排序（递归）
+// 选则最左端、最右端和中间位置3元素的中值作为基准值，并将3元素排序，返回基准值
+int medianPovit(vector<int>& array, int left, int mid, int right){
+    if (array[left] > array[mid]){
+        swap(array[mid], array[left]);
+    }
+    if (array[left] > array[right]){
+        swap(array[left], array[right]);
+    }
+    if (array[mid] > array[right]){
+        swap(array[mid], array[right]);
+    }
+    return array[mid];
+}
+// 分区,返回基准索引
+int partition(vector<int>& array, int left, int right) {
+    // 中间位置索引
+    int mid = (left + right) / 2;
+    // 基准值（此时基准值对应索引为mid）
+    int povit = medianPovit(array, left, mid, right);
+    // 将基准值与倒数第二个元素交换
+    array[mid] = array[right - 1];
+    array[right - 1] = povit;
+
+    int i = left, j = right - 1;
+    while (i < j) {
+        if (array[i] < povit) {
+            i++;
+        }
+        else if (array[j] >= povit) {
+            j--;
+        }
+        else {
+            swap(array[i], array[j]);
+        }
+    }
+    // 交换基准值和i位置元素
+    swap(array[i], array[right - 1]);
+    return i;
+}
+void quickSortHelp(vector<int>& array, int left, int right) {
+    if (left < right) {
+        int pivotLoction = partition(array, left, right);
+        quickSortHelp(array, left, pivotLoction - 1);
+        quickSortHelp(array, pivotLoction + 1, right);
+    }
+}
+// 快速排序
+void quickSort(vector<int>& array) {
+    quickSortHelp(array, 0, array.size() - 1);
+}
+```
+
+迭代版本：
+
+```cpp
+// 快速排序 非递归(迭代版)
+void quickSortIteration(vector<int>& array) {
+	stack<vector<int>> boundaries;
+	int left = 0, right = array.size() - 1;
+	while (left < right || !boundaries.empty()) {
+		if (left >= right) {
+			vector<int> boundary = boundaries.top();
+			boundaries.pop();
+			left = boundary[0];
+			right = boundary[1];
+		}
+		int pivotLoction = partition(array, left, right);
+		if (pivotLoction + 1 < right) {
+			boundaries.push({ pivotLoction + 1, right });
+		}
+		right = pivotLoction - 1;
+	}
+}
+```
+
+----
+
+## 堆排序
+
+时间复杂度`O(nlogn)`，空间复杂度`O(1)`，不稳定。
+
+建立堆的过程是`O(n)`的时间复杂度。
+
+1. 将数字转化为一个堆；堆是具有以下两属性的二叉树：（1）每个节点的值大于等于其子节点的值；（2）树完全平衡，即最底层叶子节点都位于左侧（完全），且左右子树高度相差不超过1（平衡）；因为，堆是完全平衡树，因此可以用数组直接表示：堆也被称为优先队列，具有先进先出的特性，在堆底插入元素，在堆顶取出元素。
+2. 取出堆顶元素（最大元素），作为有序数数组末尾元素，并对二叉树进行调整使其满足堆的特性；
+3. 重复上一步骤，依次取出堆顶元素，并插入到有序数组中，上一插入元素之前的位置，直到堆空为止；
+
+```cpp
+// 堆排序
+// 调整堆，根元素沿树向下移动，直至其合适位置，first和last分别为堆顶和堆底在数组array中的索引
+void moveDown(vector<int>& array, int first, int last){
+    // first的左子节点索引
+    int curIndex = first * 2 + 1;
+    while (curIndex <= last){
+        // 若first有2子节点，令curIndex为其值最大子节点索引
+        if (curIndex < last && array[curIndex] < array[curIndex + 1]){
+            curIndex++;
+        }
+        // 若根节点值小于子节点值，则交换
+        if (array[first] < array[curIndex]){
+            swap(array[first], array[curIndex]);
+            first = curIndex;
+            curIndex = first * 2 + 1;
+        }
+        else{
+            break;
+        }
+    }
+}
+// 用数组实现堆
+void buildHeap(vector<int>& array){
+    // 最后一个非叶节点的节点索引
+    int i = array.size() / 2 - 1;
+    while (i >= 0){
+        moveDown(array, i, array.size() - 1);
+        i--;
+    }
+}
+// 堆排序
+void heapSort(vector<int>& array){
+    // 生成堆
+    buildHeap(array);
+    // 堆顶、底索引
+    int first = 0, last = array.size() - 1;
+    while (first <= last){
+        swap(array[first], array[last]);
+        last--;
+        moveDown(array, first, last);
+    }
+}
+```
+
+左程云算法：
+
+```java
+public static void heapSort(int[] arr) {
+    if (arr == null || arr.length < 2) {
+        return;
+    }
+    for (int i = 0; i < arr.length; i++) {
+        // 插入，建立一个大根堆
+        heapInsert(arr, i);
+    }
+    int size = arr.length;
+    // 让第一个数和最后一个数交换位置
+    // 最后一个元素不再动了
+    swap(arr, 0, --size);
+    // 重复调整大根堆
+    while (size > 0) {
+        heapify(arr, 0, size);
+        swap(arr, 0, --size);
+    }
+}
+
+public static void heapInsert(int[] arr, int index) {
+    // 当前节点位置比父节点位置更大，则循环交换
+    while (arr[index] > arr[(index - 1) / 2]) {
+        swap(arr, index, (index - 1) / 2);
+        index = (index - 1) / 2;
+    }
+}
+// 跟自己的左右孩子比较，将大的数上移
+public static void heapify(int[] arr, int index, int size) {
+    // 左孩子下标
+    int left = index * 2 + 1;
+    while (left < size) {
+        // 在右孩子不越界，然后找到左右孩子中更大的孩子下标
+        int largest = left + 1 < size && arr[left + 1] > arr[left]
+                            ? left + 1 
+                            : left;
+        // 获取左右孩子下标后，判断与父节点的大小，返回一个最大值的下标
+        largest = arr[largest] > arr[index] ? largest : index;
+        // 如果最大值为父节点，即无需调整，退出循环
+        if (largest == index) {
+            break;
+        }
+        // 需要调整大根堆
+        swap(arr, largest, index);
+        // 更换父节点的下标值，继续执行左右孩子的大小比较
+        index = largest;
+        left = index * 2 + 1;
+    }
+}
+```
+
+----
+
+## 计数排序
+
+时间复杂度`O(n+k)`，空间复杂度`O(k)`，稳定。
+
+1. 遍历待排序数组A，找出其最小值min和最大值max；
+2. 创建一个长度为max-min+1的数组B，其所有元素初始化为0，数组首位对应数组A的min元素，索引为i位置对应A中值为min+i的元素；
+3. 遍历数组A，在B中对应位置记录A中各元素出现的次数；
+4. 遍历数组B，按照之前记录的出现次数，输出几次对应元素；
+
+```cpp
+// 计数排序
+void countSort(vector<int>& array){
+    if (array.empty()){
+        return;
+    }
+    //找出最大最小值
+    int min = array.front(),max = array.front();
+    for (int i = 1; i < array.size(); i++){
+        if (min > array[i]){
+            min = array[i];
+        }
+        else if (max < array[i]){
+            max = array[i];
+        }
+    }
+
+    // 记录各元素出现次数
+    vector<int> counts(max - min + 1);
+    for (int i = 0; i < array.size(); i++){
+        counts[array[i] - min]++;
+    }
+
+    // 根据记录的次数输出对应元素
+    int index = 0;
+    for (int j = 0; j < counts.size(); j++){
+        int n = counts[j];
+        while (n--){
+            array[index] = j + min;
+            index++;
+        }
+    }
+}
+```
+
+----
+
+## 桶排序
+
+时间复杂度`O(n+k)`，空间复杂度`O(n+k)`，稳定。
+
+
+1. 设置固定数量的空桶；
+2. 找出待排序数组的最大值和最小值；
+3. 根据最大最小值平均划分各桶对应的范围，并将待排序数组放入对应桶中；
+4. 为每个不为空的桶中数据进行排序（例如，插入排序）；
+5. 拼接不为空的桶中数据，得到排序后的结果。
+
+```cpp
+// 桶排序
+void bucketSort (vector<int>& array, int bucketCount){
+    if (array.empty()){
+        return;
+    }
+    // 找出最大最小值
+    int max = array.front(), min = array.front();
+    for (int i = 1; i < array.size(); i++){
+        if (min > array[i]){
+            min = array[i];
+        }
+        else if (max < array[i]){
+            max = array[i];
+        }
+    }
+
+    // 将待排序的各元素分入对应桶中
+    vector<vector<int>> buckets(bucketCount);
+    int bucketSize = ceil((double)(max - min + 1) / bucketCount);
+    for (int i = 0; i < array.size(); i++){
+        int bucketIndex = (array[i] - min) / bucketSize;
+        buckets[bucketIndex].push_back(array[i]);
+    }
+
+    // 对各桶中元素进行选择排序
+    int index = 0;
+    for (vector<int> bucket : buckets){
+        if (!bucket.empty()){
+            // 使用选择排序算法对桶内元素进行排序
+            selectSort(bucket);
+            for (int value : bucket){
+                array[index] = value;
+                index++;
+            }
+        }
+    }
+
+}
+// 桶排序
+void bucketSort (vector<int>& array){
+    bucketSort (array, array.size() / 2);
+}
+```
+
+----
+
+## 基数排序
+
+时间复杂度`O(n*k)`，空间复杂度`O(n+k)`，稳定。
+
+1. 将各待比较元素数值统一数位长度，即对数位短者在前补零；
+2. 根据个位数值大小，对数组进行排序；
+3. 重复上一步骤，依次根据更高位数值进行排序，直至到达最高位；
+
+![jishu](https://www.runoob.com/wp-content/uploads/2019/03/radixSort.gif)
+
+```cpp
+// 基数排序 （只适用于正数，此处不适用）
+void radixSort(vector<int>& array){
+    // 当前位数
+    int curdigit = 10;
+    // 当前位是否已超过最高为
+    bool isOverHighest = false;
+    while (!isOverHighest){
+        isOverHighest = true;
+        // 利用分桶的思想来实现按各位进行排序
+        vector<vector<int>> buckets(10);
+        for (int curVal : array){
+            int bucketIndex = curVal % curdigit - curVal % (curdigit / 10);
+            buckets[bucketIndex].push_back(curVal);
+            if (isOverHighest && curVal / curdigit){
+                isOverHighest = false;
+            }
+        }
+        // 按照桶的顺序，将各桶内元素拼接起来
+        int index = 0;
+        for (vector<int> bucket : buckets){
+            for (int value : bucket){
+                array[index] = value;
+                index++;
+            }
+        }
+        curdigit *= 10;
+    }
+}
+```
