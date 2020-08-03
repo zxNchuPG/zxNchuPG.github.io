@@ -1,0 +1,494 @@
+---
+layout:      post
+title:       "面试问题java版-Ⅰ"
+subtitle:    "Interview"
+author:      "Ekko"
+header-img:  "img/notes/bg-interview.jpg"
+catalog:     true
+tags:
+  - 工作
+  - 面试
+  - 学习笔记
+  - JAVA
+---
+
+> 大部分问题来源[掘金](https://juejin.im/post/6844903632056352782#heading-1)这篇文章
+
+> 结合其他博客与相关内容，将问题的参考答案总结在这里，便于读者理解。
+
+[TOC]
+
+----
+## java基本类型
+
+* byte、1 字节，最小值-128（-2^7），最大值127（2^7-1）
+* short、2 字节，最小值-32768（-2^15），最大值32767（2^15 - 1）
+* int、4 字节，最小值是 -2,147,483,648（-2^31），最大值是 2,147, 483,647（2^31 - 1）
+* long、8字节，最小值是 -9,223,372,036,854,775,808（-2^63），
+ 最大值是 9,223,372,036,854,775,807（2^63 -1）
+* double、8字节，双精度浮点数字长64位，尾数长度52，指数长度11，指数* 偏移量1023
+* float、4字节，单精度浮点数字长32位，尾数长度23，指数长度8,指数偏移* 量127
+* boolean、至少 1 字节,这种类型只作为一种标志来记录true\false情况
+* char、2 字节，最小值\u0000（即为0），最大值\uffff（即为65,535）
+
+---
+
+## 值传递和引用传递的区别
+
+1. 按值调用（call by value）：表示方法接收的是调用着提供的值
+
+2. 按引用调用（call by reference）：方法接收的是调用者提供的变量地址(如果是C语言的话来说就是指针，当然java并没有指针的概念)
+
+根本区别：方法可以修改**传递引用**所对应的变量值，而不能修改**传递值调用**所对应的变量值
+
+java程序设计语言确实是采用了按值调用，即call by value。也就是说方法得到的是所有参数值的一个拷贝，方法并不能修改传递给它的任何参数变量的内容。但是java区分基本数据类型和引用数据类型（对象引用），而如果传递的是引用数据类型（对象），引用类型对应的值是可以被修改的。比如调用 user 对象的 set方法，这里涉及到内存概念。方法拷贝对象的引用进行传递，但是这两个引用指向的是同一块地址，所以拷贝的引用是可以修改原引用对象所对应的值
+
+更多详细内容请参考[博客](https://blog.csdn.net/javazejian/article/details/51192130)
+
+---
+## == 和 equals 区别是什么
+
+`==` 比较运算符，如果进行比较的都是数值类型，即使他们的数据类型不同，只要是值相同，都将返回 `true` 
+```java
+int num = 2;
+double num2 = 2.0;
+System.out.println(i == j); // true
+```
+但是如果比较的是引用类型，那么两个引用必须指向同一个对象，也就是引用类型比较的是两个变量指向的内存地址
+
+`equals` Object.equals()方法默认实现就是返回两个对象 == 的比较结果（指向的内存地址）
+
+但是很多对象重写了equals方法，比如String、Date、Integer等，那么比较是所指向对象的内容。这要根据对象是否重写equals判断
+
+- equals在java中是逻辑相等 
+- hashCode相等的两个对象equals不一定为true，但是equals为true的对象，hashCode值必须相等
+
+---
+## String 中的 equals 方法是如何重写的
+
+**源码解读：**
+```java
+public boolean equals(Object anObject) {
+    if (this == anObject) { // 如果指向的是同一块地址，那么直接返回true（同一个对象）
+        return true;
+    }
+    if (anObject instanceof String) { // 先判断对象类型
+        String anotherString = (String)anObject;
+        // 如果长度相等才进行比较
+        int n = value.length;
+        // 在String中value的定义private final char value[];
+        if (n == anotherString.value.length) {
+            char v1[] = value;
+            char v2[] = anotherString.value;
+            int i = 0;
+            // 通过遍历比较每个下标元素是否相等，char基本类型，所以是区分大小写的
+            while (n-- != 0) {
+                if (v1[i] != v2[i])
+                    return false;
+                i++;
+            }
+            return true;
+        }
+    }
+    return false;
+}
+```
+
+---
+## 为什么要重写 equals、hashCode 方法
+
+先看下Object类的equals方法的注释
+```java
+* Note that it is generally necessary to override the {@code hashCode}
+* method whenever this method is overridden, so as to maintain the
+* general contract for the {@code hashCode} method, which states
+* that equal objects must have equal hash codes.
+```
+其中规定相等的对象必须具有相等的hash值
+
+重写equals、hashCode方法，和hash表的数据结构有关，特别是在使用hashMap的时候，因为java hashMap是通过**链地址法+红黑树**解决hash值冲突。即同一个hash值下，会挂多个不同对象。如果向hashMap插入自定义对象的时候，可能会出现预想不到的结果。为了使两个逻辑相等的对象拥有相同的hashCode值，有必要重写hashCode()方法，同时equals默认比较的是对象的地址，所以也需要重写
+
+---
+## String s1 = new String("abc")、String s2 = "abc"、s1 == s2 。语句1在内存中创建了几个对象
+
+内存区有三个，分别是栈、堆、常量池
+
+new关键字创建对象，一定会在堆区创建一个新对象，然后在堆中再建立一个`"abc"`对象，并放到new String对象里面，这里共两个对象
+
+`String s2 = "abc"`则会在常量池中开辟一个空间创建String类型的"abc"对象
+
+所以一共创建了三个对象
+
+---
+## String 为什么是不可变的，为什么这么设计
+
+```java
+public final class String
+    implements java.io.Serializable, Comparable<String>, CharSequence {
+        /** The value is used for character storage. */
+        private final char value[];
+        ...
+
+        public String replace(char oldChar, char newChar) {
+        if (oldChar != newChar) {
+            int len = value.length;
+            int i = -1;
+            char[] val = value; /* avoid getfield opcode */
+
+            while (++i < len) {
+                if (val[i] == oldChar) {
+                    break;
+                }
+            }
+            if (i < len) {
+                char buf[] = new char[len];
+                for (int j = 0; j < i; j++) {
+                    buf[j] = val[j];
+                }
+                while (i < len) {
+                    char c = val[i];
+                    buf[i] = (c == oldChar) ? newChar : c;
+                    i++;
+                }
+                return new String(buf, true);
+            }
+        }
+        return this;
+    }
+}
+```
+
+在Java中，如果一个对象在创建后，它的状态不能改变，那么我们就认为这个对象是不可变的，即对象内的成员变量，包括基本数据类型的值不能改变，引用类型的变量不能指向其他的对象，引用类型指向的对象的状态也不能改变
+
+误区：对象和对象的引用
+```java
+String s = "abc";
+s = "123";
+```
+s是对象的引用，"abc"才是对象，改变的仅仅是s指向的地址，而"abc"对象仍然存在
+
+String内部其实是堆成员变量字符数组value的封装，同样也被final修饰，而且数组也是对象，但是可以通过反射修改value引用指向的数组，不建议这么做。通过源码可以看到replace、substring等方法，其实也都是返回一个新对象。
+
+这样设计的目的跟重要的是为了安全性
+
+---
+## 请描述一下 static 关键字和 final 关键字的用法
+
+**static：** 表示全局或者静态，可以修饰
+- 属性
+- 方法
+- 块
+- 内部类
+
+1. static修饰属性和方法：不被某个对象拥有，而是成为类对象，被该类对象所有的实例对象共享
+2. static修饰块：永远只会被调用一次，和对象创建个数无关（如果是实例块的话，创建一次，就被调用一次）。一个类可以创建多个静态块，且被顺序执行
+
+```java
+static{
+    静态块
+}
+
+{
+    实例块
+}
+
+```
+
+3. static只可以修饰内部类（静态内部类）
+
+**final：** 表示最终，可以修饰
+- 类
+- 属性
+- 方法
+- 形参
+
+1. 修饰类：抽象类、接口本身作用就是为了继承，所以这两个不能修饰。而一旦被final修饰的类，是不可以被继承的
+2. 修饰属性：必须赋初始值，即使没有初始值，那么在构造方法中必须被赋值，一旦赋值后不能被修改
+3. 修饰方法：子类不能重写
+4. 修饰形参：修饰形参后，方法中不能再被赋值
+
+---
+## 接口和抽象类的区别是什么
+
+**设计思想不同：** 
+- 抽象类是自下而上的过程，是对类的抽象，通过继承的方式拥有某些相同特性；
+- 接口是对某一行为的规范，是对行为的抽象，一个类可以实现多个接口拥有多种行为
+
+继承是“是不是”的关系，接口是“有没有”的关系
+
+**用法不同：** 
+1. 接口：
+- 接口中只能声明方法，属性，事件，索引器，抽象类中可以有方法的实现，也可以自定义非静态的类变量
+- 接口不能包含字段、构造函数、静态成员或常量
+- 接口中的方法会自动使用public abstract修饰
+2. 抽象类
+- 抽象类可以提供某些方法的部分实现
+- 抽象类的成员可以是私有的、受保护的、内部的或受保护的内部成员（其中受保护的内部成员只能在应用程序的代码或派生类中访问），接口成员被定义为公共的
+
+---
+## 重载和重写的区别
+
+**重载（Overload）：** 表示同一个类中可以有多个名称相同的方法，但这些方法的参数列表各不相同（即参数个数或类型不同，返回类型不能作为重载函数的区分标准）
+
+重载是编译时多态，静态的，通过编译后变成不同的函数
+
+**重写（Override）：** 表示子类中的方法可以与父类中的某个方法的名称和参数完全相同
+
+重写是运行时多态，通过动态绑定实现，是父类与子类之间的多态
+
+---
+## 面向对象的三大特性
+
+面向对象的三大特性：封装、继承、多态
+
+**封装：** 把客观事物封装成抽象的类，并且类可以把自己的数据和方法只让可信的类或者对象操作，对不可信的进行信息隐藏
+
+**继承：** 描述的是事物之间的所属关系，可以使用现有类的所有功能，并在无需重新编写原来的类的情况下对这些功能进行扩展
+
+**多态：** 即一个引用变量到底指向哪个类的实例对象，该引用变量发出的方法调用到底是哪个类中实现的方法，必须由程序运行期间才能决定（回忆下重载和重写）
+java实现多态有三个必要条件：继承、重写、向上转型
+
+## byte 的取值范围是多少、怎么计算出来的
+
+byte类型在计算机中占据一个字节，也就是8 bit（位），最大值就是2^7 = 1111 1111
+
+取值范围在 -128 ~ 127 ，一共是256
+
+Java中用**补码**来表示二进制数，补码的最高位是符号位，最高位用 0 表示正数，最高位 1 表示负数，正数的补码就是其本身 ，由于最高位是符号位，所以正数表示的就是 0111 1111 ，也就是 127。最大负数就是 1111 1111，这其中会涉及到两个 0 ，一个 +0 ，一个 -0 ，+0 归为正数，也就是 0 ，-0 归为负数，也就是 -128，所以 byte 的范围就是 -128 - 127
+
+---
+## HashMap 相关
+
+**这部分内容比较多，整理完后再进行补充**
+
+---
+
+## Integer 缓存池
+
+**先上JDK1.8源码，Integer缓存是Integer类中的静态内部类**
+
+```java
+// Integer的valueOf方法
+ public static Integer valueOf(int i) {
+    // 先判断数值是否在-128 - 127之间
+    if (i >= IntegerCache.low && i <= IntegerCache.high)
+        return IntegerCache.cache[i + (-IntegerCache.low)];
+    return new Integer(i);
+}
+
+/**
+* Cache to support the object identity semantics of autoboxing for values between  （补充：jdk1.5支持自动装箱）
+* -128 and 127 (inclusive) as required by JLS.
+*
+* The cache is initialized on first usage.  The size of the cache
+* may be controlled by the {@code -XX:AutoBoxCacheMax=<size>} option.
+* During VM initialization, java.lang.Integer.IntegerCache.high property
+* may be set and saved in the private system properties in the
+* sun.misc.VM class.
+*/
+
+private static class IntegerCache {
+    static final int low = -128;
+    static final int high;
+    static final Integer cache[];
+
+    static {
+        // high value may be configured by property
+        int h = 127;
+        String integerCacheHighPropValue =
+            sun.misc.VM.getSavedProperty("java.lang.Integer.IntegerCache.high");
+        if (integerCacheHighPropValue != null) {
+            try {
+                int i = parseInt(integerCacheHighPropValue);
+                i = Math.max(i, 127);
+                // Maximum array size is Integer.MAX_VALUE
+                h = Math.min(i, Integer.MAX_VALUE - (-low) -1);
+            } catch( NumberFormatException nfe) {
+                // If the property cannot be parsed into an int, ignore it.
+            }
+        }
+        high = h;
+
+        cache = new Integer[(high - low) + 1];
+        int j = low;
+        for(int k = 0; k < cache.length; k++)
+            cache[k] = new Integer(j++);
+
+        // range [-128, 127] must be interned (JLS7 5.1.7)
+        assert IntegerCache.high >= 127;
+    }
+
+    private IntegerCache() {}
+}
+```
+
+如果有 -128 - 127 之间的数字的话，new Integer 不用创建新对象，而是直接从缓存池中取，减少堆中对象的分配
+
+---
+## 项目为 UTF-8 环境，char c = '中'，是否合法 
+
+合法的
+
+Unicode 统一了所有字符的编码，是一个 Character Set，也就是字符集，字符集只是给所有的字符一个唯一编号，但是却没有规定如何存储，不同的字符其存储空间不一样，有的需要一个字节就能存储，有的则需要2、3、4个字节。UTF-8是Unicode的一种实现，"中"是两个字节，所以是合法的
+
+---
+## Arrays.asList 获得的 List 使用时需要注意什么
+
+Arrays.asList 转换完成后的 List 不能再进行结构化的修改，什么是结构化的修改？就是不能再进行任何 List 元素的增加或者减少的操作。这和Arrays的内部类ArrayList（不是java.util.ArrayList类）有关
+
+```java
+/**
+* @serial include
+*/
+private static class ArrayList<E> extends AbstractList<E>
+    implements RandomAccess, java.io.Serializable
+{
+    // Arrays的内部类ArrayList继承AbstractList类
+    // 但是并没有重写add、remove方法
+    // AbstractList的add、remove方法是直接抛异常
+}
+```
+
+---
+## Collection 和 Collections 区别
+
+**Collection** 集合类的父类，是一个顶级接口。Collection 类只定义一些标准方法比如说 add、remove、set、equals 等，具体的方法由抽象类或者实现类去实现
+
+**Collections** 集合类的工具类，Collections 提供了一些工具类的基本使用
+
+---
+## fail-fast 和 fail-safe
+
+快速失败和安全失败是对迭代器而言的
+
+**fail-fast（快速失败）** 在 java.util 包的集合类就都是快速失败的，比如：HashMap、ArrayList
+
+在使用迭代器对集合对象进行遍历的时候，如果 A 线程正在对集合进行遍历，此时 B 线程对集合进行修改（增加、删除、修改），或者 A 线程在遍历过程中对集合进行修改，都会导致 A 线程抛出 ConcurrentModificationException 异常
+
+迭代器在遍历时直接访问集合中的内容，并且在遍历过程中使用一个 modCount 变量。集合在被遍历期间如果内容发生变化，就会改变 modCount 的值
+
+每当迭代器使用 hashNext()/next() 遍历下一个元素之前，都会检测 modCount 变量是否为 expectedModCount 值，是的话就返回遍历；否则抛出异常，终止遍历
+
+**fail-safe（安全失败）** java.util.concurrent 包下的类都是安全失败，比如：ConcurrentHashMap
+
+采用安全失败机制的集合容器，在遍历时不是直接在集合内容上访问的，而是先复制原有集合内容，在拷贝的集合上进行遍历
+
+迭代时是对原集合的拷贝进行遍历，所以在遍历过程中对原集合所作的修改并不能被迭代器检测到，故不会抛 ConcurrentModificationException 异常
+
+---
+## ArrayList、LinkedList 和 Vector 的区别 
+
+**内容较多，整理完后补充**
+
+---
+## Set 和 List 区别、Set 如何保证元素不重复
+
+两个接口都是继承自Collection，是常用来存放数据项的集合
+- 在List中允许插入重复的元素，而在Set中不允许重复元素存在
+- 与元素先后存放顺序有关，List是有序集合，会保留元素插入时的顺序，Set是无序集合
+- List可以通过下标来访问，而Set不能，set只能用迭代
+
+Set如何保证元素不重复：
+通过HashSet源码了解一下添加元素过程
+```java
+//HashSet中map属性
+private transient HashMap<E,Object> map;
+
+//HastSet的add方法
+public boolean add(E e) {
+    return map.put(e, PRESENT)==null;
+}
+```
+通过上面可以看到HashSet是根据Map的特性来校验重复元素，再看一下HashMap的put方法
+```java
+/**
+* Associates the specified value with the specified key in this map.
+* If the map previously contained a mapping for the key, the old
+* value is replaced.
+*/
+public V put(K key, V value) {
+    return putVal(hash(key), key, value, false, true);
+}
+
+final V putVal(int hash, K key, V value, boolean onlyIfAbsent,
+                   boolean evict) {
+    Node<K,V>[] tab; Node<K,V> p; int n, i;
+    if ((tab = table) == null || (n = tab.length) == 0)
+        n = (tab = resize()).length;
+    if ((p = tab[i = (n - 1) & hash]) == null)
+        tab[i] = newNode(hash, key, value, null);
+    else {
+        Node<K,V> e; K k;
+        if (p.hash == hash &&
+            ((k = p.key) == key || (key != null && key.equals(k))))
+            e = p;
+        else if (p instanceof TreeNode) // 转红黑树
+            e = ((TreeNode<K,V>)p).putTreeVal(this, tab, hash, key, value);
+            else {
+                for (int binCount = 0; ; ++binCount) {
+                    if ((e = p.next) == null) {
+                        p.next = newNode(hash, key, value, null);
+                        if (binCount >= TREEIFY_THRESHOLD - 1) // -1 for 1st
+                            treeifyBin(tab, hash);
+                        break;
+                    }
+                    if (e.hash == hash &&
+                        ((k = e.key) == key || (key != null && key.equals(k))))
+                        break;
+                    p = e;
+                }
+            }
+            if (e != null) { // existing mapping for key
+                V oldValue = e.value;
+                if (!onlyIfAbsent || oldValue == null)
+                    e.value = value;
+                afterNodeAccess(e);
+                return oldValue;
+        }
+    }
+    ++modCount;
+    if (++size > threshold)
+        resize();
+    afterNodeInsertion(evict);
+    return null;
+}
+```
+代码主要是通过hash计算key的位置，判断该位置是否有值，其中会通过hash和equals进行判断。这也是为什么用Map插入自定义对象的时候，需要重写equals和hashCode方法
+
+---
+## Exception 和 Error 有什么区别 
+
+```java
+public class Exception extends Throwable{}
+
+public class Error extends Throwable{}
+
+public class Throwable implements Serializable{}
+```
+两个类都是继承Throwable类，Throwable 类是java语言中所有错误(errors)和异常(exceptions)的父类。只有继承于 Throwable 的类或者其子类才能够被抛出，还有一种方式是带有java中的 @throw 注解的类也可以抛出
+
+**Exception** 泛指的是异常 ，Exception 主要分为两种异常，一种是编译期出现的异常，称为 checkedException 受检异常，一种是程序运行期间出现的异常，称为 uncheckedException非受检异常，也被统称为RuntimeException运行时异常。Exception 可以被捕获
+
+- 常见的 checkedException 有 IOException
+- 常见的 RuntimeException 主要有 NullPointerException（空指针） 、 IllegalArgumentException (非法参数)、 ArrayIndexOutofBoundException（数组越界） 、ClassCastException（类型转换异常）等
+
+**Error** 是指程序运行过程中出现的错误，通常情况下会造成程序的崩溃，Error 通常是不可恢复的。绝大部分的Error都会导致程序（比如JVM自身）处于非正常的、不可恢复状态。既然是非正常情况，所以不便于也不需要捕获，常见的比如OutOfMemoryError之类，都是Error的子类
+
+---
+## String、StringBuffer 和 StringBuilder 有什么区别
+
+**String：** JDK1.0，字符串常量，每次操作String字符串实际上是不断的创建新的对象，而原来的对象变成了垃圾被GC回收
+
+**StringBuffer：** JDK1.0，是一个**线程安全**的容器，多线程场景下一般使用 StringBuffer 用作字符串的拼接
+
+**StringBuilder：** JDK1.5，非线程安全的容器，StringBuilder 的 append 方法常用于字符串拼接，它的拼接效率要比 String 中 + 号的拼接效率高。StringBuilder 一般不用于并发环境 
+
+---
+## 地址栏输入 URL 发生了什么
+
+解析URL、DNS域名解析、浏览器与网站建立TCP连接、请求和数据传输、浏览器渲染页面
+
+更多详细内容请参考[知乎-1](https://zhuanlan.zhihu.com/p/128026151)、[知乎-2](https://www.zhihu.com/question/34873227/answer/518086565)
+
+
+
