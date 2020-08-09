@@ -3,7 +3,7 @@ layout:      post
 title:       "十大经典算法详解"
 subtitle:    "Algorithm"
 author:      "Ekko"
-header-img:  "img/notes/bg-zuo-algorithm.jpg"
+header-img:  "img/bg/bg-zuo-algorithm.jpg"
 catalog:     true
 tags:
   - 工作

@@ -1,0 +1,442 @@
+---
+layout:      post
+title:       "JAVA虚拟机-Ⅱ"
+subtitle:    "JVM"
+author:      "Ekko"
+header-img:  "img/bg/bg-jvm.jpg"
+catalog:     true
+tags:
+  - 工作
+  - 面试
+  - 学习笔记
+  - JAVA
+---
+
+> 学习虚拟机更有助于深入理解JAVA这门语言，《深入理解java虚拟机》属于程序员必读书籍之一
+
+> 本篇包括《JVM垃圾回收机制》、《回收算法》、《回收器》、《回收类型》等内容
+
+> 本文参考[微笑](https://zhuanlan.zhihu.com/p/34426768)和[陈树义](https://www.zhihu.com/question/20097631/answer/676214307)及其他零散资料，对JVM的学习做一个汇总，方便查看
+
+> 补充的引用部分参考[头条科技](https://www.toutiao.com/a6763996558653391374/)
+[TOC]
+
+---
+
+## JVM垃圾回收机制
+
+内存总是有限的，我们需要一个机制来不断地回收废弃的内存，从而实现内存的循环利用，这样程序才能正常地运转下去
+
+jvm 中，程序计数器、虚拟机栈、本地方法栈都是随线程而生随线程而灭，栈帧随着方法的进入和退出做入栈和出栈操作，实现了自动的内存清理，因此内存垃圾回收主要集中于 java 堆和方法区中，在程序运行期间，这部分内存的分配和使用都是动态的.
+
+Java 虚拟机的内存结构有《Java 虚拟机规范》规定，垃圾回收机制并没有具体的规范约束。所以很多时候不同的虚拟机有不同的实现方式，下面所说的垃圾回收都是以 HotSpot 虚拟机为例
+
+**对象存活判断** 
+
+对象存活判断，也就是如何确定哪些对象是需要回收的垃圾。日常生活中，经常没被使用，那么就可以归为多余的垃圾。Java中，如果一个对象不可能再被引用，那么这个对象就是垃圾，应该被回收
+
+判断对象存活的一般有两种方式：
+
+- 引用计数
+- 可达性分析（Reachability Analysis）
+
+**引用计数：**  在一个对象被引用时加一，被去除引用时减一，这样就可以通过判断引用计数是否为零来判断一个对象是否为垃圾，但是无法解决对象相互循环引用的问题
+
+对象相互引用：A引用B，B引用C，C引用A，三个对象各自的引用计数都是 1 ，但是三个对象都没有被其他对象引用，形成闭环，计数法无法解决
+
+**可达性分析：** GC Root Tracing 算法，从GC Roots开始向下搜索，搜索所走过的路径称为引用链。当一个对象到GC Roots没有任何引用链相连时，则证明此对象是不可用的，称为不可达对象，所有不可达的对象都是垃圾
+
+GC Root 是一组活跃引用（文章最后补充强引用、弱引用、软引用、虚引用内容）的集合，但是这个集合与一般的对象集合不大一样，是经过特意筛选出来的
+
+在Java语言中，GC Roots包括：
+
+- 虚拟机栈中引用的对象
+- 方法区中类静态属性实体引用的对象
+- 方法区中常量引用的对象
+- 本地方法栈中JNI引用的对象
+- 等等
+
+---
+## 标记-清除算法
+
+标记清除（Mark-Sweep）算法分为两个阶段：标记、清除
+
+标记阶段：标记所有由GC Root触发的可达对象，此时未被标记的对象就是垃圾对象
+
+清除阶段：回收所有未被标记的对象
+
+![标记清除算法](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E6%A0%87%E8%AE%B0%E6%B8%85%E9%99%A4%E7%AE%97%E6%B3%95.png?raw=true)
+
+缺点：
+
+- 标记和清除过程的效率都不高
+- 空间碎片问题，标记清除之后会产生大量不连续的内存碎片，将会导致程序在以后的运行过程中需要分配大对象时无法找到足够的连续内存而不得不提前触发另一次垃圾收集动作（大对象也可以分配在不连续的空间中，但是效率要低于连续的内存空间）
+
+## 复制算法
+
+复制（Copying）算法，将可用内存按容量划分为大小相等的两块，每次只使用其中的一块，当这一块的内存用完了，就将还存活着的对象复制到另外一块上面，然后再把已使用过的内存空间一次清理掉，之后交换两个内存块的角色，完成垃圾回收
+
+这样使得每次都是对其中的一块进行内存回收，内存分配时也就不用考虑内存碎片等复杂情况，只要移动堆顶指针，按顺序分配内存即可，实现简单，运行高效
+
+![复制算法](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E5%A4%8D%E5%88%B6%E7%AE%97%E6%B3%95.jpg?raw=true)
+
+缺点：
+
+- 将内存缩小为原来的一半，极大地浪费了内存空间
+- 持续复制长生存期的对象则导致效率降低
+
+## 标记-压缩算法
+
+标记-压缩算法（mark-compact）算法同样分为两个阶段：标记、压缩
+
+标记阶段：标记所有由GC Root触发的可达对象，此时未被标记的对象就是垃圾对象（同标记-清除算法）
+
+压缩阶段：是直接对可回收对象进行清理，而是先让所有存活的对象都向一端移动，然后直接清理掉端边界以外的内存
+
+![标记压缩算法](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E6%A0%87%E8%AE%B0%E5%8E%8B%E7%BC%A9%E7%AE%97%E6%B3%95.jpg?raw=true)
+
+缺点：
+
+- 多次遍历堆，时间换空间
+
+## 分区思想
+
+单独采用任何一种算法，最终的垃圾回收效率都不会很好
+
+GC分代的基本假设：绝大部分对象的生命周期都非常短暂，存活时间短
+
+因此在实际的垃圾回收算法中采用了分代算法
+
+**分代算法：** 就是根据 JVM 内存的不同内存区域，采用不同的垃圾回收算法，把Java堆分为新生代和老年代，这样就可以根据各个年代的特点采用最适当的收集算法。如果没有采用分代算法，而在老年代中使用复制算法。在极端情况下，老年代对象的存活率可以达到100%，那么我们就需要复制这么多个对象到另外一个内存区域，这个工作量是非常庞大的
+
+**新生代中** 每次垃圾收集时都发现有大批对象死去，只有少量存活，那就选用复制算法，只需要付出少量存活对象的复制成本就可以完成收集。而复制算法的一种最简单实现便是折半内存使用，另一半备用。但实际上我们知道，在实际的 JVM 新生代划分中，却不是采用等分为两块内存的形式。而是分为：Eden 区域、from 区域、to 区域 这三个区域。
+
+根据IBM公司的研究表明，在新生代中的对象 98% 是朝生夕死的，所以并不需要按照1:1的比例来划分内存空间。所以在HotSpot虚拟机中，JVM 将内存划分为一块较大的Eden空间和两块较小的Survivor空间，其大小占比是8:1:1。当回收时，将Eden和Survivor中还存活的对象一次性复制到另外一块Survivor空间上，最后清理掉Eden和刚才用过的Eden空间。通过这种方式，内存的空间利用率达到了90%，只有10%的空间是浪费掉了
+
+**老年代中** 因为对象存活率高、没有额外空间对它进行分配担保，就必须使用“标记-清理”或“标记-整理”算法来进行回收
+
+---
+
+## 垃圾收集器
+
+收集算法是内存回收的方法论，垃圾收集器就是内存回收的具体实现
+
+总的来说，Java 虚拟机的垃圾回收器可以分为四大类别：串行回收器、并行回收器、CMS 回收器、G1 回收器
+
+## 串行收集器
+
+**Serial收集器** 串行收集器是最古老，最稳定以及效率高的收集器，可能会产生较长的停顿，只使用一个线程去回收，因此串行回收器在并发能力较弱的计算机上，其专注性和独占性的特点往往能让其有更好的性能表现
+
+串行回收器可以在新生代和老年代使用，根据作用于不同的堆空间，分为新生代串行回收器和老年代串行回收器，垃圾收集的过程中会Stop The World（服务暂停），即其他线程都需要暂停，等待垃圾回收完成，因此在某些情况下，其会造成较为糟糕的用户体验
+
+新生代复制算法、老年代标记-压缩算法
+
+- -XX:+UseSerialGC：参数可以指定使用新生代串行收集器和老年代都使用串行收集器
+- -XX:UseParNewGC：新生代使用 ParNew 回收器，老年代使用串行回收器
+- -XX:UseParallelGC：新生代使用 ParallelGC 回收器，老年代使用串行回收器
+
+![串行收集器](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E4%B8%B2%E8%A1%8C%E6%94%B6%E9%9B%86%E5%99%A8.jpg?raw=true)
+
+## 并行收集器
+
+**新生代 ParNew 回收器** ParNew收集器其实就是Serial收集器的多线程版本，其回收策略、算法以及参数和新生代串行回收器一样：新生代并行，老年代串行；新生代复制算法、老年代标记-压缩
+
+新生代 ParNew 回收器同样使用复制的垃圾回收算法，其垃圾收集过程中同样会触发 Stop-The-World 现象。但因为其使用多线程进行垃圾回收，因此在并发能力强的 CPU 上，其产生的停顿时间要短于串行回收器
+
+但在单 CPU 或并能能力弱的系统中，并行回收器效果会因为线程切换的原因，其实际表现反而不如串行回收器
+
+- -XX:+UseParNewGC：新生代使用 ParNew 回收器，老年代使用串行回收器
+- -XX:ParallelGCThreads：指定 ParNew 回收器的工作线程数量
+- -XX:UseConcMarkSweepGC：新生代使用 ParNew 回收器，老年代使用 CMS
+
+![并行收集器](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E5%B9%B6%E8%A1%8C%E6%94%B6%E9%9B%86%E5%99%A8.jpg?raw=true)
+
+**新生代 Parallel 回收器** Parallel Scavenge收集器类似ParNew收集器，Parallel收集器更关注系统的吞吐量，其也是使用复制算法，都是多线程、独占式的收集器
+
+之所以说新生代 Parallel GC 回收器非常注重系统吞吐量，是因为其有一个自适应 GC 调节策略。可以使用 -XX:+UseAdaptiveSizePolicy 参数打开这个策略，在这个模式下，新生代的大小、Eden 和 Survivor 的比例、晋升老年代的对象年龄等参数都会被自动调节，已达到堆大小、吞吐量、停顿时间的平衡点
+
+新生代复制算法、老年代标记-压缩
+
+Parallel 回收器提供了两个重要参数用于控制系统的吞吐量
+
+- -XX:MaxGCPauseMillis：设置最大垃圾收集停顿时间。在 Parallel 工作时，其会自动调整响应参数，将停顿时间控制在设置范围内。为了达到目的，其可能会使用较小的堆，但这会导致 GC 较为频繁
+- -XX:GCTimeRatio：设置吞吐量大小，其实一个 0 - 100 的整数。假设 GCTimeRatio 的值为 n，那么系统将不花费超过 1/(1+n) 的时间用于垃圾手机。比如 GCTimeRatio 值为 19，那么系统用于垃圾收集的时间不超过 1 /(1+19) = 5%。默认情况下，它的取值是 99，即不超过 1% 的时间用于垃圾收集
+
+新生代 Parallel GC 回收器可以使用以下参数启用：
+
+- -XX:+UseParallelGC：新生代使用 Parallel 回收器，老年代使用串行回收器
+- -XX:+UseParallelOldGC：新生代使用 ParallelGC 回收器，老年代使用 ParallelOldGC 回收器
+
+**老年代 ParallelOldGC 回收器** Parallel Old是Parallel Scavenge收集器的老年代版本，其也是注重吞吐量的收集器，使用多线程和“标记－整理”算法。这个收集器是在JDK 1.6中才开始提供
+
+- -XX:UseParallelOldGC参数在新生代中使用 ParallelGC 收集器，在老年代中使用 ParallelOldGC 收集器
+- -XX:ParallelGCThreads也可以用于设置垃圾回收时的线程数量
+
+---
+
+## CMS 回收器
+
+与 ParallelGC 和 ParallelOldGC 不同，CMS 回收器主要关注系统停顿时间，是一种以获取最短回收停顿时间为目标的收集器。CMS 回收器全称为 Concurrent Mark Sweep，意为**标记清除算法**（大量内存碎片），其是一个使用多线程并行回收的垃圾回收器
+
+目前很大一部分的Java应用都集中在互联网站或B/S系统的服务端上，这类应用尤其重视服务的响应速度，希望系统停顿时间最短，以给用户带来较好的体验
+
+运作过程相对于前面几种收集器来说要更复杂一些，整个过程分为4个步骤：
+
+- 初始标记（CMS initial mark）
+- 并发标记（CMS concurrent mark）
+- 重新标记（CMS remark）
+- 并发清除（CMS concurrent sweep）
+
+其中初始标记、重新标记这两个步骤仍然需要“Stop The World”，是独占系统资源的，而其他阶段则可以和用户线程一起执行
+
+**初始标记** 仅仅只是标记一下GC Roots能直接关联到的对象，速度很快
+
+**并发标记** 是进行GC Roots Tracing的过程
+
+**重新标记** 是为了修正并发标记期间，因用户程序继续运作而导致标记产生变动的那一部分对象的标记记录，这个阶段的停顿时间一般会比初始标记阶段稍长一些，但远比并发标记的时间短
+
+由于整个过程中耗时最长的**并发标记**和**并发清除**过程中，收集器线程都可以与用户线程一起工作，所以总体上来说，CMS收集器的内存回收过程是与用户线程一起并发地执行。老年代收集器（新生代使用ParNew）
+
+在整个 CMS 回收过程中，默认情况下会有预清理的操作，可以使用 -XX:-CMSPrecleaningEnabled 关闭开关，不进行预清理。因为重新标记是独占 CPU 的，因此如果新生代 GC 发生之后，立刻出发一次新生代 GC，那么停顿时间就会很长。为了避免这种情况，预处理时会刻意等待一次新生代 GC 的发生，之后在进行预处理
+
+- -XX:+UseConcMarkSweepGC：使用CMS收集器
+- -XX:ConcGCThreads 或 -XX:ParallelCMSThreads：线程并发数量
+- -XX:CMSInitiatingOccupancyFraction：指定老年代空间使用阈值，当老年代空间使用率达到这个阈值时，会执行一次 CMS 回收，而不像其他回收器一样等到内存不够用的时候才进行 GC
+- -XX:+UseCMSCompactAtFullCollection：让 CMS 在完成垃圾回收后，进行一次内存碎片整理，整理过程是独占的，会引起停顿时间变长
+- -XX:CMSFullGCsBeforeCompaction：设置进行多少次 CMS 回收后，进行一次内存压缩
+- -XX:+CMSClassUnloadingEnabled：打开该开关后，如果条件允许，那么系统会使用 CMS 的机制回收 Perm（1.8之前的持久代） 区 Class 数据
+
+---
+
+## G1 回收器
+
+G1是目前技术发展的最前沿成果之一，HotSpot开发团队赋予它的使命是未来可以替换掉JDK1.5中发布的CMS收集器。G1 回收器是 JDK 1.7 中使用的全新垃圾回收器，与CMS收集器相比G1收集器有以下特点：
+
+1. 空间整合，G1收集器采用标记整理算法，不会产生内存空间碎片。分配大对象时不会因为无法找到连续空间而提前触发下一次GC
+2. 可预测停顿，这是G1的另一大优势，降低停顿时间是G1和CMS的共同关注点，但G1除了追求低停顿外，还能建立可预测的停顿时间模型，能让使用者明确指定在一个长度为N毫秒的时间片段内，消耗在垃圾收集上的时间不得超过N毫秒，这几乎已经是实时Java（RTSJ）的垃圾收集器的特征了
+
+G1 回收器拥有独特的垃圾回收策略，和之前所有垃圾回收器采用的垃圾回收策略不同。从分代看，G1 依然属于分代垃圾回收器。但它最大的改变是使用了分区算法，从而使得 Eden 区、From 区、Survivor 区和老年代等各块内存不必连续。它将整个Java堆划分为多个大小相等的独立区域（Region），虽然还保留有新生代和老年代的概念，但新生代和老年代不再是物理隔阂了，它们都是一部分（可以不连续）Region的集合
+
+在 G1 回收器之前，所有的垃圾回收器其内存分配都是连续的一块内存，如下图所示
+
+![8之前的内存分配](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/8%E4%B9%8B%E5%89%8D%E7%9A%84%E5%86%85%E5%AD%98%E5%88%86%E9%85%8D.png?raw=true)
+
+而在 G1 回收器中，其将一大块的内存分为许多细小的区块，从而不要求内存是连续的
+
+![8之后的内存分配](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/8%E4%B9%8B%E5%90%8E%E7%9A%84%E5%86%85%E5%AD%98%E5%88%86%E9%85%8D.png?raw=true)
+
+从上图可以看到，每个Region被标记了 E、S、O 和 H，说明每个 Region 在运行时都充当了一种角色。所有标记为 E 的都是 Eden 区的内存，它们散落在内存的各个角落，并不要求内存连续。同理，Survivor 区、老年代（Old）也是如此
+
+从上图我们还可以看到 H 是以往算法中没有的，它代表 Humongous。这表示这些 Region 存储的是巨型对象（humongous object，H-obj），当新建对象大小超过 Region 大小一半时，直接在新的一个或多个连续 Region 中分配，并标记为 H。
+
+堆内存中一个 Region 的大小可以通过 -XX:G1HeapRegionSize 参数指定，大小区间只能是1M、2M、4M、8M、16M 和 32M，总之是2的幂次方。如果G1HeapRegionSize 为默认值，即把设置的最小堆内存按照2048份均分，最后得到一个合理的大小
+
+**收集步骤：** 
+
+1. 标记阶段，首先初始标记(Initial-Mark),这个阶段是停顿的(Stop the World Event)，并且会触发一次普通Mintor GC。对应GC log:GC pause (young) (inital-mark)
+
+2. Root Region Scanning，程序运行过程中会回收survivor区(存活到老年代)，这一过程必须在young GC之前完成
+
+3. Concurrent Marking，在整个堆中进行并发标记(和应用程序并发执行)，此过程可能被young GC中断。在并发标记阶段，若发现区域对象中的所有对象都是垃圾，那个这个区域会被立即回收(图中打X)。同时，并发标记过程中，会计算每个区域的对象活性(区域中存活对象的比例)
+
+![ConcurrentMarking](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/ConcurrentMarking.png?raw=true)
+
+4. Remark, 再标记，会有短暂停顿(STW)。再标记阶段是用来收集 并发标记阶段 产生新的垃圾(并发阶段和应用程序一同运行)；G1中采用了比CMS更快的初始快照算法:snapshot-at-the-beginning (SATB)
+
+5. Copy/Clean up，多线程清除失活对象，会有STW。G1将回收区域的存活对象拷贝到新区域，清除Remember Sets，并发清空回收区域并把它返回到空闲区域链表中
+
+![CopyClean](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/CopyClean.jpg?raw=true)
+
+6. 复制/清除过程后。回收区域的活性对象已经被集中回收到深蓝色和深绿色区域
+
+![AfterCopyClean](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/AfterCopyClean.jpg?raw=true)
+
+相关参数：
+
+- -XX:+UseG1GC：打开 G1 收集器
+- -XX:MaxGCPauseMillis：设置目标最大停顿时间
+- -XX:ParallelGCThreads：设置 GC 工作线程数量
+- -XX:InitiatingHeapOccupancyPercent：设置堆使用率触发并发标记周期的执行
+- -XX:+G1YoungGenSize=512m：年轻代大小
+- -XX:SurvivorRatio=6：幸存区比例
+
+---
+
+## Minor GC
+
+从年轻代空间回收内存被称为 Minor GC，有时候也称之为 Young GC
+
+- 当 JVM 无法为一个新的对象分配空间时会触发 Minor GC，比如当 Eden 区满了。所以 Eden 区越小，越频繁执行 Minor GC
+- 当年轻代中的 Eden 区分配满的时候，年轻代中的部分对象会晋升到老年代，所以 Minor GC 后老年代的占用量通常会有所升高
+- 质疑常规的认知，所有的 Minor GC 都会触发 Stop-The-World，停止应用程序的线程。对于大部分应用程序，停顿导致的延迟都是可以忽略不计的，因为大部分 Eden 区中的对象都能被认为是垃圾，永远也不会被复制到 Survivor 区或者老年代空间。如果情况相反，即 Eden 区大部分新生对象不符合 GC 条件（即他们不被垃圾回收器收集），那么 Minor GC 执行时暂停的时间将会长很多（因为他们要JVM要将他们复制到 Survivor 区或老年代）
+
+---
+
+## Major GC
+
+从老年代空间回收内存被称为 Major GC，有时候也称之为 Old GC。
+
+许多 Major GC 是由 Minor GC 触发的，所以很多情况下将这两种 GC 分离是不太可能的。
+
+Minor GC 作用于年轻代，Major GC 作用于老年代。 分配对象内存时发现内存不够，触发 Minor GC。Minor GC 会将对象移到老年代中，如果此时老年代空间不够，那么触发 Major GC。因此才会说，许多 Major GC 是由 Minor GC 引起的
+
+---
+
+## Full GC
+
+Full GC 是清理整个堆空间 —— 包括年轻代、老年代和永久代（如果有的话）。因此 Full GC 可以说是 Minor GC 和 Major GC 的结合
+
+当准备要触发一次 Minor GC 时，如果发现年轻代的剩余空间比以往晋升的空间小，则不会触发 Minor GC 而是转为触发 Full GC。因为JVM此时认为：之前这么大空间的时候已经发生对象晋升了，那现在剩余空间更小了，那么很大概率上也会发生对象晋升。既然如此，那么我就直接帮你把事情给做了吧，直接来一次 Full GC，整理一下老年代和年轻代的空间。
+
+另外，即在永久代分配空间但已经没有足够空间时，也会触发 Full GC
+
+---
+
+## Stop-The-World
+
+Stop-The-World，中文一般翻译为全世界暂停，是指在进行垃圾回收时因为标记或清理的需要，必须让所有执行任务的线程停止执行任务，从而让垃圾回收线程回收垃圾的时间间隔
+
+在 Stop-The-World 这段时间里，所有非垃圾回收线程都无法工作，都暂停下来。只有等到垃圾回收线程工作完成才可以继续工作。可以看出，Stop-The-World 时间的长短将关系到应用程序的响应时间，因此在 GC 过程中，Stop-The-World 的时间是一个非常重要的指标
+
+---
+
+> 补充引用部分：从Java SE2开始，就提供了四种类型的引用：强引用、软引用、弱引用和虚引用。Java中提供这四种引用类型主要有两个目的
+>- 第一是可以让程序员通过代码的方式决定某些对象的生命周期
+>- 第二是有利于JVM进行垃圾回收
+
+## 强引用
+
+我们使用的大部分引用实际上都是强引用，这是使用最普遍的引用。比如下面这段代码中的object和str都是强引用
+```java
+Object object = new Object();
+String str = "StrongReference";
+```
+如果一个对象具有强引用，那就类似于必不可少的物品，不会被垃圾回收器回收。
+当内存空间不足，Java虚拟机宁愿抛出OutOfMemoryError错误，使程序异常终止，也不回收这种对象
+
+例如：
+```java
+public class StrongReference {
+    public static void main(String[] args) {
+        new StrongReference().method1();
+    }
+    public void method1(){
+        Object object = new Object();
+        Object[] objArr = new Object[Integer.MAX_VALUE];
+    }
+}
+```
+当运行至Object[] objArr = new Object[Integer.MAX_VALUE]时，如果内存不足，JVM会抛出OOM（OutOfMemoryError）错误也不会回收object指向的对象。不过要注意的是，当method1运行完之后，object和objArr都已经不存在了，所以它们指向的对象都会被JVM回收
+
+如果想中断强引用和某个对象之间的关联，可以显示地将引用赋值为null，这样一来的话，JVM在合适的时间就会回收该对象
+
+比如java.util.ArrayList类中的clear()方法就是通过将引用赋值为null来实现清理工作
+```java
+/**
+* Removes all of the elements from this list.  The list will
+* be empty after this call returns.
+*/
+public void clear() {
+    modCount++;
+
+    // clear to let GC do its work
+    for (int i = 0; i < size; i++)
+        elementData[i] = null;
+
+    size = 0;
+}
+```
+
+---
+
+## 软引用
+
+软引用是用来描述一些有用但并不是必需的对象，在Java中用java.lang.ref.SoftReference类来表示。对于软引用关联着的对象，只有在内存不足的时候JVM才会回收该对象。因此，这一点可以很好地用来解决OOM的问题，并且这个特性很适合用来实现缓存：比如网页缓存、图片缓存等
+
+软引用可以和一个引用队列（ReferenceQueue）联合使用，如果软引用所引用的对象被JVM回收，这个软引用就会被加入到与之关联的引用队列中
+
+```java
+mport java.lang.ref.SoftReference;
+
+public class SoftRef { 
+
+    public static void main(String[] args){ 
+        System.out.println("start"); 
+        Obj obj = new Obj(); 
+        SoftReference<Obj> sr = new SoftReference<Obj>(obj); 
+        obj = null; 
+        System.out.println(sr.get()); 
+        System.out.println("end"); 
+    } 
+} 
+
+class Obj{ 
+    int[] obj ; 
+    public Obj(){ 
+    obj = new int[1000]; 
+    } 
+}
+```
+
+当内存足够大时可以把数组存入软引用，取数据时就可从内存里取数据，提高运行效率
+
+软引用在实际中有重要的应用，例如浏览器的后退按钮，这个后退时显示的网页内容可以重新进行请求或者从缓存中取出：
+（1）如果一个网页在浏览结束时就进行内容的回收，则按后退查看前面浏览过的页面时，需要重新构建
+（2）如果将浏览过的网页存储到内存中会造成内存的大量浪费，甚至会造成内存溢出这时候就可以使用软引用
+
+---
+
+## 弱引用
+
+弱引用也是用来描述非必需对象的，当JVM进行垃圾回收时，无论内存是否充足，都会回收被弱引用关联的对象。在java中，用java.lang.ref.WeakReference类来表示
+
+**弱引用与软引用的区别在于：** 只具有弱引用的对象拥有更短暂的生命周期。在垃圾回收器线程扫描它所管辖的内存区域的过程中，一旦发现了只具有弱引用的对象，不管当前内存空间足够与否，都会回收它的内存。不过，由于垃圾回收器是一个优先级很低的线程， 因此不一定会很快发现那些只具有弱引用的对象
+
+被软引用关联的对象只有在内存不足时才会被回收，而被弱引用关联的对象在JVM进行垃圾回收时总会被回收
+
+```java
+import java.lang.ref.WeakReference;
+
+public class WeakRef {
+    public static void main(String[] args) {
+        WeakReference<String> sr = new WeakReference<String>(new String("hello"));
+        System.out.println(sr.get());
+        System.gc(); //通知JVM的gc进行垃圾回收
+        System.out.println(sr.get());
+    }
+}
+```
+
+在使用软引用和弱引用的时候，我们可以显示地通过System.gc()来通知JVM进行垃圾回收，但是要注意的是，虽然发出了通知，JVM不一定会立刻执行，也就是说这句是无法确保此时JVM一定会进行垃圾回收的
+
+弱引用还可以和一个引用队列（ReferenceQueue）联合使用，如果弱引用所引用的对象被垃圾回收，Java虚拟机就会把这个弱引用加入到与之关联的引用队列中
+```java
+Object o = new Object(); //只要o还指向对象就不会被回收
+WeakReference<Object> wr = new WeakReference<Object>(o);
+```
+
+当要获得weak reference引用的object时, 首先需要判断它是否已经被回收，如果wr.get()方法为空, 那么说明weakCar指向的对象已经被回收了
+
+**应用场景：** 如果一个对象是偶尔的使用，并且希望在使用时随时就能获取到，但又不想影响此对象的垃圾收集，那么应该用 Weak Reference 来记住此对象。或者想引用一个对象，但是这个对象有自己的生命周期，你不想介入这个对象的生命周期，这时候就应该用弱引用，这个引用不会在对象的垃圾回收判断中产生任何附加的影响
+
+---
+
+## 虚引用
+
+虚引用和前面的软引用、弱引用不同，它并不影响对象的生命周期。在java中用java.lang.ref.PhantomReference类表示。如果一个对象与虚引用关联，则跟没有引用与之关联一样，在任何时候都可能被垃圾回收器回收。虚引用主要用来跟踪对象被垃圾回收的活动
+
+**虚引用必须和引用队列关联使用，** 当垃圾回收器准备回收一个对象时，如果发现它还有虚引用，就会把这个虚引用加入到与之 关联的引用队列中。程序可以通过判断引用队列中是否已经加入了虚引用，来了解被引用的对象是否将要被垃圾回收。如果程序发现某个虚引用已经被加入到引用队列，那么就可以在所引用的对象的内存被回收之前采取必要的行动
+
+```java
+import java.lang.ref.PhantomReference;
+import java.lang.ref.ReferenceQueue;
+
+public class PhantomRef {
+    public static void main(String[] args) {
+        ReferenceQueue<String> queue = new ReferenceQueue<String>();
+        PhantomReference<String> pr = new PhantomReference<String>(new String("hello"), queue);
+        System.out.println(pr.get());
+    }
+}
+```
+
