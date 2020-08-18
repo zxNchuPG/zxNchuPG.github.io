@@ -14,7 +14,7 @@ tags:
 
 > 本篇文章主要是常见问题的整理，在第二篇中会更详细深入了解 Redis 
 
-> 参考资料 [JavaGuide](https://github.com/Snailclimb/JavaGuide#redis)、[蛙课网](https://zhuanlan.zhihu.com/p/118561398)、[三太子敖丙](https://github.com/AobingJava/JavaFamily)、[为什么 Redis 选择单线程模型](https://draveness.me/whys-the-design-redis-single-thread/)、[Redis 命令总结](http://redisdoc.com/string/set.html)、[github优质文章](https://github.com/wmyskxz/MoreThanJava#part3-redis)、[redix在线练习](https://try.redis.io/)
+> 参考资料 [JavaGuide](https://github.com/Snailclimb/JavaGuide#redis)、[蛙课网](https://zhuanlan.zhihu.com/p/118561398)、[三太子敖丙](https://github.com/AobingJava/JavaFamily)、[为什么Redis选择单线程模型](https://draveness.me/whys-the-design-redis-single-thread/)、[Redis命令总结](http://redisdoc.com/string/set.html)、[github优质文章](https://github.com/wmyskxz/MoreThanJava#part3-redis)、[redis在线练习](https://try.redis.io/)
 
 [TOC]
 
