@@ -1,0 +1,1151 @@
+---
+layout:      post
+title:       "面试问题java版-Ⅱ"
+subtitle:    "Interview"
+author:      "Ekko"
+header-img:  "img/bg/bg-interview.jpg"
+catalog:     true
+tags:
+  - 工作
+  - 面试
+  - 学习笔记
+  - JAVA
+---
+
+[TOC]
+
+---
+
+## Spring的两种动态代理
+
+- JDK 动态代理
+- CGLib 动态代理
+
+> 参考资料 [博客](https://www.cnblogs.com/caoxb/p/12406005.html)、[知乎AlanShelby](https://zhuanlan.zhihu.com/p/42019421)、[知乎](https://zhuanlan.zhihu.com/p/97242660)
+
+**方法一：JDK动态代理**
+
+基于接口的 JDK 动态代理，针对目标对象的接口进行代理 ，动态生成接口的实现类 （必须有接口）
+
+要点：
+
+1. 必须对接口生成代理
+2. 采用 Proxy 对象，通过 newProxyInstance 方法为目标创建代理对象
+
+该方法接收三个参数 ：
+1. 目标对象类加载器
+2. 目标对象实现的接口
+3. 代理对象的执行处理器 InvocationHandler
+
+**service层**
+
+```java
+//接口（表示代理的目标接口）
+public interface ICustomerService {
+    //保存
+    void save();
+    //查询
+    int find();
+}
+```
+
+**实现层**
+
+```java
+//实现层
+public class CustomerServiceImpl implements ICustomerService{
+    @Override
+    public void save() {
+       System.out.println("客户保存了。。。。。");
+    }
+
+    @Override
+    public int find() {
+       System.out.println("客户查询数量了。。。。。");
+       return 100;
+    }
+}
+```
+
+**JDK动态代理工厂**
+
+```java
+
+//专门用来生成jdk的动态代理对象的-通用
+public class JdkProxyFactory{
+    //target目标对象
+    private Object target;
+
+    //注入target目标对象
+    public JdkProxyFactory(Object target) {
+       this.target = target;
+    }
+
+    public Object getProxyObject(){
+        /**
+         * 参数1：目标对象的类加载器
+         * 参数2：目标对象实现的接口
+         * 参数3：回调方法对象
+        */
+       return Proxy.newProxyInstance(target.getClass().getClassLoader(), target.getClass().getInterfaces(), 
+            new InvocationHandler(){
+                public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+                    //如果是保存的方法，执行记录日志操作
+                    if(method.getName().equals("save")){
+                        System.out.println("增强代码：写日志了。。。");
+                    }
+                    //目标对象原来的方法执行
+                    Object object = method.invoke(target, args);//调用目标对象的某个方法，并且返回目标对象
+                    return object;
+                 }
+        });
+    }
+}
+```
+
+**测试方法**
+
+```java
+//目标：使用动态代理，对原来的方法进行功能增强,而无需更改原来的代码。
+//JDK动态代理：基于接口的（对象的类型，必须实现接口！）
+@Test
+public void testJdkProxy(){
+   //target（目标对象）
+   ICustomerService target = new CustomerServiceImpl();
+   //实例化注入目标对象
+   JdkProxyFactory jdkProxyFactory = new JdkProxyFactory(target);
+   //获取 Object代理对象:基于目标对象类型的接口的类型的子类型的对象
+   //必需使用接口对象去强转
+   ICustomerService proxy = (ICustomerService)jdkProxyFactory.getProxyObject();
+   //调用目标对象的方法
+   proxy.save();
+   System.out.println("————————————————————");
+   proxy.find();
+}
+```
+
+**输出结果**
+
+```java
+增强代码：写日志了。。。
+客户保存了。。。。。
+————————————————————
+客户查询数量了。。。。。
+```
+
+**方式二：Cglib动态代理**
+
+Cglib的引入为了解决类的直接代理问题(生成代理子类)，不需要接口也可以代理
+
+该代理方式需要相应的 jar 包，但不需要导入。因为 Spring core 包已经包含 cglib ，而且同时包含了 cglib 依赖的 asm 的包（动态字节码的操作类库）
+
+```java
+//没有接口的类
+public class ProductService {
+    public void save() {
+       System.out.println("商品保存了。。。。。");
+    }
+
+    public int find() {
+       System.out.println("商品查询数量了。。。。。");
+       return 99;
+    }
+}
+```
+
+**使用 cglib 代理**
+
+```java
+//cglib动态代理工厂:用来生成cglib代理对象
+public class CglibProxyFactory implements MethodInterceptor{
+    private Object target;
+
+    //注入代理对象
+    public CglibProxyFactory(Object target) {
+       this.target = target;
+    }
+
+    //获取代理对象
+    public Object getProxyObject(){
+       //1.代理对象生成器(工厂思想)
+       Enhancer enhancer = new Enhancer();
+        // 类加载器
+       enhancer.setClassLoader(target.getClass().getClassLoader());
+
+       //2.在增强器上设置两个属性
+       //设置要生成代理对象的目标对象：生成的目标对象类型的子类型
+       enhancer.setSuperclass(target.getClass());
+       //设置回调方法
+       enhancer.setCallback(this);
+
+       //3.创建获取对象
+       return enhancer.create();
+    }
+
+    //回调方法（代理对象的方法）
+    /**
+     *  参数1：代理对象
+     *  参数2：目标对象的方法对象
+     *  参数3：目标对象的方法的参数的值
+     *  参数4：代理对象的方法对象
+     */
+    public Object intercept(Object proxy, Method method, Object[] args, MethodProxy methodProxy) throws Throwable {
+       //如果是保存的方法，执行记录日志操作
+       if(method.getName().equals("save")){
+            System.out.println("增强代码：写日志了。。。");
+       }
+        //目标对象原来的方法执行
+        //调用目标对象的某个方法，并且返回目标对象
+       Object object = method.invoke(target, args);
+       return object;
+    }
+}
+```
+
+**测试方法**
+
+```java
+//cglib动态代理：可以基于类（无需实现接口）生成代理对象
+@Test
+public void testCglibProxy(){
+    //target目标：
+    ProductService target = new ProductService();
+
+    //代理工厂对象，注入目标
+    CglibProxyFactory cglibProxyFactory = new CglibProxyFactory(target);
+
+    //获取proxy
+    //代理对象，其实是目标对象类型的子类型
+    ProductService proxy = (ProductService)cglibProxyFactory.getProxyObject();
+    //调用代理对象的方法
+    proxy.save();
+    System.out.println("—————————————————————");
+    proxy.find();
+}
+```
+
+**测试结果**
+
+```java
+增强代码：写日志了。。。
+客户保存了。。。。。
+————————————————————
+客户查询数量了。。。。。
+```
+
+> spring在运行期，生成动态代理对象，不需要特殊的编译器
+Spring AOP 优先对接口进行代理 （使用Jdk动态代理）如果目标对象没有实现任何接口，才会对类进行代理 （使用 cglib 动态代理）
+
+1. 对接口创建代理优于对类创建代理，因为会产生更加松耦合的系统，所以 spring 默认是使用JDK代理。对类代理是让遗留系统或无法实现接口的第三方类库同样可以得到通知，这种方式应该是备用方案
+2. 标记为 final 的方法不能够被通知。spring 是为目标类产生子类。任何需要被通知的方法都被复写，将通知织入。final 方法是不允许重写的
+3. spring 只支持方法连接点：不提供属性接入点，spring 的观点是属性拦截破坏了封装。面向对象的概念是对象自己处理工作，其他对象只能通过方法调用的得到的结果
+
+--- 
+
+## Spring Bean 作用域
+
+Spring 支持五种作用域：sigleton、prototype、request、session、global-session
+
+1. singleton —— 唯一 bean 实例
+
+当一个 bean 的作用域为 singleton，那么Spring IoC容器中只会存在一个共享的 bean 实例，并且所有对 bean 的请求，只要 id 与该 bean 定义相匹配，则只会返回bean的同一实例。 singleton 是单例类型(对应于单例模式)，就是在创建起容器时就同时自动创建了一个bean的对象，不管你是否使用，他都存在了，每次获取到的对象都是同一个对象。注意，singleton 作用域是Spring中的缺省作用域。要在XML中将 bean 定义成 singleton ，可以这样配置：
+
+`<bean id="ServiceImpl" class="cn.csdn.service.ServiceImpl" scope="singleton">`
+
+@Scope 注解（它可以显示指定bean的作用范围）的方式
+
+```java
+@Service
+@Scope("singleton")
+public class ServiceImpl{
+
+}
+```
+
+2. prototype —— 每次请求都会创建一个新的 bean 实例
+
+当一个 bean 的作用域为 prototype，表示一个 bean 定义对应多个对象实例。 prototype 作用域的 bean 会导致在每次对该 bean 请求（将其注入到另一个 bean 中，或者以程序的方式调用容器的 getBean() 方法）时都会创建一个新的 bean 实例。prototype 是**原型类型**，它在我们创建容器的时候并没有实例化，而是当我们获取bean的时候才会去创建一个对象，而且我们每次获取到的对象都不是同一个对象。根据经验，对有状态的 bean 应该使用 prototype 作用域，而对无状态的 bean 则应该使用 singleton 作用域。  在 XML 中将 bean 定义成 prototype ，可以这样配置：
+
+```xml
+<bean id="account" class="com.foo.DefaultAccount" scope="prototype"/>  
+ 或者
+<bean id="account" class="com.foo.DefaultAccount" singleton="false"/>
+
+```
+
+3. request —— 每一次 HTT P请求都会产生一个新的 bean，该 bean 仅在当前 HTTP  request 内有效
+
+request 只适用于 Web 程序，每一次 HTTP 请求都会产生一个新的 bean，同时该 bean 仅在当前 HTTP request 内有效，当请求结束后，该对象的生命周期即告结束。 在 XML 中将 bean 定义成 prototype ，可以这样配置：
+
+`<bean id="loginAction" class=cn.csdn.LoginAction" scope="request"/>`
+
+4. session —— 每一次 HTTP 请求都会产生一个新的 bean，该 bean 仅在当前 HTTP session 内有效
+
+session只适用于Web程序，session 作用域表示该针对每一次 HTTP 请求都会产生一个新的 bean，同时该 bean 仅在当前 HTTP session 内有效.与request作用域一样，可以根据需要放心的更改所创建实例的内部状态，而别的 HTTP session 中根据 userPreferences 创建的实例，将不会看到这些特定于某个 HTTP session 的状态变化。当HTTP session最终被废弃的时候，在该HTTP session作用域内的bean也会被废弃掉
+
+`<bean id="userPreferences" class="com.foo.UserPreferences" scope="session"/>`
+
+5. globalSession
+
+global session 作用域类似于标准的 HTTP session 作用域，不过仅仅在基于 portlet 的 web 应用中才有意义。Portlet 规范定义了全局 Session 的概念，它被所有构成某个 portlet web 应用的各种不同的 portlet 所共享。在 global session 作用域中定义的 bean 被限定于全局 portlet Session 的生命周期范围内
+
+`<bean id="user" class="com.foo.Preferences "scope="globalSession"/>`
+
+---
+
+## Spring bean 的生命周期
+
+Spring Bean 是 Spring 应用中最最重要的部分了，总结：
+
+* Bean 容器找到配置文件中 Spring Bean 的定义
+* Bean 容器利用 Java Reflection API创建一个Bean的实例
+* 如果涉及到一些属性值 利用set方法设置一些属性值
+* 如果 Bean 实现了 BeanNameAware 接口，调用 setBeanName() 方法，传入 Bean 的名字
+* 如果 Bean 实现了 BeanClassLoaderAware 接口，调用 setBeanClassLoader() 方法，传入 ClassLoader 对象的实例
+* 如果 Bean 实现了 BeanFactoryAware 接口，调用 setBeanClassLoader() 方法，传入 ClassLoader 对象的实例
+* 与上面的类似，如果实现了其他 *Aware 接口，就调用相应的方法
+* 如果有和加载这个 Bean 的 Spring 容器相关的 BeanPostProcessor 对象，执行 postProcessBeforeInitialization() 方法
+* 如果 Bean 实现了 **InitializingBean接口**，执行 afterPropertiesSet() 方法
+* 如果 Bean 在配置文件中的定义包含 init-method 属性，执行指定的方法
+* 如果有和加载这个 Bean 的 Spring 容器相关的 BeanPostProcessor 对象，执行 postProcessAfterInitialization() 方法
+* 当要销毁 Bean 的时候，如果 Bean 实现了 DisposableBean 接口，执行 destroy() 方法
+* 当要销毁 Bean 的时候，如果 Bean 在配置文件中的定义包含 destroy-method 属性，执行指定的方法
+
+---
+
+1. 实例化Bean
+
+    对于BeanFactory容器，当客户向容器请求一个尚未初始化的bean时，或初始化bean的时候需要注入，另一个尚未初始化的依赖时，容器就会调用createBean进行实例化。对于ApplicationContext容器，当容器启动结束后，通过获取BeanDefinition对象中的信息，实例化所有的bean
+
+2. 设置对象属性（依赖注入）
+
+    实例化后的对象被封装在 BeanWrapper 对象中，紧接着，Spring 根据 BeanDefinition 中的信息 以及通过 BeanWrapper 提供的设置属性的接口完成依赖注入
+
+3. 处理Aware接口
+
+    接着，Spring 会检测该对象是否实现了 xxxAware 接口，并将相关的 xxxAware 实例注入给 Bean，（1）如果这个 Bean 已经实现了 BeanNameAware 接口，会调用它实现的 setBeanName（String beanId）方法，此处传递的就是 Spring 配置文件中 Bean 的 id 值 （2）如果这个 Bean 已经实现了 BeanFactoryAware 接口，会调用它实现的 setBeanFactory（） 方法，传递的是 Spring 工厂自身 （3）如果这个 Bean 已经实现了 ApplicationContextAware 接口，会调用 setApplicationContext（ApplicationContext） 方法，传入 Spring 上下文
+
+4. BeanPostProcessor：
+
+    如果想对 Bean 进行一些自定义的处理，那么可以让 Bean 实现了 BeanPostProcessor 接口，那将会调用 postProcessBeforeInitialization（Object obj，String s）方法
+
+5. InitializingBean 与 init-method 
+
+    如果 Bean 在 Spring 配置文件中配置了 init-method 属性，则会自动调用其配置的初始化方法
+
+6. 如果这个 Bean 实现了 BeanPostProcessor 接口，将会调用 postProcessAfterInitialization（Object obj,String s）方法，将会调用postProcessAfterInitialization(Object obj, String s)方法；由于这个方法是在 Bean 初始化结束时调用的，所以可以被应用于内存或缓存技术
+
+> 以上几个步骤完成后，Bean就已经被正确创建了，之后就可以使用这个Bean了
+
+7. DisposableBean
+
+    当 Bean 不再需要时，会经过清理阶段，如果 Bean 实现了 DisposableBean 这个接口，会调用其实现的 destroy() 方法
+
+8. destroy-method
+
+    最后，如果这个 Bean 的 Spring 配置中配置了 destroy-method 属性，会自动调用其配置的销毁方法
+
+---
+
+## 多线程输出问题
+
+**两个线程交替输出 0-100**
+
+```java
+public class 面试题多线程输出 {
+    private static volatile int num = 0; // 交替执行，一个输出偶数，一个输出奇数
+    private static volatile boolean flag = false;
+     public static void main(String[] args) {
+        // 交替输出 0-100
+        Thread_A a = new Thread_A();
+        Thread_B b = new Thread_B();
+        a.start();
+        b.start();
+    }
+
+    /**
+     * 交替输出 0-100
+     */
+    static class Thread_A extends Thread {
+        @Override
+        public void run() {
+            for (; 100 > num; ) {
+                if (!flag && (num == 0 || ++num % 2 == 0)) {
+                    try {
+                        Thread.sleep(100);
+                    } catch (InterruptedException e) {
+
+                    }
+                    System.out.println(this.getName() + "   " + num);
+                    flag = true;
+                }
+            }
+        }
+    }
+
+    /**
+     * 交替输出 0-100
+     */
+    static class Thread_B extends Thread {
+        @Override
+        public void run() {
+            for (; 100 > num; ) {
+                if (flag && (++num % 2 != 0)) {
+                    try {
+                        Thread.sleep(100);
+                    } catch (InterruptedException e) {
+
+                    }
+                    System.out.println(this.getName() + "   " + num);
+                    flag = false;
+                }
+            }
+        }
+    }
+}
+```
+
+**两个线程输出A1B2C3...Y25Z26**
+
+```java
+public class 面试题多线程输出 {
+    static volatile int a = 1;
+    public static void main(String[] args) {
+         // 交替输出 数字 和 字母
+        Thread_C c = new Thread_C();
+        Thread_D d = new Thread_D();
+        c.start();
+        d.start();
+    }
+
+    static class Thread_C extends Thread {
+        @Override
+        public void run() {
+            for (int i = 0; i < 26; i++) {
+                while (a % 2 == 1) {
+                    try {
+                        Thread.currentThread().interrupt();
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+                System.out.print(a / 2);
+                a = a + 1;
+            }
+        }
+    }
+
+    static class Thread_D extends Thread {
+        @Override
+        public void run() {
+            for (int i = 0; i < 26; i++) {
+                while (a % 2 == 0) {
+                    try {
+                        Thread.currentThread().interrupt();
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+                System.out.print((char) ((a / 2) + 'A'));
+                a = a + 1;
+            }
+        }
+    }
+```
+
+---
+
+## B+ 树
+
+> 参考资料 [知乎什么是B+树](https://zhuanlan.zhihu.com/p/54102723)
+
+B+ 树是基于 B- 树的一种变体，有着比 B- 树更高的查询性能
+
+一个 m 阶的 B+ 树具有如下特征：
+
+1. 有k个子树的中间节点包含有k个元素（B树中是k-1个元素），每个元素不保存数据，只用来索引，所有数据都保存在叶子节点
+2. 所有的叶子结点中包含了全部元素的信息，及指向含这些元素记录的指针，且叶子结点本身依关键字的大小自小而大顺序链接
+3. 所有的中间节点元素都同时存在于子节点，在子节点元素中是最大（或最小）元素
+
+![面试B+树](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95B+%E6%A0%91.jpg?raw=true)
+
+通过图可以看出满足上面所说的第3点特征，每一个父节点的元素都出现在子节点中，是子节点的最大或最小元素
+
+![面试B+树1](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95B+%E6%A0%911.jpg?raw=true)
+
+在上面这棵树中，根节点元素 8 是子节点 2,5,8 的最大元素，也是叶子节点 6,8 的最大元素
+
+根节点元素 15 是子节点 11,15 的最大元素，也是叶子节点 13,15 的最大元素
+
+需要注意的是，根节点的最大元素（这里是 15 ），也就等同于整个 B+ 树的最大元素，以后无论插入删除多少元素，始终要保持最大元素在根节点当中
+
+至于叶子节点，由于父节点的元素都出现在子节点中，因此所有子节点包含了全量元素信息
+
+并且每一个叶子节点都带有指向下一个节点的指针，形成了一个有序链表
+
+![面试B+树2](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95B+%E6%A0%912.jpg?raw=true)
+
+B+ 树还具有一个特点，这个特点是在索引之外，确是至关重要的特点 —— **卫星数据** 的位置
+
+> 卫星数据，指的是索引元素所指向的数据记录，比如数据库中的某一行，在 B- 树中，无论中间节点还是叶子节点都带有卫星数据
+
+**B-树中的卫星数据**
+
+![面试B-树的卫星数据](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95B-%E6%A0%91%E7%9A%84%E5%8D%AB%E6%98%9F%E6%95%B0%E6%8D%AE.jpg?raw=true)
+
+而在 B+ 树当中，只有叶子节点带有卫星数据，其余中间节点仅仅是索引，没有任何数据关联
+
+**B+树的卫星数据**
+
+![面试B+树的卫星数据](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95B+%E6%A0%91%E7%9A%84%E5%8D%AB%E6%98%9F%E6%95%B0%E6%8D%AE.jpg?raw=true)
+
+> 在数据库的聚集索引（Clustered Index）中，叶子节点直接包含卫星数据，在非聚集索引（NonClustered Index）中，叶子节点带有指向卫星数据的指针
+
+**B+ 树的好处主要体现在查询性能上**
+
+分别通过单行查询和范围查询来做分析
+
+**单行查询：**
+
+单元素查询的时候，B+ 树会自顶向下逐层查找节点，最终找到匹配的叶子节点，比如现在要查找的是 **元素3**
+
+**第一次磁盘 IO**
+
+![面试B+树单元素查询](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95B+%E6%A0%91%E5%8D%95%E5%85%83%E7%B4%A0%E6%9F%A5%E8%AF%A2.jpg?raw=true)
+
+**第二次磁盘 IO**
+
+![面试B+树单元素查询2](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95B+%E6%A0%91%E5%8D%95%E5%85%83%E7%B4%A0%E6%9F%A5%E8%AF%A22.jpg?raw=true)
+
+**第三次磁盘 IO**
+
+![面试B+树单元素查询3](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95B+%E6%A0%91%E5%8D%95%E5%85%83%E7%B4%A0%E6%9F%A5%E8%AF%A23.jpg?raw=true)
+
+B+ 树额中间节点没有卫星数据，所以同样大小的磁盘页可以容纳更多的节点元素，数据量相同的情况下，B+ 树的结构比 B- 树更加 **矮胖**，因此查询时 IO 次数也更少
+
+其次，B+ 树的查询必须最终查找到叶子节点，而 B- 树只要找到匹配元素即可，无论匹配元素处于中间节点还是叶子节点，因此 B- 树的查找性能不稳定（最好情况是只查找根节点，最坏情况是查到叶子节点），而 B+ 树的每一次查找都是稳定的
+
+**范围查找：**
+
+B+ 树的范围查询，只需要在链表上做遍历即可，比如现在需要查询范围 **3 到 11 的元素**
+
+**自顶向下，查找到范围的下线（3）**
+
+![面试B+树范围查询](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95B+%E6%A0%91%E8%8C%83%E5%9B%B4%E6%9F%A5%E8%AF%A2.jpg?raw=true)
+
+**通过链表指针，遍历到元素 6,8**
+
+![面试B+树范围查询2](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95B+%E6%A0%91%E8%8C%83%E5%9B%B4%E6%9F%A5%E8%AF%A22.jpg?raw=true)
+
+**通过链表指针，遍历到元素 9,11，遍历结束**
+
+![面试B+树范围查询3](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95B+%E6%A0%91%E8%8C%83%E5%9B%B4%E6%9F%A5%E8%AF%A23.jpg?raw=true)
+
+综合起来，B+ 树相比 B- 树的优势有三个：
+
+1. IO 次数更少
+2. 查询性能稳定
+3. 范围查询简便
+
+B+ 树的插入和删除，过程与 B- 树大同小异
+
+**总结 B+ 树的优势：**
+
+1. 单一节点存储更多的元素，使得查询的 IO 次数更少
+2. 所有查询都要查找到叶子节点，查询性能稳定
+3. 所有叶子节点形成有序链表，便于范围查询
+
+---
+
+## B- 树（B 树）
+
+> 参考资料 [知乎什么是B-树](https://zhuanlan.zhihu.com/p/54084335)
+
+B- 树就是 B 树，不能读成 B减 树
+
+从算法逻辑上来讲，二叉查找树的查找速度和比较次数都是最小的，但是不得不考虑一个问题：磁盘IO
+
+数据库索引是存储在磁盘上的，当数据量比较大的时候，索引额大小可能有几个 G 甚至更多，当我们利用索引查询的时候，是不能将整个索引全部加载到内存的，能做的只有逐一加载每一个磁盘页，这里的磁盘页对应着索引树的节点
+
+**索引树**
+
+![面试B-索引树](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95B-%E7%B4%A2%E5%BC%95%E6%A0%91.jpg?raw=true)
+
+<!-- **磁盘页**
+
+![面试B-磁盘页]() -->
+
+如果使用二叉查找树作为索引结构，假设树的高度是 4 ，查找的值是 10 ，那么流程如下：
+
+![面试二叉查找树的结构](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95%E4%BA%8C%E5%8F%89%E6%9F%A5%E6%89%BE%E6%A0%91%E7%9A%84%E7%BB%93%E6%9E%84.jpg?raw=true)
+
+**二叉查找树第一次磁盘 IO**
+
+![面试二叉查找树](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95%E4%BA%8C%E5%8F%89%E6%9F%A5%E6%89%BE%E6%A0%91.jpg?raw=true)
+
+**二叉查找树第二次磁盘 IO**
+
+![面试二叉查找树2](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95%E4%BA%8C%E5%8F%89%E6%9F%A5%E6%89%BE%E6%A0%912.jpg?raw=true)
+
+**二叉查找树第三次磁盘 IO**
+
+![面试二叉查找树3](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95%E4%BA%8C%E5%8F%89%E6%9F%A5%E6%89%BE%E6%A0%913.jpg?raw=true)
+
+**二叉查找树第四次磁盘 IO**
+
+![面试二叉查找树4](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95%E4%BA%8C%E5%8F%89%E6%9F%A5%E6%89%BE%E6%A0%914.jpg?raw=true)
+
+使用二叉查找树作为索引结构，磁盘 IO 的次数是 4 次，索引树的高度也是 4 ，所以出现了最坏的情况，磁盘 IO 次数等于索引树的高度，所以为了减少磁盘 IO 次数，需要把原本 瘦高 的树结构变得 矮胖，这是 B- 树的特征之一
+
+B 树是一种多路平衡查找树，它的每一个节点最多包含 K 个孩子，K 被称为 B 树的阶，k 的大小取决于磁盘页的大小
+
+**一个 m 阶的 B 树具有如下几个特征：**
+
+1. 根结点至少有两个子女
+2. 每个中间节点都包含 k-1 个元素和k个孩子，其中 m/2 <= k <= m
+3. 每一个叶子节点都包含 k-1 个元素，其中 m/2 <= k <= m
+4. 所有的叶子结点都位于同一层
+5. 每个节点中的元素从小到大排列，节点当中 k-1 个元素正好是 k 个孩子包含的元素的值域分划
+
+以一个 3 阶 B- 树为例
+
+**3 阶 B- 树结构**
+
+![面试B-树结构](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95B-%E6%A0%91%E7%BB%93%E6%9E%84.jpg?raw=true)
+
+这棵树中，（2,6）节点，该节点有两个元素 2 和 6，又有三个孩子 1,（3,5）,8，其中 1 小于元素 2 ，（3,5） 在元素 2,6 之间，8 大于 （3,5），正好符合上述几条特征
+
+![面试B-树结构特征](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95B-%E6%A0%91%E7%BB%93%E6%9E%84%E7%89%B9%E5%BE%81.jpg?raw=true)
+
+**B- 树的查询过程，假如现在要查询的数值是 5**
+
+**第一次磁盘 IO**
+
+![面试B-树第一次磁盘IO](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95B-%E6%A0%91%E7%AC%AC%E4%B8%80%E6%AC%A1%E7%A3%81%E7%9B%98IO.jpg?raw=true)
+
+**在内存中定位（和9比较）**
+
+![面试B-树第一次磁盘IO2](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95B-%E6%A0%91%E7%AC%AC%E4%B8%80%E6%AC%A1%E7%A3%81%E7%9B%98IO2.jpg?raw=true)
+
+**第二次磁盘 IO**
+
+![面试B-树第二次磁盘IO](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95B-%E6%A0%91%E7%AC%AC%E4%BA%8C%E6%AC%A1%E7%A3%81%E7%9B%98IO.jpg?raw=true)
+
+**在内存中定位（和2，6比较）**
+
+![面试B-树第二次磁盘IO2](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95B-%E6%A0%91%E7%AC%AC%E4%BA%8C%E6%AC%A1%E7%A3%81%E7%9B%98IO2.jpg?raw=true)
+
+**第三次磁盘 IO**
+
+![面试B-树第三次磁盘IO](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95B-%E6%A0%91%E7%AC%AC%E4%B8%89%E6%AC%A1%E7%A3%81%E7%9B%98IO.jpg?raw=true)
+
+**在内存中定位（和3，5比较）**
+
+![面试B-树第三次磁盘IO2](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95B-%E6%A0%91%E7%AC%AC%E4%B8%89%E6%AC%A1%E7%A3%81%E7%9B%98IO2.jpg?raw=true)
+
+整个流程中可以看出，B- 树在查询中的比较次数其实不比二叉查找树少，尤其当单一节点中的元素数量很多时。可是相比磁盘 IO 的速度，内存中的比较耗时几乎可以忽略，所以只要树的高度足够低，IO 次数足够少，就可以提升查找性能
+
+相比之下节点内部元素多一些也没有关系，仅仅是多了几次内存交互，只要不超过磁盘页的大小即可，这就是 B- 树的优势之一
+
+**B- 树插入新节点的过程，比如现在要插入的值是 4**
+
+自顶向下查找 4 的节点位置，发现 4 应当插入到节点元素 3，5 之间
+
+![面试B-树插入过程](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95B-%E6%A0%91%E6%8F%92%E5%85%A5%E8%BF%87%E7%A8%8B.jpg?raw=true)
+
+节点 3，5 已经是两元素节点，无法再增加。父亲节点 2， 6 也是两元素节点，也无法再增加。根节点 9 是单元素节点，可以升级为两元素节点。于是拆分节点 3，5 与节点 2，6，让根节点 9 升级为两元素节点4，9。节点 6 独立为根节点的第二个孩子
+
+![面试B-树插入过程2](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95B-%E6%A0%91%E6%8F%92%E5%85%A5%E8%BF%87%E7%A8%8B2.jpg?raw=true)
+
+虽然插入的过程会让整个 B 树的和诺节点都发生连锁改变，但也正因为如此，让 B- 树能够始终维持多路平衡，这也是 B- 树的一大优势：**自平衡**
+
+**B- 树删除的过程，比如现在要删除元素 11**
+
+自顶向下查找元素11的节点位置
+
+![面试B-树删除过程](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95B-%E6%A0%91%E5%88%A0%E9%99%A4%E8%BF%87%E7%A8%8B.jpg?raw=true)
+
+删除11后，节点12只有一个孩子，不符合B树规范。因此找出12,13,15三个节点的中位数13，取代节点12，而节点12自身下移成为第一个孩子。（这个过程称为左旋）
+
+![面试B-树删除过程2](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95B-%E6%A0%91%E5%88%A0%E9%99%A4%E8%BF%87%E7%A8%8B2.jpg?raw=true)
+
+![面试B-树删除过程3](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95B-%E6%A0%91%E5%88%A0%E9%99%A4%E8%BF%87%E7%A8%8B3.jpg?raw=true)
+
+B- 树主要应用于文件系统以及部分数据库索引，比如非关系型数据库 MongoDB，而大部分关系型数据库，比如 MySql，则使用 B+ 树作为索引
+
+---
+
+## 红黑树
+
+> 参考资料 [漫画：什么是红黑树](https://zhuanlan.zhihu.com/p/31805309)
+
+**先回忆下二叉查找树，二叉查找树（BST）特性：**
+
+1. 左子树上所有结点的值均小于或等于它的根结点的值
+2. 右子树上所有结点的值均大于或等于它的根结点的值
+3. 左、右子树也分别为二叉排序树
+
+![二叉查找树](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E4%BA%8C%E5%8F%89%E6%9F%A5%E6%89%BE%E6%A0%91.png?raw=true)
+
+**比如需要查找值为 10 的节点**
+
+1. 查看根节点 9：
+
+![二叉查找树查找](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E4%BA%8C%E5%8F%89%E6%9F%A5%E6%89%BE%E6%A0%91%E6%9F%A5%E6%89%BE.jpg?raw=true)
+
+2. 由于10 > 9，因此查看右孩子13：
+
+![二叉查找树查找2](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E4%BA%8C%E5%8F%89%E6%9F%A5%E6%89%BE%E6%A0%91%E6%9F%A5%E6%89%BE2.jpg?raw=true)
+
+3. 由于10 < 13，因此查看左孩子11：
+
+![二叉查找树查找3](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E4%BA%8C%E5%8F%89%E6%9F%A5%E6%89%BE%E6%A0%91%E6%9F%A5%E6%89%BE3.jpg?raw=true)
+
+4. 由于10 < 11，因此查看左孩子10，发现10正是要查找的节点：
+
+![二叉查找树查找4](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E4%BA%8C%E5%8F%89%E6%9F%A5%E6%89%BE%E6%A0%91%E6%9F%A5%E6%89%BE4.jpg?raw=true)
+
+这种方式正式二分查找的思想，查找所需的最大次数等同于二叉查找树的高度
+
+在插入节点的时候也是利用类似的方法，通过一层一层比较大小，找到新节点适合插入的位置
+
+缺陷是导致不平衡
+
+假设初始的二叉查找树只有三个节点，根节点值为9，左孩子值为8，右孩子值为12
+
+![二叉查找树插入](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E4%BA%8C%E5%8F%89%E6%9F%A5%E6%89%BE%E6%A0%91%E6%8F%92%E5%85%A5.png?raw=true)
+
+接下来我们依次插入如下五个节点：7,6,5,4,3。依照二叉查找树的特性
+
+![二叉查找树插入2](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E4%BA%8C%E5%8F%89%E6%9F%A5%E6%89%BE%E6%A0%91%E6%8F%92%E5%85%A52.jpg?raw=true)
+
+这样的形态虽然也符合二叉查找树的特性，但是查找的性能大打折扣，因此**红黑树**应运而生
+
+**红黑树（Red Black Tree）是一种自平衡的二叉查找树，出了符合二叉查找树的基本特性外，还具有特性：**
+
+1. 节点是红色或黑色
+2. 根节点是黑色
+3. 每个叶子节点都是黑色的空节点（NIL节点）
+4. 每个红色节点的两个子节点都是黑色。(从每个叶子到根的所有路径上不能有两个连续的红色节点)
+5. 从任一节点到其每个叶子的所有路径都包含相同数目的黑色节点
+
+这些规则，保证了红黑树的自平衡，红黑树从根到叶子的最长路径不会超过最短路径的 2 倍
+
+![红黑树](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E7%BA%A2%E9%BB%91%E6%A0%91.jpg?raw=true)
+
+当插入或删除节点的时候，红黑树的规则有可能被打破，**调整的方法：变色 和 旋转（左旋转、右旋转）**
+
+> 插入的新节点为 **红色**
+
+红黑树的应用：JDK的集合类 TreeMap 和 TreeSet ，Java8 中的 HashMap 等等
+
+---
+
+## 数据库事务隔离级别
+
+> 参考资料 [知乎事务隔离级别](https://zhuanlan.zhihu.com/p/150212956)
+
+1. **读未提交（READ UNCOMMITTED）：** 一个事务还没提交时，它做的变更就能被别的事务看到（可能导致的问题是**脏读**，因为另一个事务可能回滚）
+2. **读已提交（READ COMMITTED）：** 一个事务提交之后，它做的变更才会被其他事务看到（一个事务从开始直到提交之前，所作的任何修改对其他事务都是不可见的，可能导致的问题是**不可重复读**，因为两次执行同样的查询，可能会得到不同结果）
+3. **可重复读（REPEATABLE READ）：** 一个事务执行过程中看到的数据，总是跟这个事务在启动时看到的数据是一致的。当然在可重复读隔离级别下，未提交变更对其他事务也是不可见的（可能造成**幻读**）
+4. **串行化（SERIALIZABLE）：** 对于同一行记录，“写”会加“写锁”，“读”会加“读锁”，当出现读写锁冲突的时候，后访问的事务必须等前一个事务执行完成，才能继续执行（可能导致大量额超时现象和锁竞争）
+
+**隔离级别解决了哪些问题：**
+
+**脏读（dirty read）：** 一个事务读到了另一个未提交事务修改过的数据
+
+为了防止脏读，每次写入前，数据库都会记住旧值，当前事务尚未提交时，其他事务的读取都会拿到旧值，当前事务提交后，其他事务才能读取到新值
+
+![面试之脏读](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95%E4%B9%8B%E8%84%8F%E8%AF%BB.jpg?raw=true)
+
+**不可重复读（non-repeatable read）：**  在一个事务内两次读到的数据不一样（如果一个事务只能读到另一个已经提交的事务修改过的数据，并且其他事务每对该数据进行一次修改并提交后，该事务都能查询得到最新值）
+
+![面试之不可重复读](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E9%9D%A2%E8%AF%95%E4%B9%8B%E4%B8%8D%E5%8F%AF%E9%87%8D%E5%A4%8D%E8%AF%BB.jpg?raw=true)
+
+**幻读（phantom read）：** 加入第一个事务对一个表中的数据进行了修改，这种修改涉及到表中的全部数据行，同时第二个事务也修改这个表中的数据，插入一行新数据，以后就会发生操作第一个事务的用户发现表中还有没有修改的数据行，就好像发生幻觉一样（如果一个事务先根据某些条件查询出一些记录，之后另一个事务又向表中插入了符合这些条件的记录，原先的事务再次按照该条件查询时，能把另一个事务插入的记录也读出来）
+
+**Mysql事务隔离级别：**
+
+1. 读未提交
+2. 不可重复读
+3. 可重复读
+4. 串行化
+
+---
+
+## submit和excute区别
+
+线程池的 submit 入参可以是 Callable 也可以是 Runnable，并且有返回值，返回的是一个 Future 对象，通过 Future 可以 get 获取任务执行的结果
+
+excute 方法的入参是 Runnable，没有返回值，提交后基本和主线程脱离了关系
+
+submit 异常在内部被抛弃了，也就是不会抛异常，但是可以通过 Future 的 get 主动拉取
+
+excute 是会抛异常的
+
+---
+
+## ThreadLocal 
+
+> 参考资料 [Java中ThreadLocal的实际用途](https://www.zhihu.com/question/341005993/answer/1367225682)
+
+ThreadLocal 的作用主要是做数据隔离，填充的数据只属于当前线程，变量的数据对别的线程而言是相对隔离的，在多线程环境下，如何防止自己的变量被其它线程篡改
+
+Spring 实现事务隔离级别的源码中有使用到 ThreadLocal
+
+Spring 采用 Threadlocal 的方式，来保证单个线程中的数据库操作使用的是同一个数据库连接，同时，采用这种方式可以使业务层使用事务时不需要感知并管理 connection 对象，通过传播级别，巧妙地管理多个事务配置之间的切换，挂起和恢复，框架里面就是用的ThreadLocal 来实现这种隔离，要是在 TransactionSynchronizationManager 这个类里面
+
+```java
+public abstract class TransactionSynchronizationManager {
+
+	private static final Log logger = LogFactory.getLog(TransactionSynchronizationManager.class);
+
+	private static final ThreadLocal<Map<Object, Object>> resources =
+			new NamedThreadLocal<Map<Object, Object>>("Transactional resources");
+
+	private static final ThreadLocal<Set<TransactionSynchronization>> synchronizations =
+			new NamedThreadLocal<Set<TransactionSynchronization>>("Transaction synchronizations");
+
+	private static final ThreadLocal<String> currentTransactionName =
+			new NamedThreadLocal<String>("Current transaction name");
+
+	private static final ThreadLocal<Boolean> currentTransactionReadOnly =
+			new NamedThreadLocal<Boolean>("Current transaction read-only status");
+
+	private static final ThreadLocal<Integer> currentTransactionIsolationLevel =
+			new NamedThreadLocal<Integer>("Current transaction isolation level");
+
+	private static final ThreadLocal<Boolean> actualTransactionActive =
+			new NamedThreadLocal<Boolean>("Actual transaction active");
+
+            ...
+            ...
+
+}
+```
+
+> Spring 的事务主要是 ThreadLocal 和 AOP 去做实现的
+
+**自己写的案例，在使用拦截器的时候，为了获取上下文的用户信息，使用了 ThreadLocal**
+
+```java
+public class UserThreadLocal {
+    private static ThreadLocal<User> userHolder = new ThreadLocal<User>();
+
+    public static void setUser(User user) {
+        userHolder.set(user);
+    }
+
+    public static User getUser() {
+        return userHolder.get();
+    }
+}
+```
+
+```java
+@Service
+public class AccessInterceptor extends HandlerInterceptorAdapter {
+
+    @Autowired
+    UserService userService;
+
+    @Autowired
+    RedisService redisService;
+
+    @Override
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+        if (handler instanceof HandlerMethod) {
+            User user = getUser(request, response);
+            UserThreadLocal.setUser(user);
+            HandlerMethod handlerMethod = (HandlerMethod) handler;
+            AccessLimit accessLimit = handlerMethod.getMethodAnnotation(AccessLimit.class);
+            if (accessLimit == null) {
+                return true;
+            }
+            ...
+            ...
+}
+```
+
+```java
+@Service
+public class UserArgumentResolver implements HandlerMethodArgumentResolver {
+     public Object resolveArgument(MethodParameter parameter, ModelAndViewContainer mavContainer, NativeWebRequest webRequest, WebDataBinderFactory binderFactory) throws Exception {
+        // 获取LoginInterceptor设置到request中的用户信息，注入到参数中
+        User user = (User) webRequest.getAttribute("currentUser", RequestAttributes.SCOPE_REQUEST);
+        if (user != null) {
+            return user;
+        } else {
+            user = UserThreadLocal.getUser();
+            if (user != null) {
+                return user;
+            }
+        }
+        throw new GlobalException(CodeMsg.SESSION_ERROR);
+    }
+}
+```
+
+```java
+@Configuration
+public class WebMvcConfig extends WebMvcConfigurerAdapter {
+    @Autowired
+    UserArgumentResolver userArgumentResolver;
+
+    @Autowired
+    AccessInterceptor accessInterceptor;
+
+    /**
+     * 往Controller的参数中赋值
+     *
+     * @param argumentResolvers
+     */
+    @Override
+    public void addArgumentResolvers(List<HandlerMethodArgumentResolver> argumentResolvers) {
+        argumentResolvers.add(userArgumentResolver);
+    }
+
+    /**
+     * 将校验登录User是否为空的拦截器添加进来
+     *
+     * @param registry
+     */
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        // 加入的顺序就是执行的顺序
+        registry.addInterceptor(loginInterceptor).addPathPatterns("/**");
+        registry.addInterceptor(accessInterceptor);
+        super.addInterceptors(registry);
+    }
+}
+```
+
+**ThreadLocal set 方法源码：**
+
+```java
+ /* ThreadLocal values pertaining to this thread. This map is maintained
+  * by the ThreadLocal class. 
+  */
+ThreadLocal.ThreadLocalMap threadLocals = null;
+
+public void set(T value) {
+    Thread t = Thread.currentThread();
+    ThreadLocalMap map = getMap(t);
+    if (map != null)
+        map.set(this, value);
+    else
+        createMap(t, value);
+}
+
+ThreadLocalMap getMap(Thread t) {
+    return t.threadLocals;
+}
+```
+
+ThreadLocalMap 需要要关注一下，而 ThreadLocalMap 是当前线程 Thread 一个叫 threadLocals 的变量中获取的
+
+每个线程 Thread 都维护了自己的 threadLocals 变量，所以在每个线程创建 ThreadLocal 的时候，实际上数据是存在自己线程 Thread 的 threadLocals 变量里面的，别人没办法拿到，从而实现了隔离
+
+**ThreadLocalMap 作为内部类，其实并没有实现 Map 接口，而且它的 Entry 是继承 WeakReference（弱引用）
+
+```java
+static class ThreadLocalMap {
+
+/**
+* The entries in this hash map extend WeakReference, using
+* its main ref field as the key (which is always a
+* ThreadLocal object).  Note that null keys (i.e. entry.get()
+* == null) mean that the key is no longer referenced, so the
+* entry can be expunged from table.  Such entries are referred to
+* as "stale entries" in the code that follows.
+*/
+static class Entry extends WeakReference<ThreadLocal<?>> {
+    /** The value associated with this ThreadLocal. */
+    Object value;
+
+    Entry(ThreadLocal<?> k, Object v) {
+        super(k);
+        value = v;
+    }
+}
+
+/**
+* The initial capacity -- MUST be a power of two.
+*/
+private static final int INITIAL_CAPACITY = 16;
+
+/**
+* The table, resized as necessary.
+* table.length MUST always be a power of two.
+*/
+private Entry[] table;
+```
+
+用数组是因为开发过程中一个线程可以有多个 TreadLocal 来存放不同类型的对象的，但是他们都将放到你当前线程的 ThreadLocalMap 里，所以肯定要数组来存
+
+**ThreadMap 的 set 方法，解决 Hash 冲突**
+
+```java
+private void set(ThreadLocal<?> key, Object value) {
+
+    // We don't use a fast path as with get() because it is at
+    // least as common to use set() to create new entries as
+    // it is to replace existing ones, in which case, a fast
+    // path would fail more often than not.
+    Entry[] tab = table;
+    int len = tab.length;
+    int i = key.threadLocalHashCode & (len-1);
+
+    for (Entry e = tab[i]; e != null; e = tab[i = nextIndex(i, len)]) {
+        ThreadLocal<?> k = e.get();
+
+        if (k == key) {
+            e.value = value;
+            return;
+        }
+
+        if (k == null) {
+            replaceStaleEntry(key, value, i);
+            return;
+        }
+    }
+
+    tab[i] = new Entry(key, value);
+    int sz = ++size;
+    if (!cleanSomeSlots(i, sz) && sz >= threshold)
+        rehash();
+}
+```
+
+ThreadLocalMap 在存储的时候会给每一个 ThreadLocal 对象一个 threadLocalHashCode ，在插入过程中，根据 ThreadLocal 对象的 hash 值，定位到 table 中的位置 i，**int i = key.threadLocalHashCode & (len-1)**
+
+然后会判断一下：如果当前位置是空的，就初始化一个 Entry 对象放在位置 i 上
+
+```java
+if (k == null) {
+    replaceStaleEntry(key, value, i);
+    return;
+}
+```
+如果位置i不为空，并且这个 Entry 对象的 key 正好是即将设置的 key，那么就刷新 Entry 中的 value
+
+```java
+if (k == key) {
+    e.value = value;
+    return;
+}
+```
+
+如果位置 i 的不为空，而且 key 不等于 entry，那就找下一个空位置，直到为空为止
+
+set 和 get 如果冲突严重的话，效率还是很低的
+
+**共享线程的 ThreadLocal 数据，使用 InheritableThreadLocal实例**
+
+```java
+final ThreadLocal threadLocal = new InheritableThreadLocal();
+```
+
+**ThreadLocal 内存泄漏问题**
+
+ThreadLocal 在保存的时候会把自己当做 key 存在 ThreadLocalMap 中，且现在 key 被设计成 WeakReference 弱引用（垃圾回收器线程扫描它所管辖的内存区域的过程中，一旦发现了只具有弱引用的对象，不管当前内存空间足够与否，都会回收它的内存）
+
+这就导致了一个问题，ThreadLocal 在没有外部强引用时，发生 GC 时会被回收，如果创建ThreadLocal 的线程一直持续运行，那么这个 Entry 对象中的 value 就有可能一直得不到回收，发生内存泄露
+
+就比如线程池里面的线程，线程都是复用的，那么之前的线程实例处理完之后，出于复用的目的线程依然存活，所以，ThreadLocal 设定的 value 值被持有，导致内存泄露
+
+**内存泄漏解决方案**
+
+在代码的最后使用 remove ，只要记得在 **使用的最后** 用 remove 把值清空就好了
+
+```java
+ThreadLocal<String> localName = new ThreadLocal();
+try {
+    localName.set("张三");
+    ……
+} finally {
+    localName.remove();
+}
+```
+
+---
+
+## 一个接口多个实现类的 Spring 注入方式
+
+```java
+public interface Interface1{
+    void fun();
+}
+```
+
+以下是接口的两个实现类，注意 @Service 注解的使用方式，给每个实现类标注了不同的名称，方便在 @Resource 注入时区别注入 Interface1 接口实现类：
+
+```java
+@Service("s1")
+public class Interface1Impl1 implements Interface1 {
+    @Override 
+    public void fun1() {
+        System.out.println("接口1实现类 ...");
+    }
+
+    public void fun2(){
+        System.out.println("接口1实现类1 fun2 ...");
+    } 
+}
+```
+
+```java
+@Service("s2") 
+public class Interface1Impl2 implements Interface1 { 
+    @Override 
+    public void fun1() { 
+        System.out.println("接口1实现类 ...");
+    } 
+
+    public void fun2(){
+        System.out.println("接口1实现类2 fun2 ..."); 
+    } 
+} 
+```
+
+**注入方式：**
+
+1. 通过 @Autowired 和 @Qualifier 配合注入
+
+```java
+@Autowired
+@Qualifier("interface1Impl1") // 指明实现类
+Interface1 interface1;    //正常启动
+```
+
+2. 使用 @Resource 注入，根据默认类名区分
+
+```java
+@Resource(name = "interface1Impl1")
+Interface1 interface1;    //正常启动
+```
+
+3. 使用 @Resource 注入，根据 @Service 指定的名称区分
+
+```java
+@Resource(name = "s1")
+Interface1 interface1;    //正常启动
+```
+
+--- 
+
+## Spring MVC 流程
+
+![SpringMVC执行流程](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/SpringMVC%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B.jpg?raw=true)
+
+1. 用户发送请求到前端控制器 DispatcherServlet
+2. DispatcherServlet 收到请求调用处理映射器 HandlerMapping 
+3. 处理器映射器找到具体的处理器（可以根据 xml 配置、注解进行查找），生成处理器对象及处理器拦截器一并返回给 DispatcherServlet
+4. DispatcherServlet 调用 HandlerAdapter 处理器适配器
+5. HandlerAdapter 经过适配调用具体的处理器（ Controller ）
+6. Controller 执行完成返回 ModelAndView
+7. HandlerAdapter 将 Controller 执行结果 ModelAndView 返回给 DispatcherServlet
+8. DispatcherServlet 将 ModelAndView 传给 ViewReslover 视图解析器
+9. ViewReslover 解析后返回具体 View
+10. DispatcherServlet 根据 View 进行渲染视图（即将模型数据填充至视图中）
+11. DispatcherServlet 响应用户
