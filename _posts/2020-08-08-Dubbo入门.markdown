@@ -28,7 +28,7 @@ Dubbo 是一款高性能、轻量级 Java RPC 架构。它实现了面向接口�
 
 它最大的特点是按照分层的方式来架构，使用这种方式可以使各个层之间解耦合（或者最大限度地松耦合）。从服务模型的角度来看，Dubbo采用的是一种非常简单的模型，要么是提供方提供服务，要么是消费方消费服务，所以基于这一点可以抽象出服务提供方（Provider）和服务消费方（Consumer）两个角色
 
-![Dubbo包图](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Dubbo%E5%8C%85%E5%9B%BE.jpg?raw=true)
+![Dubbo包图](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Dubbo%E5%8C%85%E5%9B%BE.jpg)
 
 从以上这个图可以清晰的看到各个模块之间依赖关系,其实以上的图只是展示了关键的模块依赖关系，还有部分模块比如dubbo-bootstrap清理模块等
 
@@ -53,11 +53,11 @@ Dubbo 是一款高性能、轻量级 Java RPC 架构。它实现了面向接口�
 
 Dubbo主要分为三层：业务层、RPC层、Remoting层
 
-![Dubbo分层](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Dubbo%E5%88%86%E5%B1%82.jpg?raw=true)
+![Dubbo分层](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Dubbo%E5%88%86%E5%B1%82.jpg)
 
 Dubbo总体架构
 
-![Dubbo总体架构](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Dubbo%E6%80%BB%E4%BD%93%E6%9E%B6%E6%9E%84.jpg?raw=true)
+![Dubbo总体架构](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Dubbo%E6%80%BB%E4%BD%93%E6%9E%B6%E6%9E%84.jpg)
 
 Dubbo框架设计一共划分了10个层，分别提供了各自需要关心和扩展的接口，构建整个服务生态系统
 
@@ -90,7 +90,7 @@ serialize 层放在 **common 模块**中以便更大程度复用
 
 Dubbo架构图
 
-![Dubbo架构图](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Dubbo%E6%9E%B6%E6%9E%84%E5%9B%BE.png?raw=true)
+![Dubbo架构图](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Dubbo%E6%9E%B6%E6%9E%84%E5%9B%BE.png)
 
 上述图所描述的调用流程如下：
 
@@ -118,13 +118,13 @@ Consumer在启动的时候会向注册中心订阅（第一次订阅会拉去全
 
 在获取到服务方的元数据之后可以进行RPC调用，在RPC调用后会向监控中心上报统计信息（比如并发数和调用的接口），定时每分钟发送一次统计数据到监控中心，开发人员可以在监控中心看到服务的调用情况
 
-![Dubbo调用流程图展开](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Dubbo%E8%B0%83%E7%94%A8%E6%B5%81%E7%A8%8B%E5%9B%BE%E5%B1%95%E5%BC%80.jpg?raw=true)
+![Dubbo调用流程图展开](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Dubbo%E8%B0%83%E7%94%A8%E6%B5%81%E7%A8%8B%E5%9B%BE%E5%B1%95%E5%BC%80.jpg)
 
 ---
 
 ## Dubbo 调用工作流
 
-![Dubbo调用工作流](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Dubbo%E8%B0%83%E7%94%A8%E5%B7%A5%E4%BD%9C%E6%B5%81.jpg?raw=true)
+![Dubbo调用工作流](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Dubbo%E8%B0%83%E7%94%A8%E5%B7%A5%E4%BD%9C%E6%B5%81.jpg)
 
 Dubbo 框架是用来处理分布式系统中，服务发现与注册以及调用问题的，并且管理调用过程
 
@@ -165,11 +165,11 @@ Dubbo 框架是用来处理分布式系统中，服务发现与注册以及调�
 
 上面讲到的服务调用流程中，开始服务提供者会进行初始化，将暴露给其他服务调用。服务消费者也需要初始化，并且在注册中心注册自己
 
-![Dubbo服务暴露实现原理](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Dubbo%E6%9C%8D%E5%8A%A1%E6%9A%B4%E9%9C%B2%E5%AE%9E%E7%8E%B0%E5%8E%9F%E7%90%86.jpg?raw=true)
+![Dubbo服务暴露实现原理](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Dubbo%E6%9C%8D%E5%8A%A1%E6%9A%B4%E9%9C%B2%E5%AE%9E%E7%8E%B0%E5%8E%9F%E7%90%86.jpg)
 
 首先来看看服务提供者暴露服务的整体机制：
 
-![Dubbo服务提供者暴露服务流程](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Dubbo%E6%9C%8D%E5%8A%A1%E6%8F%90%E4%BE%9B%E8%80%85%E6%9A%B4%E9%9C%B2%E6%9C%8D%E5%8A%A1%E6%B5%81%E7%A8%8B.png?raw=true)
+![Dubbo服务提供者暴露服务流程](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Dubbo%E6%9C%8D%E5%8A%A1%E6%8F%90%E4%BE%9B%E8%80%85%E6%9A%B4%E9%9C%B2%E6%9C%8D%E5%8A%A1%E6%B5%81%E7%A8%8B.png)
 
 Config 核心组件，在服务提供者初始化的时候，会通过 Config 组件中的 ServiceConfig 读取服务的配置信息
 
@@ -219,7 +219,7 @@ private void doExportUrls() {
 
 ## 消费者消费服务机制
 
-![Dubbo服务消费者消费服务机制](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Dubbo%E6%9C%8D%E5%8A%A1%E6%B6%88%E8%B4%B9%E8%80%85%E6%B6%88%E8%B4%B9%E6%9C%8D%E5%8A%A1%E6%9C%BA%E5%88%B6.png?raw=true)
+![Dubbo服务消费者消费服务机制](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Dubbo%E6%9C%8D%E5%8A%A1%E6%B6%88%E8%B4%B9%E8%80%85%E6%B6%88%E8%B4%B9%E6%9C%8D%E5%8A%A1%E6%9C%BA%E5%88%B6.png)
 
 服务消费者首先持有远程服务实例生成的 Invoker，然后把 Invoker 转换成用户接口的动态代理引用
 
@@ -390,7 +390,7 @@ Dubbo 通过注册中心实现了分布式环境中服务的注册和发现
 
 注册中心工作流程：
 
-![Dubbo注册中心工作流程](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Dubbo%E6%B3%A8%E5%86%8C%E4%B8%AD%E5%BF%83%E5%B7%A5%E4%BD%9C%E6%B5%81%E7%A8%8B.jpg?raw=true)
+![Dubbo注册中心工作流程](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Dubbo%E6%B3%A8%E5%86%8C%E4%B8%AD%E5%BF%83%E5%B7%A5%E4%BD%9C%E6%B5%81%E7%A8%8B.jpg)
 
 主要工作流程可以分为如下几步：
 
@@ -420,13 +420,13 @@ Dubbo 有四种注册中心的实现，分别是 ZooKeeper，Redis，Simple 和 
 
 ## Dubbo 集群容错
 
-![Dubbo集群容错](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Dubbo%E9%9B%86%E7%BE%A4%E5%AE%B9%E9%94%99.jpg?raw=true)
+![Dubbo集群容错](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Dubbo%E9%9B%86%E7%BE%A4%E5%AE%B9%E9%94%99.jpg)
 
 分布式服务多以集群形式出现，会涉及到 **Cluster，Directory，Router，LoadBalance** 几个核心组件
 
-![Dubbo集群容错架构图](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Dubbo%E9%9B%86%E7%BE%A4%E5%AE%B9%E9%94%99%E6%9E%B6%E6%9E%84%E5%9B%BE.png?raw=true)
+![Dubbo集群容错架构图](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Dubbo%E9%9B%86%E7%BE%A4%E5%AE%B9%E9%94%99%E6%9E%B6%E6%9E%84%E5%9B%BE.png)
 
-![Dubbo集群容错架构图2](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Dubbo%E9%9B%86%E7%BE%A4%E5%AE%B9%E9%94%99%E6%9E%B6%E6%9E%84%E5%9B%BE2.png?raw=true)
+![Dubbo集群容错架构图2](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Dubbo%E9%9B%86%E7%BE%A4%E5%AE%B9%E9%94%99%E6%9E%B6%E6%9E%84%E5%9B%BE2.png)
 
 生成 Invoker 对象。根据 Cluster 实现的不同，生成不同类型的 ClusterInvoker 对象。通过 ClusertInvoker 中的 Invoker 方法启动调用流程。
 
@@ -525,7 +525,7 @@ Dubbo 的负载均衡策略有四种：
 
 服务消费者经过容错，Invoker 列表，路由和负载均衡以后，会对 Invoker 进行过滤，之后通过 Client 编码，序列化发给服务提供者
 
-![Dubbo远程调用](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Dubbo%E8%BF%9C%E7%A8%8B%E8%B0%83%E7%94%A8.jpg?raw=true)
+![Dubbo远程调用](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Dubbo%E8%BF%9C%E7%A8%8B%E8%B0%83%E7%94%A8.jpg)
 
 (过滤，发送请求，编码，序列化发送给服务提供者)
 
@@ -582,7 +582,7 @@ Dubbo 系统有自带的系统过滤器，服务提供者有 11 个，服务消�
 
 在 HashMap 中会找到对应的 Request 对象，并且返回给服务消费者
 
-![Dubbo服务消费者请求和响应图](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Dubbo%E6%9C%8D%E5%8A%A1%E6%B6%88%E8%B4%B9%E8%80%85%E8%AF%B7%E6%B1%82%E5%92%8C%E5%93%8D%E5%BA%94%E5%9B%BE.png?raw=true)
+![Dubbo服务消费者请求和响应图](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Dubbo%E6%9C%8D%E5%8A%A1%E6%B6%88%E8%B4%B9%E8%80%85%E8%AF%B7%E6%B1%82%E5%92%8C%E5%93%8D%E5%BA%94%E5%9B%BE.png)
 
 协议打包好以后就需要给协议编码和序列化。这里需要用到 Dubbo 的编码器，其过程是将信息传化成字节流
 
