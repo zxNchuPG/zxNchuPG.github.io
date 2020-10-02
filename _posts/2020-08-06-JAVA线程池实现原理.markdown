@@ -58,7 +58,7 @@ tags:
 
 Java中的线程池核心实现类是ThreadPoolExecutor，本章基于JDK 1.8的源码来分析Java线程池的核心设计与实现。首先来看一下ThreadPoolExecutor的UML类图，了解下ThreadPoolExecutor的继承关系
 
-![Executor类图](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Executor%E7%B1%BB%E5%9B%BE.png?raw=true)
+![Executor类图](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Executor%E7%B1%BB%E5%9B%BE.png)
 
 **java.util.concurrent.Executor**
 
@@ -91,7 +91,7 @@ AbstractExecutorService则是上层的抽象类，将执行任务的流程串联
 
 ThreadPoolExecutor运行机制：
 
-![ThreadPoolExecutor运行机制](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/ThreadPoolExecutor%E8%BF%90%E8%A1%8C%E6%9C%BA%E5%88%B6.png?raw=true)
+![ThreadPoolExecutor运行机制](https://gitee.com/zxNchuPG/blogimage/raw/master/img/ThreadPoolExecutor%E8%BF%90%E8%A1%8C%E6%9C%BA%E5%88%B6.png)
 
 通过上图可以看出线程池的**生产者-消费者模式**，将线程和任务两者解耦，并不直接关联，从而良好的缓冲任务，复用线程
 
@@ -166,7 +166,7 @@ private static final int TERMINATED =  3 << COUNT_BITS;
 
 生命周期转换：
 
-![生命周期转换](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F%E8%BD%AC%E6%8D%A2.png?raw=true)
+![生命周期转换](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F%E8%BD%AC%E6%8D%A2.png)
 
 ---
 
@@ -206,7 +206,7 @@ private static int workerCountOf(int c)  { return c & CAPACITY; }
 - 如果**workerCount >= corePoolSize && workerCount < maximumPoolSize**，且线程池内的阻塞队列已满，则创建并启动一个线程来执行新提交的任务
 - 如果**workerCount >= maximumPoolSize**，并且线程池内的阻塞队列已满, 则根据拒绝策略来处理该任务, 默认的处理方式是直接抛异常
 
-![线程池线程调度执行流程图](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E7%BA%BF%E7%A8%8B%E6%B1%A0%E7%BA%BF%E7%A8%8B%E8%B0%83%E5%BA%A6%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E5%9B%BE.png?raw=true)
+![线程池线程调度执行流程图](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E7%BA%BF%E7%A8%8B%E6%B1%A0%E7%BA%BF%E7%A8%8B%E8%B0%83%E5%BA%A6%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E5%9B%BE.png)
 
 ---
 
@@ -300,7 +300,7 @@ public void execute(Runnable command) {
 
 阻塞队列常用于生产者和消费者的场景，生产者是往队列里添加元素的线程，消费者是从队列里拿元素的线程。阻塞队列就是生产者存放元素的容器，而消费者也只从容器里拿元素
 
-![线程池阻塞队列](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E7%BA%BF%E7%A8%8B%E6%B1%A0%E9%98%BB%E5%A1%9E%E9%98%9F%E5%88%97.png?raw=true)
+![线程池阻塞队列](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E7%BA%BF%E7%A8%8B%E6%B1%A0%E9%98%BB%E5%A1%9E%E9%98%9F%E5%88%97.png)
 
 ```java
 private final BlockingQueue<Runnable> workQueue;
@@ -308,7 +308,7 @@ private final BlockingQueue<Runnable> workQueue;
 
 java.util.concurrent.BlockingQueue的实现类
 
-![BlockingQueue实现类](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/BlockingQueue%E5%AE%9E%E7%8E%B0%E7%B1%BB.png?raw=true)
+![BlockingQueue实现类](https://gitee.com/zxNchuPG/blogimage/raw/master/img/BlockingQueue%E5%AE%9E%E7%8E%B0%E7%B1%BB.png)
 
 使用不同的队列可以实现不一样的任务存取策略，阻塞队列的成员：
 
@@ -399,7 +399,7 @@ private Runnable getTask() {
 }
 ```
 
-![线程获取执行流程](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E7%BA%BF%E7%A8%8B%E8%8E%B7%E5%8F%96%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B.jpg?raw=true)
+![线程获取执行流程](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E7%BA%BF%E7%A8%8B%E8%8E%B7%E5%8F%96%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B.jpg)
 
 getTask这部分进行了多次判断，为的是控制线程的数量，使其符合线程池的状态。如果线程池现在不应该持有那么多线程，则会返回null值。工作线程Worker会不断接收新任务去执行，而当工作线程Worker接收不到任务的时候，就会开始被回收
 
@@ -419,7 +419,8 @@ public interface RejectedExecutionHandler {
 
 拒绝策略是一个接口，用户可以通过实现这个接口去定制拒绝策略，也可以选择JDK提供的四种已有拒绝策略（ThreadPoolExecutor类中），其特点如下:
 
-![拒绝策略实现类](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E6%8B%92%E7%BB%9D%E7%AD%96%E7%95%A5%E5%AE%9E%E7%8E%B0%E7%B1%BB.png?raw=true)
+![拒绝策略实现类](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E6%8B%92%E7%BB%9D%E7%AD%96%E7%95%A5%E5%AE%9E%E7%8E%B0%E7%B1%BB.png)
+
 
 |名称 | 描述    |
 |:-------|:-----------|
@@ -478,7 +479,7 @@ firstTask用它来保存传入的第一个任务，这个任务可以有也可�
 
 如果这个值是null，那么就需要创建一个线程去执行任务列表（workQueue）中的任务，也就是非核心线程的创建
 
-![worker执行任务的模型](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/worker%E6%89%A7%E8%A1%8C%E4%BB%BB%E5%8A%A1%E7%9A%84%E6%A8%A1%E5%9E%8B.jpg?raw=true)
+![worker执行任务的模型](https://gitee.com/zxNchuPG/blogimage/raw/master/img/worker%E6%89%A7%E8%A1%8C%E4%BB%BB%E5%8A%A1%E7%9A%84%E6%A8%A1%E5%9E%8B.jpg)
 
 线程池需要管理线程的生命周期，需要在线程长时间不运行的时候进行回收。线程池使用一张Hash表去持有线程的引用，这样可以通过添加引用、移除引用这样的操作来控制线程的生命周期。这个时候重要的就是如何判断线程是否在运行
 
@@ -540,7 +541,7 @@ public boolean isLocked() { return isHeldExclusively(); }
 
 在线程回收过程中就使用到了这种特性，回收过程如下图所示：
 
-![worker线程回收过程](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/worker%E7%BA%BF%E7%A8%8B%E5%9B%9E%E6%94%B6%E8%BF%87%E7%A8%8B.png?raw=true)
+![worker线程回收过程](https://gitee.com/zxNchuPG/blogimage/raw/master/img/worker%E7%BA%BF%E7%A8%8B%E5%9B%9E%E6%94%B6%E8%BF%87%E7%A8%8B.png)
 
 ---
 
@@ -619,7 +620,7 @@ private boolean addWorker(Runnable firstTask, boolean core) {
 }
 ```
 
-![addWorker执行流程](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/addWorker%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B.jpg?raw=true)
+![addWorker执行流程](https://gitee.com/zxNchuPG/blogimage/raw/master/img/addWorker%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B.jpg)
 
 ---
 
@@ -779,7 +780,7 @@ runWorker()方法工作：
 }
 ```
 
-![processWorkerExit回收](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/processWorkerExit%E5%9B%9E%E6%94%B6.png?raw=true)
+![processWorkerExit回收](https://gitee.com/zxNchuPG/blogimage/raw/master/img/processWorkerExit%E5%9B%9E%E6%94%B6.png)
 
 在这个方法中，将线程引用移出线程池（workers.remove(w)）就已经结束了线程销毁的部分。但由于引起线程销毁的可能性有很多，线程池还要判断是什么引发了这次销毁，是否要改变线程池的现阶段状态，是否要根据新状态，重新分配线程
 
@@ -852,7 +853,7 @@ tryTerminate()方法的作用是尝试终止线程池，它会在所有可能终
 - 执行任务
 - 如果getTask结果为null则跳出循环，执行processWorkerExit()方法，销毁线程
 
-![runWorker执行流程](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/runWorker%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B.png?raw=true)
+![runWorker执行流程](https://gitee.com/zxNchuPG/blogimage/raw/master/img/runWorker%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B.png)
 
 ---
 
