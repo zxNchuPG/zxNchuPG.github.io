@@ -189,7 +189,7 @@ NIO 使用了多路复用器机制，以 socket 使用来说，多路复用器�
 
 如下是NIO方式进行文件拷贝操作的示例，见下图：
 
-![NIO方式拷贝文件](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/NIO%E6%96%B9%E5%BC%8F%E6%8B%B7%E8%B4%9D%E6%96%87%E4%BB%B6.jpg?raw=true)
+![NIO方式拷贝文件](https://gitee.com/zxNchuPG/blogimage/raw/master/img/NIO%E6%96%B9%E5%BC%8F%E6%8B%B7%E8%B4%9D%E6%96%87%E4%BB%B6.jpg)
 
 通过比较 New IO 的使用方式可以发现，新的 IO 操作不再面向 Stream 来进行操作了，改为了通道 Channel，并且使用了更加灵活的缓存区类 Buffer，Buffer 只是缓存区定义接口， 根据需要，我们可以选择对应类型的缓存区实现类。在 java NIO 编程中，我们需要理解以下 3 个对象 Channel、Buffer和Selector：
 
@@ -221,7 +221,7 @@ ByteBuffer 分配内存的两种方式：
 
 这里再来看一个 NIO 模型下的 TCP 服务器的实现，通过代码可以看到 Selector 正是 NIO 模型下 TCP Server 实现 IO 复用的关键，请仔细理解下段代码 while 循环中的逻辑，见下图：
 
-![NIO模型实现TCP服务器](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/NIO%E6%A8%A1%E5%9E%8B%E5%AE%9E%E7%8E%B0TCP%E6%9C%8D%E5%8A%A1%E5%99%A8.jpg?raw=true)
+![NIO模型实现TCP服务器](https://gitee.com/zxNchuPG/blogimage/raw/master/img/NIO%E6%A8%A1%E5%9E%8B%E5%AE%9E%E7%8E%B0TCP%E6%9C%8D%E5%8A%A1%E5%99%A8.jpg)
 
 ---
 
@@ -289,13 +289,13 @@ Java AIO 就是 Java 作为对异步 IO 提供支持的 NIO.2 ，Java NIO2 (JSR 
 
 IO 多路复用 （I/O multiplexing），IO 多路复用是一种同步 IO 模型，实现一个线程可以监视多个文件句柄；一旦某个文件句柄就绪，就能够通知应用程序进行相应的读写操作；没有文件句柄就绪时会阻塞应用程序，交出cpu。多路是指网络连接，复用指的是同一个线程
 
-![IO多路复用](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/IO%E5%A4%9A%E8%B7%AF%E5%A4%8D%E7%94%A8.png?raw=true)
+![IO多路复用](https://gitee.com/zxNchuPG/blogimage/raw/master/img/IO%E5%A4%9A%E8%B7%AF%E5%A4%8D%E7%94%A8.png)
 
 **I/O multiplexing 这里面的 multiplexing 指的其实是在单个线程通过记录跟踪每一个Sock(I/O流)的状态(对应空管塔里面的Fight progress strip槽)来同时管理多个I/O流**
 
 发明它的原因，是尽量多的提高服务器的吞吐能力
 
-![IO多路复用2](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/IO%E5%A4%9A%E8%B7%AF%E5%A4%8D%E7%94%A82.jpg?raw=true)
+![IO多路复用2](https://gitee.com/zxNchuPG/blogimage/raw/master/img/IO%E5%A4%9A%E8%B7%AF%E5%A4%8D%E7%94%A82.jpg)
 
 在同一个线程里面，通过拨开关的方式，来同时传输多个I/O流
 
