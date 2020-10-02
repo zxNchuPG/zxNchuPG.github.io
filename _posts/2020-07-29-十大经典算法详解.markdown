@@ -185,7 +185,7 @@ public static void insertionSort2(int[] array) {
 
 选择一个增量序列，初始增量`gap=length/2`，后续元素依次为前一元素除2，直至`gap=1`；每轮以`gap`为步长，在列表上进行采样，将列表分为`gap`个小组，在每个小组内进行选择排序；重复第二步，直至`gap=1`；辅助理解参考[博客园](https://www.cnblogs.com/chengxiao/p/6104371.html)
 
-![希尔排序](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/shellSort.jpg?raw=true)
+![shellSort](https://gitee.com/zxNchuPG/blogimage/raw/master/img/shellSort.jpg)
 
 ```java
 // 直接插入排序增量是 1 ，希尔排序增量是 gap
@@ -241,7 +241,7 @@ public static void shellSort(int[] array) {
 
 两两合并，先比较左右子数组头部元素（大或小），将小的头部元素移动到新数组（此时移动的旧子数组头部因为已经为空，所以同数组的下一个元素晋升为新的头元素）
 当一个子数组为空的时候，依次将另一个子数组剩余元素移动到新数组末尾
-![MergeSort](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/MergeSort.jpg?raw=true)
+![MergeSort](https://gitee.com/zxNchuPG/blogimage/raw/master/img/MergeSort.jpg)
 
 **递归版本：**
 
@@ -515,7 +515,7 @@ void quickSortIteration(vector<int>& array) {
 2. 取出堆顶元素（最大元素），作为有序数数组末尾元素，并对二叉树进行调整使其满足堆的特性；
 3. 重复上一步骤，依次取出堆顶元素，并插入到有序数组中，上一插入元素之前的位置，直到堆空为止；
 
-![Heapsort](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Heapsort.jpg?raw=true)
+![Heapsort](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Heapsort.jpg)
 
 左程云算法：
 
