@@ -84,7 +84,7 @@ ZooKeeper 主要的系统功能是在分布式系统中协作多个任务
 
 ZooKeeper的数据结构，跟Unix文件系统非常类似，可以看做是一颗树，每个节点叫做ZNode，并且暴露操作 API 接口。每一个节点可以通过路径来标识，结构图如下：
 
-![Zookeeper数据结构](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Zookeeper%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84.jpg?raw=true)
+![Zookeeper数据结构](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Zookeeper%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84.jpg)
 
 **Znode 的节点类型：** 在新建 znode 节点，需要指定该节点的类型，不同的类型决定了 znode 节点的行为方式，Znode 的类型分为三种：
 
@@ -181,11 +181,11 @@ ZooKeeper 客户端获得服务器的数据或者变化，不是通过轮询的�
 
 3. 修改公共配置后应用不需要重新部署
 
-![Zookeeper统一配置管理](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Zookeeper%E7%BB%9F%E4%B8%80%E9%85%8D%E7%BD%AE%E7%AE%A1%E7%90%86.jpg?raw=true)
+![Zookeeper统一配置管理](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Zookeeper%E7%BB%9F%E4%B8%80%E9%85%8D%E7%BD%AE%E7%AE%A1%E7%90%86.jpg)
 
 做法：我们可以将 common.yml 这份配置放在 ZooKeeper 的 Znode 节点中，系统 A、B、C 监听着这个 Znode 节点有无变更，如果变更了，及时响应
 
-![Zookeeper监听统一配置](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Zookeeper%E7%9B%91%E5%90%AC%E7%BB%9F%E4%B8%80%E9%85%8D%E7%BD%AE.jpg?raw=true)
+![Zookeeper监听统一配置](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Zookeeper%E7%9B%91%E5%90%AC%E7%BB%9F%E4%B8%80%E9%85%8D%E7%BD%AE.jpg)
 
 **代码大致实现演示，需要用到的 jar 是 zkclient**
 
@@ -349,11 +349,11 @@ public class ZkConfigTest {
 
 **测试结果**
 
-![Zookeeper配置中心测试结果](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Zookeeper%E9%85%8D%E7%BD%AE%E4%B8%AD%E5%BF%83%E6%B5%8B%E8%AF%95%E7%BB%93%E6%9E%9C.png?raw=true)
+![Zookeeper配置中心测试结果](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Zookeeper%E9%85%8D%E7%BD%AE%E4%B8%AD%E5%BF%83%E6%B5%8B%E8%AF%95%E7%BB%93%E6%9E%9C.png)
 
 **应用监听**
 
-![Zookeeper应用监听测试结果](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Zookeeper%E5%BA%94%E7%94%A8%E7%9B%91%E5%90%AC%E6%B5%8B%E8%AF%95%E7%BB%93%E6%9E%9C.png?raw=true)
+![Zookeeper应用监听测试结果](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Zookeeper%E5%BA%94%E7%94%A8%E7%9B%91%E5%90%AC%E6%B5%8B%E8%AF%95%E7%BB%93%E6%9E%9C.png)
 
 ---
 
@@ -370,7 +370,7 @@ public class ZkConfigTest {
 
 别人访问 www.nchu.com 即可访问到机器，而不是通过IP去访问
 
-![Zookeeper统一命名服务](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Zookeeper%E7%BB%9F%E4%B8%80%E5%91%BD%E5%90%8D%E6%9C%8D%E5%8A%A1.jpg?raw=true)
+![Zookeeper统一命名服务](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Zookeeper%E7%BB%9F%E4%B8%80%E5%91%BD%E5%90%8D%E6%9C%8D%E5%8A%A1.jpg)
 
 ---
 
@@ -396,11 +396,11 @@ public class ZkConfigTest {
 
 系统 A、B、C 都去访问 `/locks` 节点
 
-![Zookeeper分布式锁](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Zookeeper%E5%88%86%E5%B8%83%E5%BC%8F%E9%94%81.jpg?raw=true)
+![Zookeeper分布式锁](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Zookeeper%E5%88%86%E5%B8%83%E5%BC%8F%E9%94%81.jpg)
 
 访问的时候会创建带顺序号的临时/短暂( EPHEMERAL_SEQUENTIAL )节点，比如，系统 A 创建了 id_000000 节点，系统 B 创建了 id_000002 节点，系统 C 创建了 id_000001 节点
 
-![Zookeeper分布式锁2](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Zookeeper%E5%88%86%E5%B8%83%E5%BC%8F%E9%94%812.jpg?raw=true)
+![Zookeeper分布式锁2](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Zookeeper%E5%88%86%E5%B8%83%E5%BC%8F%E9%94%812.jpg)
 
 接着，拿到 /locks 节点下的所有子节点( id_000000 , id_000001 , id_000002 )，判断自己创建的是不是最小的那个节点
 
@@ -426,9 +426,9 @@ public class ZkConfigTest {
 
 ##  ZooKeeper 架构
 
-![ZooKeeper架构1](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/ZooKeeper%E6%9E%B6%E6%9E%841.jpg?raw=true)
+![ZooKeeper架构1](https://gitee.com/zxNchuPG/blogimage/raw/master/img/ZooKeeper%E6%9E%B6%E6%9E%841.jpg)
 
-![ZooKeeper架构2](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/ZooKeeper%E6%9E%B6%E6%9E%842.jpg?raw=true)
+![ZooKeeper架构2](https://gitee.com/zxNchuPG/blogimage/raw/master/img/ZooKeeper%E6%9E%B6%E6%9E%842.jpg)
 
 ZooKeeper 服务器端运行于两种模式下：
 - 独立模式
@@ -572,7 +572,7 @@ Leader 选举可以分为两个不同的阶段，第一个是我们提到的 Lea
 
 假设 Leader (server2) 发送 commit 请求，他发送给了 server3，然后要发给 server1 的时候突然挂了。这个时候重新选举的时候我们如果把 server1 作为 Leader 的话，那么肯定会产生数据不一致性，因为 server3 肯定会提交刚刚 server2 发送的 commit 请求的提案，而 server1 根本没收到所以会丢弃
 
-![Zab崩溃恢复](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Zab%E5%B4%A9%E6%BA%83%E6%81%A2%E5%A4%8D.jpg?raw=true)
+![Zab崩溃恢复](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Zab%E5%B4%A9%E6%BA%83%E6%81%A2%E5%A4%8D.jpg)
 
 所以这个时候 server1 已经不可能成为 Leader 了，因为 server1 和 server3 进行投票选举的时候会比较 ZXID ，而此时 server3 的 ZXID 肯定比 server1 的大了
 
@@ -580,7 +580,7 @@ Leader 选举可以分为两个不同的阶段，第一个是我们提到的 Lea
 
 假设 Leader (server2) 此时同意了提案 N1，自身提交了这个事务并且要发送给所有 Follower 要 commit 的请求，却在这个时候挂了，此时肯定要重新进行 Leader 的选举，比如说此时选 server1 为 Leader （这无所谓）。但是过了一会，这个 挂掉的 Leader 又重新恢复了 ，此时它肯定会作为 Follower 的身份进入集群中，需要注意的是刚刚 server2 已经同意提交了提案 N1，但其他 server 并没有收到它的 commit 信息，所以其他 server 不可能再提交这个提案 N1 了，这样就会出现数据不一致性问题了，所以 该提案 N1 最终需要被抛弃掉
 
-![Zab崩溃恢复2](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Zab%E5%B4%A9%E6%BA%83%E6%81%A2%E5%A4%8D2.jpg?raw=true)
+![Zab崩溃恢复2](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Zab%E5%B4%A9%E6%BA%83%E6%81%A2%E5%A4%8D2.jpg)
 
 ---
 
@@ -620,7 +620,7 @@ SyncRequestProcessor 负责将事务持久化到磁盘上。实际上就是将�
 
 在切换到仲裁模式时，服务器的流水线则有一些变化
 
-![zookeeper仲裁模式](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/zookeeper%E4%BB%B2%E8%A3%81%E6%A8%A1%E5%BC%8F.jpg?raw=true)
+![zookeeper仲裁模式](https://gitee.com/zxNchuPG/blogimage/raw/master/img/zookeeper%E4%BB%B2%E8%A3%81%E6%A8%A1%E5%BC%8F.jpg)
 
 第一个处理器同样是 PrepRequestProcessor，而之后的处理器则为 ProposalRequestProcessor，该处理器会准备一个提议，并将该提议发送给跟随者，并且会把所有请求转发给 CommitRequestProcessor，对于写操作请求，还会把请求转发给 SyncRequestProcessor 处理器
 
