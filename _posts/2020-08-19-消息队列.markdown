@@ -40,20 +40,20 @@ MQ 全称 Message Queue，消息队列（ MQ ）是一种应用程序对应用�
 
 传统模式：
 
-![消息队列之解耦传统模式](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E6%B6%88%E6%81%AF%E9%98%9F%E5%88%97%E4%B9%8B%E8%A7%A3%E8%80%A6%E4%BC%A0%E7%BB%9F%E6%A8%A1%E5%BC%8F.jpg?raw=true)
+![消息队列之解耦传统模式](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E6%B6%88%E6%81%AF%E9%98%9F%E5%88%97%E4%B9%8B%E8%A7%A3%E8%80%A6%E4%BC%A0%E7%BB%9F%E6%A8%A1%E5%BC%8F.jpg)
 
 **缺点：** 系统间耦合性太强，如上图所示，系统A在代码中直接调用系统B和系统C的代码，如果将来D系统接入，系统A还需要修改代码，过于麻烦
 
 中间件模式：
 
-![消息队列之解耦中间件模式](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E6%B6%88%E6%81%AF%E9%98%9F%E5%88%97%E4%B9%8B%E8%A7%A3%E8%80%A6%E4%B8%AD%E9%97%B4%E4%BB%B6%E6%A8%A1%E5%BC%8F.jpg?raw=true)
+![消息队列之解耦中间件模式](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E6%B6%88%E6%81%AF%E9%98%9F%E5%88%97%E4%B9%8B%E8%A7%A3%E8%80%A6%E4%B8%AD%E9%97%B4%E4%BB%B6%E6%A8%A1%E5%BC%8F.jpg)
 
 **优点：** 将消息写入消息队列，需要消息的系统自己从消息队列中订阅，从而系统A不需要做任何修改
 
 如果模块之间不存在直接调用，那么新增模块或者修改模块就对其他模块影响较小，这样系统的可扩展性无疑更好一些
 
 最常见的**事件驱动架构**类似生产者消费者模式，在大型网站中通常用利用消息队列实现事件驱动结构。如下图所示
-![消息队列实现事件驱动](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E6%B6%88%E6%81%AF%E9%98%9F%E5%88%97%E5%AE%9E%E7%8E%B0%E4%BA%8B%E4%BB%B6%E9%A9%B1%E5%8A%A8.png?raw=true)
+![消息队列实现事件驱动](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E6%B6%88%E6%81%AF%E9%98%9F%E5%88%97%E5%AE%9E%E7%8E%B0%E4%BA%8B%E4%BB%B6%E9%A9%B1%E5%8A%A8.png)
 
 消息队列是利用发布-订阅模式工作，消息发送者（生产者）发布消息，一个或多个消息接受者（消费者）订阅消息。 从上图可以看到消息发送者（生产者）和消息接受者（消费者）之间没有直接耦合，消息发送者将消息发送至分布式消息队列即结束对消息的处理，消息接受者从分布式消息队列获取该消息后进行后续处理，并不需要知道该消息从何而来。对新增业务，只要对该类消息感兴趣，即可订阅该消息，对原有系统和业务没有任何影响，从而实现网站业务的可扩展性设计
 
@@ -69,11 +69,11 @@ MQ 全称 Message Queue，消息队列（ MQ ）是一种应用程序对应用�
 
 **传统模式：**
 
-![消息队列之异步传统模式](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E6%B6%88%E6%81%AF%E9%98%9F%E5%88%97%E4%B9%8B%E5%BC%82%E6%AD%A5%E4%BC%A0%E7%BB%9F%E6%A8%A1%E5%BC%8F.jpg?raw=true)
+![消息队列之异步传统模式](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E6%B6%88%E6%81%AF%E9%98%9F%E5%88%97%E4%B9%8B%E5%BC%82%E6%AD%A5%E4%BC%A0%E7%BB%9F%E6%A8%A1%E5%BC%8F.jpg)
 
 **缺点：** 一些非必要的业务逻辑以同步的方式运行，太耗费时间
 
-![消息队列之异步中间件模式](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E6%B6%88%E6%81%AF%E9%98%9F%E5%88%97%E4%B9%8B%E5%BC%82%E6%AD%A5%E4%B8%AD%E9%97%B4%E4%BB%B6%E6%A8%A1%E5%BC%8F.jpg?raw=true)
+![消息队列之异步中间件模式](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E6%B6%88%E6%81%AF%E9%98%9F%E5%88%97%E4%B9%8B%E5%BC%82%E6%AD%A5%E4%B8%AD%E9%97%B4%E4%BB%B6%E6%A8%A1%E5%BC%8F.jpg)
 
 **优点：** 将消息写入消息队列，非必要的业务逻辑以异步的方式运行，加快响应速度
 
@@ -89,11 +89,10 @@ MQ 全称 Message Queue，消息队列（ MQ ）是一种应用程序对应用�
 
 **削峰：**
 
-![消息队列之削峰传统模式](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E6%B6%88%E6%81%AF%E9%98%9F%E5%88%97%E4%B9%8B%E5%89%8A%E5%B3%B0%E4%BC%A0%E7%BB%9F%E6%A8%A1%E5%BC%8F.jpg?raw=true)
-
+![消息队列之削峰传统模式](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E6%B6%88%E6%81%AF%E9%98%9F%E5%88%97%E4%B9%8B%E5%89%8A%E5%B3%B0%E4%BC%A0%E7%BB%9F%E6%A8%A1%E5%BC%8F.jpg)
 **缺点：** 并发量大的时候，所有的请求直接怼到数据库，造成数据库连接异常
 
-![消息队列之削峰中间件模式](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E6%B6%88%E6%81%AF%E9%98%9F%E5%88%97%E4%B9%8B%E5%89%8A%E5%B3%B0%E4%B8%AD%E9%97%B4%E4%BB%B6%E6%A8%A1%E5%BC%8F.jpg?raw=true)
+![消息队列之削峰中间件模式](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E6%B6%88%E6%81%AF%E9%98%9F%E5%88%97%E4%B9%8B%E5%89%8A%E5%B3%B0%E4%B8%AD%E9%97%B4%E4%BB%B6%E6%A8%A1%E5%BC%8F.jpg)
 
 **优点：** 系统 A 慢慢的按照数据库能处理的并发量，从消息队列中慢慢拉取消息。在生产中，这个短暂的高峰期积压是允许的
 
@@ -135,13 +134,13 @@ ActiveMQ 就是基于 JMS 规范实现的
 
 1. 点到点（P2P）模型
 
-![JMS点到点模型](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/JMS%E7%82%B9%E5%88%B0%E7%82%B9%E6%A8%A1%E5%9E%8B.png?raw=true)
+![JMS点到点模型](https://gitee.com/zxNchuPG/blogimage/raw/master/img/JMS%E7%82%B9%E5%88%B0%E7%82%B9%E6%A8%A1%E5%9E%8B.png)
 
 使用队列（Queue）作为消息通信载体；满足生产者与消费者模式，**一条消息只能被一个消费者使用，** 未被消费的消息在队列中保留直到被消费或超时。比如：我们生产者发送 100 条消息的话，两个消费者来消费一般情况下两个消费者会按照消息发送的顺序各自消费一半（也就是你一个我一个的消费）
 
 2. 发布/订阅（Pub/Sub）模型
 
-![JMS发布订阅模型](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/JMS%E5%8F%91%E5%B8%83%E8%AE%A2%E9%98%85%E6%A8%A1%E5%9E%8B.png?raw=true)
+![JMS发布订阅模型](https://gitee.com/zxNchuPG/blogimage/raw/master/img/JMS%E5%8F%91%E5%B8%83%E8%AE%A2%E9%98%85%E6%A8%A1%E5%9E%8B.png)
 
 发布订阅模型（Pub/Sub） 使用主题（Topic）作为消息通信载体，类似于广播模式；发布者发布一条消息，该消息通过主题传递给所有的订阅者，在一条消息 **广播之后** 才订阅的用户是收不到该条消息的
 
@@ -187,7 +186,7 @@ RabbitMQ 就是基于 AMQP 协议实现的
 
 ## 消息队列比较
 
-![消息队列比较](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E6%B6%88%E6%81%AF%E9%98%9F%E5%88%97%E6%AF%94%E8%BE%83.png?raw=true)
+![消息队列比较](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E6%B6%88%E6%81%AF%E9%98%9F%E5%88%97%E6%AF%94%E8%BE%83.png)
 
 ---
 
@@ -201,13 +200,13 @@ RabbitMQ 就是基于 AMQP 协议实现的
 
 下个单支付成功就发个消息出去，上面那个活动的开发人员就监听你的支付成功消息，监听到这个订单成功支付的消息，那就去活动 GMV 表里加上去
 
-![普通下单图解](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E6%99%AE%E9%80%9A%E4%B8%8B%E5%8D%95%E5%9B%BE%E8%A7%A3.png?raw=true)
+![普通下单图解](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E6%99%AE%E9%80%9A%E4%B8%8B%E5%8D%95%E5%9B%BE%E8%A7%A3.png)
 
 但是一般消息队列的使用，都是有重试机制的，就是说下游的业务发生异常了，会抛出异常并且要求重新发一次消息
 
 问题在于，监听消息的服务不止一个，其他服务也会有失败要求重发，但是加钱的服务是成功的，重发后，价钱的操作重复
 
-![下单异常重发](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E4%B8%8B%E5%8D%95%E5%BC%82%E5%B8%B8%E9%87%8D%E5%8F%91.png?raw=true)
+![下单异常重发](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E4%B8%8B%E5%8D%95%E5%BC%82%E5%B8%B8%E9%87%8D%E5%8F%91.png)
 
 积分系统处理失败了，这个系统肯定要求重新发送一次这个消息，积分的系统重新接收并且处理成功了，但是别人的活动，优惠券等等服务也监听了这个消息，就可能出现活动系统给他 GMV 加两次，优惠券扣两次这种情况
 
@@ -223,7 +222,7 @@ RabbitMQ 就是基于 AMQP 协议实现的
 
 通俗了讲就是同样的参数调用这个接口，调用多少次结果都是一个，你加 GMV 同一个订单号加一次是多少钱，加 N 次都还是多少钱。但是如果不做幂等，一个订单调用多次钱就会出现加多次，同理退款调用多次钱也就减多次
 
-![幂等流程](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E5%B9%82%E7%AD%89%E6%B5%81%E7%A8%8B.png?raw=true)
+![幂等流程](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E5%B9%82%E7%AD%89%E6%B5%81%E7%A8%8B.png)
 
 一般幂等，会分场景考虑，是强校验还是弱校验，比如跟金钱相关的场景就很关键，就做强校验，不是很重要的场景做弱校验
 
@@ -281,7 +280,7 @@ public void process(String orderId){
 
 而这些东西都是同一个订单号。一个 topic 下有多个队列，为了保证发送有序，RocketMQ 提供了 MessageQueueSelector 队列选择机制，该机制有三种实现
 
-![MessageQueueSelector实现](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/MessageQueueSelector%E5%AE%9E%E7%8E%B0.png?raw=true)
+![MessageQueueSelector实现](https://gitee.com/zxNchuPG/blogimage/raw/master/img/MessageQueueSelector%E5%AE%9E%E7%8E%B0.png)
 
 可使用 Hash 取模法，让同一个订单发送到同一个队列中，再使用同步发送，只有同个订单的创建消息发送成功，再发送支付消息。这样就保证了发送有序
 
@@ -311,7 +310,7 @@ RocketMQ 的 topic 内的队列机制,可以保证存储满足 FIFO（First Inpu
 
 **2pc（两段式）：**
 
-![事务两段式提交](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E4%BA%8B%E5%8A%A1%E4%B8%A4%E6%AE%B5%E5%BC%8F%E6%8F%90%E4%BA%A4.png?raw=true)
+![事务两段式提交](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E4%BA%8B%E5%8A%A1%E4%B8%A4%E6%AE%B5%E5%BC%8F%E6%8F%90%E4%BA%A4.png)
 
 2pc（两段式提交）可以说是分布式事务的最开始的样子，就是通过消息中间件协调多个系统，在两个系统操作事务的时候都锁定资源但是不提交事务，等两者都准备好了，告诉消息中间件，然后再分别提交事务
 
@@ -319,7 +318,7 @@ RocketMQ 的 topic 内的队列机制,可以保证存储满足 FIFO（First Inpu
 
 **最终一致性:**
 
-![事务最终一致性](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E4%BA%8B%E5%8A%A1%E6%9C%80%E7%BB%88%E4%B8%80%E8%87%B4%E6%80%A7.png?raw=true)
+![事务最终一致性](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E4%BA%8B%E5%8A%A1%E6%9C%80%E7%BB%88%E4%B8%80%E8%87%B4%E6%80%A7.png)
 
 **能保证：**
 
