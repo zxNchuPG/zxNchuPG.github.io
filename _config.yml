@@ -34,6 +34,9 @@ anchorjs: true                          # 如果你想自定义锚. check out li
 # timezone: CN  
 
 include: [_layouts]
+deploy:
+  type: git
+  repo: https://gitee.com/zxNchuPG/zxNchuPG.github.io
 
 # Gems
 # from PR#40, to support local preview for Jekyll 3.0
