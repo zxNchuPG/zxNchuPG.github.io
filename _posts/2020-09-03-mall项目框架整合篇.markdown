@@ -1,7 +1,7 @@
 ---
 layout:      post
 title:       "mall项目框架整合篇"
-subtitle:    "Interview"
+subtitle:    "mall project"
 author:      "Ekko"
 header-img:  "img/bg/bg-mall.jpg"
 catalog:     true
@@ -10,6 +10,7 @@ tags:
   - JAVA
   - 微服务
   - 实战项目
+  - 教程
 ---
 
 > mall 项目是一套电商系统，包括前台商城系统及后台管理系统，基于 SpringBoot+MyBatis 实现，涵盖 RabbitMq、Elasticsearch、Redis等主流技术。前台商城系统包含首页门户、商品推荐、商品搜索、商品展示、购物车、订单流程、会员中心、客户服务、帮助中心等模块。 后台管理系统包含商品管理、订单管理、会员管理、促销管理、运营管理、内容管理、统计报表、财务管理、权限管理、设置等模块
@@ -461,15 +462,15 @@ public class OmsCartItem implements Serializable {
 
 windows版下载地址：[https://github.com/MicrosoftArchive/redis/releases](https://github.com/MicrosoftArchive/redis/releases)
 
-![整合redis下载](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E6%95%B4%E5%90%88redis%E4%B8%8B%E8%BD%BD.png?raw=true)
+![整合redis下载](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E6%95%B4%E5%90%88redis%E4%B8%8B%E8%BD%BD.png)
 
 下载完后解压到指定目录
 
-![整合redis解压](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E6%95%B4%E5%90%88redis%E8%A7%A3%E5%8E%8B.png?raw=true)
+![整合redis解压](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E6%95%B4%E5%90%88redis%E8%A7%A3%E5%8E%8B.png)
 
 在当前地址栏输入cmd后，执行redis的启动命令：redis-server.exe redis.windows.conf
 
-![整合redis启动](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E6%95%B4%E5%90%88redis%E5%90%AF%E5%8A%A8.png?raw=true)
+![整合redis启动](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E6%95%B4%E5%90%88redis%E5%90%AF%E5%8A%A8.png)
 
 ---
 
@@ -909,7 +910,7 @@ eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhZG1pbiIsImNyZWF0ZWQiOjE1NTY3NzkxMjUzMDksImV4cCI
 
 可以在该网站上获得解析结果：[https://jwt.io/](https://jwt.io/)
 
-![JWT案例](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/JWT%E6%A1%88%E4%BE%8B.png?raw=true)
+![JWT案例](https://gitee.com/zxNchuPG/blogimage/raw/master/img/JWT%E6%A1%88%E4%BE%8B.png)
 
 **工作原理：**
 
@@ -1401,7 +1402,7 @@ Elasticsearch 是一个分布式、可扩展、实时的搜索与数据分析引
 
 下载 Elasticsearch6.2.2 的 zip 包，并解压到指定目录，下载地址：[https://www.elastic.co/cn/downloads/past-releases/elasticsearch-6-2-2](https://www.elastic.co/cn/downloads/past-releases/elasticsearch-6-2-2)
 
-![整合Elasticsearch解压](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E6%95%B4%E5%90%88Elasticsearch%E8%A7%A3%E5%8E%8B.png?raw=true)
+![整合Elasticsearch解压](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E6%95%B4%E5%90%88Elasticsearch%E8%A7%A3%E5%8E%8B.png)
 
 **安装中文分词插件，在 elasticsearch-6.2.2\bin 目录下执行以下命令：**
 `elasticsearch-plugin install https://github.com/medcl/elasticsearch-analysis-ik/releases/download/v6.2.2/elasticsearch-analysis-ik-6.2.2.zip`
@@ -1412,13 +1413,13 @@ Elasticsearch 是一个分布式、可扩展、实时的搜索与数据分析引
 
 **下载 Kibana ，作为访问 Elasticsearch 的客户端，请下载 6.2.2 版本的 zip 包，并解压到指定目录** 下载地址：[https://artifacts.elastic.co/downloads/kibana/kibana-6.2.2-windows-x86_64.zip](https://artifacts.elastic.co/downloads/kibana/kibana-6.2.2-windows-x86_64.zip)
 
-![Kibana解压](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E6%95%B4%E5%90%88Elasticsearch%E8%A7%A3%E5%8E%8B.png?raw=true)
+![Kibana解压](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Kibana%E8%A7%A3%E5%8E%8B.png)
 
 **运行 bin 目录下的 kibana.bat，启动 Kibana 的用户界面**
 
 **访问 http://localhost:5601 即可打开 Kibana 的用户界面**
 
-![Kibana用户界面](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Kibana%E7%94%A8%E6%88%B7%E7%95%8C%E9%9D%A2.png?raw=true)
+![Kibana用户界面](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Kibana%E7%94%A8%E6%88%B7%E7%95%8C%E9%9D%A2.png)
 
 ---
 
@@ -1499,7 +1500,7 @@ public enum FieldType {
 
 继承 ElasticsearchRepository 接口可以获得常用的数据操作方法
 
-![ElasticsearchRepository接口](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/ElasticsearchRepository%E6%8E%A5%E5%8F%A3.png?raw=true)
+![ElasticsearchRepository接口](https://gitee.com/zxNchuPG/blogimage/raw/master/img/ElasticsearchRepository%E6%8E%A5%E5%8F%A3.png)
 
 在接口中直接指定查询方法名称便可查询，无需进行实现，如商品表中有商品名称、标题和关键字，直接定义以下查询，就可以对这三个字段进行全文搜索
 
@@ -1919,13 +1920,13 @@ Mongodb 是为快速开发互联网 Web 应用而构建的数据库系统，其�
 
 **选择安装路径进行安装**
 
-![Mongodb安装](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Mongodb%E5%AE%89%E8%A3%85.png?raw=true)
+![Mongodb安装](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Mongodb%E5%AE%89%E8%A3%85.png)
 
-![Mongodb安装2](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Mongodb%E5%AE%89%E8%A3%852.png?raw=true)
+![Mongodb安装2](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Mongodb%E5%AE%89%E8%A3%852.png)
 
 **在安装路径下创建 data\db 和 data\log 两个文件夹**
 
-![Mongodb新建文件](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Mongodb%E6%96%B0%E5%BB%BA%E6%96%87%E4%BB%B6.png?raw=true)
+![Mongodb新建文件](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Mongodb%E6%96%B0%E5%BB%BA%E6%96%87%E4%BB%B6.png)
 
 **在安装路径下创建 mongod.cfg 配置文件**
 
@@ -1941,7 +1942,7 @@ storage:
 
 `D:\developer\env\MongoDB\bin\mongod.exe --config "D:\developer\env\MongoDB\mongod.cfg" --install`
 
-![Mongodb安装服务](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Mongodb%E5%AE%89%E8%A3%85%E6%9C%8D%E5%8A%A1.png?raw=true)
+![Mongodb安装服务](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Mongodb%E5%AE%89%E8%A3%85%E6%9C%8D%E5%8A%A1.png)
 
 **服务相关命令**
 
@@ -1955,7 +1956,7 @@ storage:
 
 **解压到指定目录，打开 robo3t.exe 并连接到 localhost:27017**
 
-![robo3t连接Mongodb](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/robo3t%E8%BF%9E%E6%8E%A5Mongodb.png?raw=true)
+![robo3t连接Mongodb](https://gitee.com/zxNchuPG/blogimage/raw/master/img/robo3t%E8%BF%9E%E6%8E%A5Mongodb.png)
 
 ---
 
@@ -1973,7 +1974,7 @@ storage:
 
 继承 MongoRepository 接口可以获得常用的数据操作方法
 
-![MongoRepository接口](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/MongoRepository%E6%8E%A5%E5%8F%A3.png?raw=true)
+![MongoRepository接口](https://gitee.com/zxNchuPG/blogimage/raw/master/img/MongoRepository%E6%8E%A5%E5%8F%A3.png)
 
 ```java
 /**
@@ -2136,44 +2137,44 @@ RabbitMQ 是一个被广泛使用的开源消息队列。它是轻量级且易�
 
 下载地址：[http://erlang.org/download/otp_win64_21.3.exe](http://erlang.org/download/otp_win64_21.3.exe)
 
-![Erlang安装](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Erlang%E5%AE%89%E8%A3%85.png?raw=true)
+![Erlang安装](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Erlang%E5%AE%89%E8%A3%85.png)
 
 **安装RabbitMQ：** 
 下载地址：[https://dl.bintray.com/rabbitmq/all/rabbitmq-server/3.7.14/rabbitmq-server-3.7.14.exe](https://dl.bintray.com/rabbitmq/all/rabbitmq-server/3.7.14/rabbitmq-server-3.7.14.exe)
 
-![RabbitMQ安装](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/RabbitMQ%E5%AE%89%E8%A3%85.png?raw=true)
+![RabbitMQ安装](https://gitee.com/zxNchuPG/blogimage/raw/master/img/RabbitMQ%E5%AE%89%E8%A3%85.png)
 
 **安装完成后，进入 RabbitMQ 安装目录下的 sbin 目录**
 
-![RabbitMQ安装目录](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/RabbitMQ%E5%AE%89%E8%A3%85%E7%9B%AE%E5%BD%95.png?raw=true)
+![RabbitMQ安装目录](https://gitee.com/zxNchuPG/blogimage/raw/master/img/RabbitMQ%E5%AE%89%E8%A3%85%E7%9B%AE%E5%BD%95.png)
 
 **在地址栏输入cmd并回车启动命令行，然后输入以下命令启动管理功能：**
 
 `rabbitmq-plugins enable rabbitmq_management`
 
-![RabbitMQ启动管理](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/RabbitMQ%E5%90%AF%E5%8A%A8%E7%AE%A1%E7%90%86.png?raw=true)
+![RabbitMQ启动管理](https://gitee.com/zxNchuPG/blogimage/raw/master/img/RabbitMQ%E5%90%AF%E5%8A%A8%E7%AE%A1%E7%90%86.png)
 
 **访问地址查看是否安装成功：http://localhost:15672/**
 
-![RabbitMQ登录页面](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/RabbitMQ%E7%99%BB%E5%BD%95%E9%A1%B5%E9%9D%A2.png?raw=true)
+![RabbitMQ登录页面](https://gitee.com/zxNchuPG/blogimage/raw/master/img/RabbitMQ%E7%99%BB%E5%BD%95%E9%A1%B5%E9%9D%A2.png)
 
 **输入账号密码并登录：guest guest**
 
 **创建帐号并设置其角色为管理员：mall mall**
 
-![RabbitMQ设置角色](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/RabbitMQ%E8%AE%BE%E7%BD%AE%E8%A7%92%E8%89%B2.png?raw=true)
+![RabbitMQ设置角色](https://gitee.com/zxNchuPG/blogimage/raw/master/img/RabbitMQ%E8%AE%BE%E7%BD%AE%E8%A7%92%E8%89%B2.png)
 
 **创建一个新的虚拟 host 为：/mall**
 
-![RabbitMQ设置虚拟host](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/RabbitMQ%E8%AE%BE%E7%BD%AE%E8%99%9A%E6%8B%9Fhost.png?raw=true)
+![RabbitMQ设置虚拟host](https://gitee.com/zxNchuPG/blogimage/raw/master/img/RabbitMQ%E8%AE%BE%E7%BD%AE%E8%99%9A%E6%8B%9Fhost.png)
 
 **点击 mall 用户进入用户配置页面**
 
-![RabbitMQ用户配置](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/RabbitMQ%E7%94%A8%E6%88%B7%E9%85%8D%E7%BD%AE.png?raw=true)
+![RabbitMQ用户配置](https://gitee.com/zxNchuPG/blogimage/raw/master/img/RabbitMQ%E7%94%A8%E6%88%B7%E9%85%8D%E7%BD%AE.png)
 
 **给 mall 用户配置该虚拟 host 的权限**
 
-![RabbitMQ用户授权](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/RabbitMQ%E7%94%A8%E6%88%B7%E6%8E%88%E6%9D%83.png?raw=true)
+![RabbitMQ用户授权](https://gitee.com/zxNchuPG/blogimage/raw/master/img/RabbitMQ%E7%94%A8%E6%88%B7%E6%8E%88%E6%9D%83.png)
 
 ---
 
@@ -2317,7 +2318,7 @@ public class RabbitMqConfig {
 
 **在 RabbitMQ 管理页面可以看到以下交换机和队列**
 
-![RabbitMQ管理页面](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/RabbitMQ%E7%AE%A1%E7%90%86%E9%A1%B5%E9%9D%A2.png?raw=true)
+![RabbitMQ管理页面](https://gitee.com/zxNchuPG/blogimage/raw/master/img/RabbitMQ%E7%AE%A1%E7%90%86%E9%A1%B5%E9%9D%A2.png)
 
 交换机及队列说明：
 
@@ -2459,19 +2460,19 @@ public class OmsPortalOrderServiceImpl implements OmsPortalOrderService {
 
 点击网页右上角控制台按钮进入控制台
 
-![创建存储空间](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E5%88%9B%E5%BB%BA%E5%AD%98%E5%82%A8%E7%A9%BA%E9%97%B4.png?raw=true)
+![创建存储空间](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E5%88%9B%E5%BB%BA%E5%AD%98%E5%82%A8%E7%A9%BA%E9%97%B4.png)
 
 选择我的云产品中的对象存储OSS
 
-![创建存储空间2](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E5%88%9B%E5%BB%BA%E5%AD%98%E5%82%A8%E7%A9%BA%E9%97%B42.png?raw=true)
+![创建存储空间2](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E5%88%9B%E5%BB%BA%E5%AD%98%E5%82%A8%E7%A9%BA%E9%97%B42.png)
 
 点击左侧存储空间的加号新建存储空间
 
-![创建存储空间3](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E5%88%9B%E5%BB%BA%E5%AD%98%E5%82%A8%E7%A9%BA%E9%97%B43.png?raw=true)
+![创建存储空间3](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E5%88%9B%E5%BB%BA%E5%AD%98%E5%82%A8%E7%A9%BA%E9%97%B43.png)
 
 新建存储空间并设置读写权限为公共读
 
-![创建存储空间4](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E5%88%9B%E5%BB%BA%E5%AD%98%E5%82%A8%E7%A9%BA%E9%97%B44.png?raw=true)
+![创建存储空间4](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E5%88%9B%E5%BB%BA%E5%AD%98%E5%82%A8%E7%A9%BA%E9%97%B44.png)
 
 **跨域资源共享（CORS）的设置**
 
@@ -2479,21 +2480,21 @@ public class OmsPortalOrderServiceImpl implements OmsPortalOrderService {
 
 选择一个存储空间，打开其基础设置
 
-![跨域资源共享设置](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E8%B7%A8%E5%9F%9F%E8%B5%84%E6%BA%90%E5%85%B1%E4%BA%AB%E8%AE%BE%E7%BD%AE.png?raw=true)
+![跨域资源共享设置](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E8%B7%A8%E5%9F%9F%E8%B5%84%E6%BA%90%E5%85%B1%E4%BA%AB%E8%AE%BE%E7%BD%AE.png)
 
 点击跨越设置的设置按钮
 
-![跨域资源共享设置2](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E8%B7%A8%E5%9F%9F%E8%B5%84%E6%BA%90%E5%85%B1%E4%BA%AB%E8%AE%BE%E7%BD%AE2.png?raw=true)
+![跨域资源共享设置2](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E8%B7%A8%E5%9F%9F%E8%B5%84%E6%BA%90%E5%85%B1%E4%BA%AB%E8%AE%BE%E7%BD%AE2.png)
 
 进行跨域规则设置
 
-![跨域资源共享设置3](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E8%B7%A8%E5%9F%9F%E8%B5%84%E6%BA%90%E5%85%B1%E4%BA%AB%E8%AE%BE%E7%BD%AE3.png?raw=true)
+![跨域资源共享设置3](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E8%B7%A8%E5%9F%9F%E8%B5%84%E6%BA%90%E5%85%B1%E4%BA%AB%E8%AE%BE%E7%BD%AE3.png)
 
 ---
 
 **服务端签名后前端直传的相关说明**
 
-![服务端签名后前端直传](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E6%9C%8D%E5%8A%A1%E7%AB%AF%E7%AD%BE%E5%90%8D%E5%90%8E%E5%89%8D%E7%AB%AF%E7%9B%B4%E4%BC%A0.png?raw=true)
+![服务端签名后前端直传](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E6%9C%8D%E5%8A%A1%E7%AB%AF%E7%AD%BE%E5%90%8D%E5%90%8E%E5%89%8D%E7%AB%AF%E7%9B%B4%E4%BC%A0.png)
 
 流程介绍
 
