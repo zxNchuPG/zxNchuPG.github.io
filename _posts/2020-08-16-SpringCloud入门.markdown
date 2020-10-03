@@ -27,17 +27,17 @@ tags:
 
 下面有三个节点(它们是集群的)，此时三个节点都能够相互通信：
 
-![三节点通信](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E4%B8%89%E8%8A%82%E7%82%B9%E9%80%9A%E4%BF%A1.jpg?raw=true)
+![三节点通信](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E4%B8%89%E8%8A%82%E7%82%B9%E9%80%9A%E4%BF%A1.jpg)
 
 由于系统是分布式的，节点之间的通信是通过网络来进行的。只要是分布式系统，那很有可能会出现一种情况：因为一些故障，使得有些节点之间不连通了，整个网络就分成了几块区域
 
 **数据就散布在了这些不连通的区域中，这就叫分区**
 
-![三节点通信失败](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E4%B8%89%E8%8A%82%E7%82%B9%E9%80%9A%E4%BF%A1%E5%A4%B1%E8%B4%A5.jpg?raw=true)
+![三节点通信失败](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E4%B8%89%E8%8A%82%E7%82%B9%E9%80%9A%E4%BF%A1%E5%A4%B1%E8%B4%A5.jpg)
 
 现在出现了网络分区后，此时有一个请求过来了，想要注册一个账户
 
-![网络分区后接受请求](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E7%BD%91%E7%BB%9C%E5%88%86%E5%8C%BA%E5%90%8E%E6%8E%A5%E5%8F%97%E8%AF%B7%E6%B1%82.jpg?raw=true)
+![网络分区后接受请求](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E7%BD%91%E7%BB%9C%E5%88%86%E5%8C%BA%E5%90%8E%E6%8E%A5%E5%8F%97%E8%AF%B7%E6%B1%82.jpg)
 
 此时节点一和节点三是不可通信的，这就有了抉择：
 
@@ -62,7 +62,7 @@ CAP 是无法完全兼顾的，从上面的例子也可以看出，可以选 AP�
 
 对于一个可用性的分布式系统，每一个非故障的节点必须对每一个请求作出响应。所以，一般在衡量一个系统的可用性的时候，都是通过停机时间来计算的
 
-![可用性停机时间](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E5%8F%AF%E7%94%A8%E6%80%A7%E5%81%9C%E6%9C%BA%E6%97%B6%E9%97%B4.png?raw=true)
+![可用性停机时间](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E5%8F%AF%E7%94%A8%E6%80%A7%E5%81%9C%E6%9C%BA%E6%97%B6%E9%97%B4.png)
 
 所以，CAP 理论定义的其实是在容忍网络分区的条件下，“强一致性”和“极致可用性”无法同时达到
 
@@ -70,7 +70,7 @@ CAP 是无法完全兼顾的，从上面的例子也可以看出，可以选 AP�
 
 ## SpringCloud 是什么
 
-![SpringCloud架构](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/SpringCloud%E6%9E%B6%E6%9E%84.png?raw=true)
+![SpringCloud架构](https://gitee.com/zxNchuPG/blogimage/raw/master/img/SpringCloud%E6%9E%B6%E6%9E%84.png)
 
 Spring Cloud 是一系列框架的有序集合。它利用Spring Boot的开发便利性巧妙地简化了分布式系统基础设施的开发，如**服务发现注册、配置中心、消息总线、负载均衡、断路器、数据监控等**，都可以用 Spring Boot 的开发风格做到一键启动和部署
 
@@ -155,7 +155,7 @@ SpringCloud 中的服务治理框架一般使用的就是 Eureka
 
 创建一个E服务，将 A、B、C、D 四个服务的信息都注册到 E 服务上，E 服务维护这些已经注册进来的信息
 
-![Eureka服务注册中心](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Eureka%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C%E4%B8%AD%E5%BF%83.jpg?raw=true)
+![Eureka服务注册中心](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Eureka%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C%E4%B8%AD%E5%BF%83.jpg)
 
 A、B、C、D 四个服务都可以拿到 Eureka ( 服务E ) 那份注册清单。A、B、C、D 四个服务互相调用不再通过具体的 IP 地址，而是通过服务名来调用
 
@@ -213,7 +213,7 @@ eureka:
 - **失效剔除：** 默认每隔一段时间（默认为60秒） 将当前清单中超时（默认为90秒）没有续约的服务剔除出去
 - **自我保护：** EurekaServer 在运行期间，会统计心跳失败的比例在15分钟之内是否低于85%(通常由于网络不稳定导致)。 Eureka Server 会将当前的实例注册信息保护起来， 让这些实例不会过期，尽可能保护这些注册信息
 
-![Eureka服务治理](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Eureka%E6%9C%8D%E5%8A%A1%E6%B2%BB%E7%90%86.jpg?raw=true)
+![Eureka服务治理](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Eureka%E6%9C%8D%E5%8A%A1%E6%B2%BB%E7%90%86.jpg)
 
 ---
 
@@ -279,7 +279,7 @@ public boolean add(Dept dept) {
 
 为了实现服务的高可用，可以将服务提供者集群。比如说，现在一个秒杀系统设计出来了，准备上线了。在11月11号时为了能够支持高并发，开多台机器来支持并发量
 
-![服务提供者集群](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E6%9C%8D%E5%8A%A1%E6%8F%90%E4%BE%9B%E8%80%85%E9%9B%86%E7%BE%A4.jpg?raw=true)
+![服务提供者集群](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E6%9C%8D%E5%8A%A1%E6%8F%90%E4%BE%9B%E8%80%85%E9%9B%86%E7%BE%A4.jpg)
 
 现在想要这三个秒杀系统合理摊分用户的请求(专业来说就是负载均衡)，可能你会想到nginx
 
@@ -296,7 +296,7 @@ public boolean add(Dept dept) {
 
 - 服务实例的清单在服务端，服务器进行负载均衡算法分配
 
-![客户端服务端负载均衡](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E5%AE%A2%E6%88%B7%E7%AB%AF%E6%9C%8D%E5%8A%A1%E7%AB%AF%E8%B4%9F%E8%BD%BD%E5%9D%87%E8%A1%A1.jpg?raw=true)
+![客户端服务端负载均衡](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E5%AE%A2%E6%88%B7%E7%AB%AF%E6%9C%8D%E5%8A%A1%E7%AB%AF%E8%B4%9F%E8%BD%BD%E5%9D%87%E8%A1%A1.jpg)
 
 ---
 
@@ -330,13 +330,13 @@ SpringCloud 在 CAP 理论是选择了 AP 的，在 Ribbon 中还可以配置重
 
 和Ribbon不同的是，它是一种集中式的负载均衡器。集中式简单理解就是将所有请求都集中起来，然后再进行负载均衡。如下图
 
-![Nignx负载均衡](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Nignx%E8%B4%9F%E8%BD%BD%E5%9D%87%E8%A1%A1.png?raw=true)
+![Nignx负载均衡](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Nignx%E8%B4%9F%E8%BD%BD%E5%9D%87%E8%A1%A1.png)
 
 **Ribbon** 
 
 来说它是在消费者端进行的负载均衡。如下图
 
-![Ribbon负载均衡](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Ribbon%E8%B4%9F%E8%BD%BD%E5%9D%87%E8%A1%A1.png?raw=true)
+![Ribbon负载均衡](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Ribbon%E8%B4%9F%E8%BD%BD%E5%9D%87%E8%A1%A1.png)
 
 注意 Request 的位置，在 Nginx 中请求是先进入负载均衡器，而在Ribbon中是先在客户端进行负载均衡才进行请求的
 
@@ -346,11 +346,11 @@ SpringCloud 在 CAP 理论是选择了 AP 的，在 Ribbon 中还可以配置重
 
 调用多个远程服务时，当某个服务出现延迟：
 
-![SpringCloud调用延迟](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/SpringCloud%E8%B0%83%E7%94%A8%E5%BB%B6%E8%BF%9F.jpg?raw=true)
+![SpringCloud调用延迟](https://gitee.com/zxNchuPG/blogimage/raw/master/img/SpringCloud%E8%B0%83%E7%94%A8%E5%BB%B6%E8%BF%9F.jpg)
 
 在高并发的情况下，由于单个服务的延迟，可能导致所有的请求都处于延迟状态，甚至在几秒钟就使服务处于负载饱和的状态，资源耗尽，直到不可用，最终导致这个分布式系统都不可用，这就是“雪崩”
 
-![SpringCloud延迟雪崩](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/SpringCloud%E5%BB%B6%E8%BF%9F%E9%9B%AA%E5%B4%A9.jpg?raw=true)
+![SpringCloud延迟雪崩](https://gitee.com/zxNchuPG/blogimage/raw/master/img/SpringCloud%E5%BB%B6%E8%BF%9F%E9%9B%AA%E5%B4%A9.jpg)
 
 针对上述问题， Spring Cloud Hystrix 实现了断路器、线程隔离等一系列服务保护功能
 
@@ -487,14 +487,14 @@ public class DeptController_Consumer{
 
 基于上面的学习，现在的架构很可能会设计成这样：
 
-![没有网关的微服务]()
+![没有网关的微服务](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E6%B2%A1%E6%9C%89%E7%BD%91%E5%85%B3%E7%9A%84%E5%BE%AE%E6%9C%8D%E5%8A%A1.jpg)
 
 这样的架构会有两个比较麻烦的问题：
 
 - **路由规则与服务实例的维护间题：** 外层的负载均衡(nginx)需要维护所有的服务实例清单(图上的OpenService)
 - **签名校验、 登录校验冗余问题：** 为了保证对外服务的安全性， 我们在服务端实现的微服务接口，往往都会有一定的权限校验机制，但我们的服务是独立的，我们不得不在这些应用中都实现这样一套校验逻辑，这就会造成校验逻辑的冗余
 
-![nginx维护每个服务实例地址](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E6%B2%A1%E6%9C%89%E7%BD%91%E5%85%B3%E7%9A%84%E5%BE%AE%E6%9C%8D%E5%8A%A1.jpg?raw=true)
+![nginx维护每个服务实例地址](https://gitee.com/zxNchuPG/blogimage/raw/master/img/nginx%E7%BB%B4%E6%8A%A4%E6%AF%8F%E4%B8%AA%E6%9C%8D%E5%8A%A1%E5%AE%9E%E4%BE%8B%E5%9C%B0%E5%9D%80.jpg)
 
 每个服务都有自己的 IP 地址，Nginx 想要正确请求转发到服务上，就必须维护着每个服务实例的地址
 
@@ -517,7 +517,7 @@ Zuul 天生就拥有线程隔离和断路器的自我保护功能，以及对服
 
 如果说，路由功能是 Zuul 的基操的话，那么过滤器就是 Zuul 的利器。毕竟所有请求都经过网关(Zuul)，那么我们可以进行各种过滤，这样我们就能实现限流，灰度发布，权限控制等等
 
-![Zuul过滤器](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Zuul%E8%BF%87%E6%BB%A4%E5%99%A8.png?raw=true)
+![Zuul过滤器](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Zuul%E8%BF%87%E6%BB%A4%E5%99%A8.png)
 
 **过滤器类型：Pre、Routing、Post**
 
@@ -604,7 +604,7 @@ public class AccessLogFilter extends ZuulFilter {
 
 不仅仅只有令牌桶限流方式，Zuul 只要是限流的活都能干，这里只简单举个例子
 
-![Zuul令牌桶](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Zuul%E4%BB%A4%E7%89%8C%E6%A1%B6.png?raw=true)
+![Zuul令牌桶](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Zuul%E4%BB%A4%E7%89%8C%E6%A1%B6.png)
 
 **令牌桶限流：** 
 
@@ -660,7 +660,7 @@ Zuul 作为网关肯定也存在单点问题，如果我们要保证 Zuul 的高
 
 比如这个时候已经向 Eureka Server 注册了两个 Consumer 、三个 Provicer ，这个时候再加个 Zuul 网关应该变成这样子
 
-![加zuul网关的架构](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/%E5%8A%A0zuul%E7%BD%91%E5%85%B3%E7%9A%84%E6%9E%B6%E6%9E%84.jpg?raw=true)
+![加zuul网关的架构](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E5%8A%A0zuul%E7%BD%91%E5%85%B3%E7%9A%84%E6%9E%B6%E6%9E%84.jpg)
 
 首先，Zuul 需要向 Eureka 进行注册，可以拿到所有 consumer 的信息，包括 consumer 的元数据（名称、ip、端口），拿到这些元数据后便可以做**路由映射**，比如原来用户调用 Consumer1 的接口 localhost:8001/studentInfo/update 这个请求，现在可以变成 localhost:9000/consumer1/studentInfo/update
 
@@ -735,7 +735,7 @@ zuul:
 
 Zuul（网关）支持Ribbon（负载均衡）和Hystrix（容错保护），也能够实现客户端的负载均衡。我们的Feign不也是实现客户端的负载均衡和Hystrix的吗？既然Zuul已经能够实现了，那Feign还有必要吗？
 
-![Zuul网关](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Zuul%E7%BD%91%E5%85%B3.png?raw=true)
+![Zuul网关](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Zuul%E7%BD%91%E5%85%B3.png)
 
 可以这样理解：
 
@@ -748,7 +748,7 @@ Zuul（网关）支持Ribbon（负载均衡）和Hystrix（容错保护），也
 
 随着业务的扩展，服务会越来越多。每个服务都有自己的配置文件，既然是配置文件，配置的东西难免会有些改动。比如每个服务中写的数据库配置，配置文件中的密码需要更换，那就得三个都要重新更改
 
-![Config配置中心](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Config%E9%85%8D%E7%BD%AE%E4%B8%AD%E5%BF%83.png?raw=true)
+![Config配置中心](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Config%E9%85%8D%E7%BD%AE%E4%B8%AD%E5%BF%83.png)
 
 > 在分布式系统中，某一个基础服务信息变更，都很可能会引起一系列的更新和重启
 
@@ -757,7 +757,7 @@ Spring Cloud Config 项目是一个解决分布式系统的配置管理方案。
 - 简单来说，使用 Spring Cloud Config 就是将配置文件放到统一的位置管理(比如 GitHub )，客户端通过接口去获取这些配置文件。
 - 在 GitHub 上修改了某个配置文件，应用加载的就是修改后的配置文件
 
-![Config配置中心结构](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/Config%E9%85%8D%E7%BD%AE%E4%B8%AD%E5%BF%83%E7%BB%93%E6%9E%84.png?raw=true)
+![Config配置中心结构](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Config%E9%85%8D%E7%BD%AE%E4%B8%AD%E5%BF%83%E7%BB%93%E6%9E%84.png)
 
 在 SpringCloud Config 的服务端，对于配置仓库的默认实现采用了 Git，我们也可以配置 SVN
 
@@ -785,4 +785,4 @@ Spring Cloud Config 项目是一个解决分布式系统的配置管理方案。
 
 而拥有了 Spring Cloud Bus 之后，我们只需要创建一个简单的请求，并且加上 @ResfreshScope 注解就能进行配置的动态修改了
 
-![bus事件总线动态修改配置](https://github.com/zxNchuPG/zxNchuPG.github.io/blob/master/img/notes/bus%E4%BA%8B%E4%BB%B6%E6%80%BB%E7%BA%BF%E5%8A%A8%E6%80%81%E4%BF%AE%E6%94%B9%E9%85%8D%E7%BD%AE.jpg?raw=true)
+![bus事件总线动态修改配置](https://gitee.com/zxNchuPG/blogimage/raw/master/img/bus%E4%BA%8B%E4%BB%B6%E6%80%BB%E7%BA%BF%E5%8A%A8%E6%80%81%E4%BF%AE%E6%94%B9%E9%85%8D%E7%BD%AE.jpg)
