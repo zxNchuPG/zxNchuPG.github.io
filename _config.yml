@@ -6,7 +6,7 @@ email: xinh9579@gmail.com
 description: "南昌航空大学-软件工程 | 这里是 @周祥 的个人博客，与你一起发现我的世界。"
 keyword: "周祥 | 帅气 | 可爱 | 迷人"
 url: "https://zxNchuPG.github.io"              # your host, for absolute URL
-baseurl: "/blog"                                  # for example, '/blog' if your blog hosted on 'host/blog'
+baseurl: ""                                  # for example, '/blog' if your blog hosted on 'host/blog'
 
 # Publish posts or collection documents with a future date.
 future: true
@@ -32,11 +32,6 @@ exclude: ["less","node_modules","Gruntfile.js","package.json","README.md","READM
 anchorjs: true                          # 如果你想自定义锚. check out line:181 of `post.html`
 # 如果您在中国有时区问题（例如＃68），请取消注释以使用此选项：
 # timezone: CN  
-
-include: [_layouts]
-deploy:
-  type: git
-  repo: https://gitee.com/zxNchuPG/zxNchuPG.github.io
 
 # Gems
 # from PR#40, to support local preview for Jekyll 3.0
