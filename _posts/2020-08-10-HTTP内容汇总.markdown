@@ -10,6 +10,7 @@ tags:
   - 协议
   - HTTP
   - 基础
+  - JavaWeb
 ---
 
 > 参考资料[Java3y](https://www.zhihu.com/question/20391668/answer/915889286)、[Java团长](https://zhuanlan.zhihu.com/p/86426969)、[三太子敖丙](https://github.com/AobingJava/JavaFamily)、[CSDN](https://blog.csdn.net/sean_cd/article/details/6966130)、[知乎吾非同](https://zhuanlan.zhihu.com/p/72616216)、[芋道源码](https://juejin.im/post/6844903615304302599)、[芋道源码](https://juejin.im/post/6844903615304302599)、[编程之路](https://zhuanlan.zhihu.com/p/108822858)
@@ -21,6 +22,13 @@ tags:
 ## 什么是 HTTP
 
 HTTP 是一种 超文本传输协议 ( Hypertext Transfer Protocol ) ，就是客户端和服务器交互的一种通讯的格式。 HTTP  是一个在计算机世界里专门在两点之间传输文字、图片、音频、视频等超文本数据的约定和规范
+
+> 文本：html、字符串。。。
+> 超文本：图片、音乐、视频、定位、地图。。。
+> HTTP：默认端口80
+> HTTPS：默认端口443
+> http 1.0：客户端可以与web服务器连接，只能获取一个web资源（断开连接）
+> http 1.1：可以获取多个web资源
 
 ![http三部分](https://gitee.com/zxNchuPG/blogimage/raw/master/img/http%E4%B8%89%E9%83%A8%E5%88%86.png)
 
@@ -1045,3 +1053,4 @@ DNS 运行在 53 号端口，于是浏览器会创建一个 UDP 套接字，标�
 
 这样谷歌的服务器就接受到一个 HTTP 请求，于是它解析这个请求，确定该请求的动作是什么，也就是它需要什么东西，并构建响应报文，以同样的方式从网络到达源主机
 
+---
