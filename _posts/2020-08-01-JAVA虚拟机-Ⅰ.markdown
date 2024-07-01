@@ -34,7 +34,7 @@ exe文件执行在windows系统上，而dmg文件执行在Mac OSX系统上，正
 
 java语言并不直接将代码编译成与某单一系统有关的机器码，而是编译成一种特定的语言规范 —— 字节码，但字节码并不被各个系统所识别，而是通过java虚拟机解析字节码文件的内容，将其翻译成各种操作系统能理解的机器码（java虚拟机相当于翻译官）
 
-![jvm](https://gitee.com/zxNchuPG/blogimage/raw/master/img/jvm.png)
+![img.png](/asserts/images/2020-08-01-JAVA虚拟机-Ⅰ/jvm.png)
 
 实际上java虚拟机运行的是字节码文件，不限于java语言，即使用其他的语言写的代码，用特定的编译器能生成符合字节码规范的字节码文件，也是可以在java虚拟机上运行
 
@@ -123,7 +123,7 @@ AOT 编译器从编译质量上来看，比不上 JIT 编译器。其存在的�
 
 运行时数据区：Java虚拟机定义了若干种程序运行期间会使用到的运行时数据区，其中有一些会随着虚拟机启动而创建，随着虚拟机退出而销毁。另外一些则是与线程一一对应的，这些与线程对应的数据区域会随着线程开始和结束而创建和销毁
 
-![jvm内存结构](https://gitee.com/zxNchuPG/blogimage/raw/master/img/jvm%E5%86%85%E5%AD%98%E7%BB%93%E6%9E%84.jpg)
+![img.png](/asserts/images/2020-08-01-JAVA虚拟机-Ⅰ/jvm内存结构.png)
 
 - Xms：设置堆的最小空间大小
 - Xmx：设置堆的最大空间大小
@@ -151,7 +151,7 @@ Java堆是垃圾收集器管理的主要区域，因此很多时候也被称做�
 
 Java 堆根据对象存活时间的不同，Java 堆还被分为年轻代、老年代两个区域，年轻代还被进一步划分为 Eden 区（伊甸区）、From Survivor 0（幸存者区域）、To Survivor 1（幸存者区域） 区。如图所示
 
-![jvm堆结构](https://gitee.com/zxNchuPG/blogimage/raw/master/img/jvm%E5%A0%86%E7%BB%93%E6%9E%84.png)
+![img.png](/asserts/images/2020-08-01-JAVA虚拟机-Ⅰ/jvm堆结构.png)
 
 对象需要分配内存时，一个对象永远优先被分配在年轻代的 Eden 区，等到 Eden 区域内存不够时，Java 虚拟机会启动垃圾回收。此时 Eden 区中没有被引用的对象的内存就会被回收，而一些存活时间较长的对象则会进入到老年代。在 JVM 中有一个名为 -XX:MaxTenuringThreshold 的参数专门用来设置晋升到老年代所需要经历的 GC 次数，即在年轻代的对象经过了指定次数的 GC 后，将在下次 GC 时进入老年代（补充：System.gc() 只是标记需要做GC操作，实际不会立马执行）
 
@@ -235,7 +235,7 @@ Java 堆根据对象存活时间的不同，Java 堆还被分为年轻代、老�
 
 **2. 类的生命周期** 
 
-![java类生命周期](https://gitee.com/zxNchuPG/blogimage/raw/master/img/java%E7%B1%BB%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F.jpg)
+![img.png](/asserts/images/2020-08-01-JAVA虚拟机-Ⅰ/java类生命周期.png)
 
 JVM 虚拟机执行 class 字节码的过程可以分为七个阶段：加载、验证、准备、解析、初始化、使用、卸载
 
@@ -337,7 +337,7 @@ Java虚拟机结束生命周期的几种情况：
 
 **3. 类加载器**
 
-![类加载器层次](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E7%B1%BB%E5%8A%A0%E8%BD%BD%E5%99%A8%E5%B1%82%E6%AC%A1.png)
+![img.png](/asserts/images/2020-08-01-JAVA虚拟机-Ⅰ/类加载器层次.png)
 
 其中BootstrapLoader（引导类加载器）是用C语言实现的，找不到一个确定的返回父Loader的方式，获取该加载器的时候是返回null
 
