@@ -26,7 +26,7 @@ tags:
 
 扩充：Redis Module，像 BloomFilter，RedisSearch，Redis-ML
 
-![Redis数据类型](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Redis%E6%95%B0%E6%8D%AE%E7%B1%BB%E5%9E%8B.jpg)
+![Redis数据类型.png](/asserts/images/2020-08-13-2-Redis缓存中间件-Ⅱ/Redis数据类型.png)
 
 redis 内部使用一个 redisObject 对象来表示所有的 key 和value，redisObject 最主要的信息如上图所示：type 表示一个value 对象具体是何种数据类型，encoding 是不同数据类型在 redis 内部的存储方式。比如：type = string 表示 value 存储的是一个普通字符串，那么 encoding 可以是 raw 或者 int
 
@@ -101,7 +101,7 @@ struct __attribute__ ((__packed__)) sdshdr64 {
 
 SDS 的总体概览：
 
-![Redis-SDS的总体概览](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Redis-SDS%E7%9A%84%E6%80%BB%E4%BD%93%E6%A6%82%E8%A7%88.png)
+![Redis-SDS的总体概览.png](/asserts/images/2020-08-13-2-Redis缓存中间件-Ⅱ/Redis-SDS的总体概览.png)
 
 其中 sdshdr 是头部
 
@@ -109,7 +109,7 @@ SDS 的总体概览：
 
 SDS 有五种不同的头部. 其中 sdshdr5 实际并未使用到. 所以实际上有四种不同的头部, 分别如下:
 
-![Redis-SDS的头部](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Redis-SDS%E7%9A%84%E5%A4%B4%E9%83%A8.png)
+![Redis-SDS的头部.png](/asserts/images/2020-08-13-2-Redis缓存中间件-Ⅱ/Redis-SDS的头部.png)
 
 - len 分别以 uint8, uint16, uint32, uint64 表示用户数据的长度(不包括末尾的\0)
 - alloc 分别以 uint8, uint16, uint32, uint64 表示整个SDS,除过头部与末尾的 \0 剩余的字节数
@@ -123,7 +123,7 @@ Redis 不直接使用 C 语言的字符串是因为 C 语言这种简单的字�
 
 C 语言使用了一个长度为 N+1 的字符数组来表示长度为 N 的字符串，并且字符数组最后一个元素总是 '\0'。(下图就展示了 C 语言中值为 "Redis" 的一个字符数组)
 
-![C语言字符串](https://gitee.com/zxNchuPG/blogimage/raw/master/img/C%E8%AF%AD%E8%A8%80%E5%AD%97%E7%AC%A6%E4%B8%B2.png)
+![C语言字符串.png](/asserts/images/2020-08-13-2-Redis缓存中间件-Ⅱ/C语言字符串.png)
 
 这样简单的数据结构可能会造成以下一些问题：
 
@@ -298,11 +298,11 @@ typedef struct list {
 
 多个 listNode 可以通过 prev 和 next 指针组成双向链表：
 
-![Redis-listNode结构](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Redis-listNode%E7%BB%93%E6%9E%84.png)
+![Redis-listNode结构.png](/asserts/images/2020-08-13-2-Redis缓存中间件-Ⅱ/Redis-listNode结构.png)
 
 虽然仅仅使用多个 listNode 结构就可以组成链表，但是使用 adlist.h/list 结构来持有链表的话，操作起来会更加方便：
 
-![Redis-list结构](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Redis-list%E7%BB%93%E6%9E%84.png)
+![Redis-list结构.png](/asserts/images/2020-08-13-2-Redis缓存中间件-Ⅱ/Redis-list结构.png)
 
 **链表的基本操作：**
 
@@ -410,7 +410,7 @@ typedef struct dictEntry {
 
 大字典的扩容是比较耗时间的，需要重新申请新的数组，然后将旧字典所有链表中的元素重新挂接到新的数组下面，这是一个 O(n) 级别的操作，作为单线程的 Redis 很难承受这样耗时的过程，所以 Redis 使用 渐进式 rehash 小步搬迁：
 
-![Redis-rehash过程](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Redis-rehash%E8%BF%87%E7%A8%8B.png)
+![Redis-rehash过程.png](/asserts/images/2020-08-13-2-Redis缓存中间件-Ⅱ/Redis-rehash过程.png)
 
 渐进式 rehash 会在 rehash 的同时，保留新旧两个 hash 结构，如上图所示，查询时会同时查询两个 hash 结构，然后在后续的定时任务以及 hash 操作指令中，循序渐进的把旧字典的内容迁移到新字典中。当搬迁完成了，就会使用新的 hash 结构取而代之
 
@@ -479,7 +479,7 @@ Redis 的集合相当于 Java 语言中的 HashSet，它内部的键值对是无
 
 它的内部实现用的是一种叫做 **跳跃表** 的数据结构，由于比较复杂，所以在这里简单提一下原理就好了：
 
-![Redis跳跃表简单原理](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Redis%E8%B7%B3%E8%B7%83%E8%A1%A8%E7%AE%80%E5%8D%95%E5%8E%9F%E7%90%86.png)
+![Redis跳跃表简单原理.png](/asserts/images/2020-08-13-2-Redis缓存中间件-Ⅱ/Redis跳跃表简单原理.png)
 
 例如一家创业公司，刚开始只有几个人，大家都平起平坐。后来随着公司的发展，人数越来越多，团队沟通成本逐渐增加，渐渐地引入了组长制，对团队进行划分，于是有一些人又是员工又有组长的身份
 
@@ -579,7 +579,7 @@ B 树最大的优势就是插入和查找效率很高，如果用 B 树存储要
 
 bitmap 可以理解为通过一个 bit 数组来存储特定数据的一种数据结构，每一个 bit 位都能独立包含信息，bit 是数据的最小存储单位，因此能大量节省空间，也可以将整个 bit 数据一次性 load 到内存计算。如果定义一个很大的 bit 数组，基础统计中 每一个元素对应到 bit 数组中的一位，例如：
 
-![bitmap举例](https://gitee.com/zxNchuPG/blogimage/raw/master/img/bitmap%E4%B8%BE%E4%BE%8B.png)
+![bitmap举例.png](/asserts/images/2020-08-13-2-Redis缓存中间件-Ⅱ/bitmap举例.png)
 
 bitmap 还有一个明显的优势是可以轻松合并多个统计结果
 
@@ -640,7 +640,7 @@ HyperLogLog 提供了两个指令 `PFADD`和 `PFCOUNT`，字面意思就是一�
 
 你可能又想到了 缓存，但是这么多用户这么多的历史记录，如果全部缓存起来，那得需要 浪费多大的空间 啊.. (可能老板看一眼账单，看一眼你..) 并且这个存储空间会随着时间呈线性增长，就算你用缓存撑得住一个月，但是又能继续撑多久呢？不缓存性能又跟不上，咋办呢？
 
-![布隆过滤器简介](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E5%B8%83%E9%9A%86%E8%BF%87%E6%BB%A4%E5%99%A8%E7%AE%80%E4%BB%8B.png)
+![布隆过滤器简介.png](/asserts/images/2020-08-13-2-Redis缓存中间件-Ⅱ/布隆过滤器简介.png)
 
 如上图所示，布隆过滤器(Bloom Filter) 就是这样一种专门用来解决去重问题的高级数据结构。但是跟 HyperLogLog 一样，它也一样有那么一点点不精确，也存在一定的误判概率，但它能在解决去重的同时，在 空间上能节省 90% 以上，也是非常值得的
 
@@ -666,17 +666,17 @@ HyperLogLog 提供了两个指令 `PFADD`和 `PFCOUNT`，字面意思就是一�
 
 布隆过滤器 本质上 是由长度为 m 的位向量或位列表（仅包含 0 或 1 位值的列表）组成，最初所有的值均设置为 0，所以先来创建一个稍微长一些的位向量用作展示：
 
-![布隆过滤器初始化](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E5%B8%83%E9%9A%86%E8%BF%87%E6%BB%A4%E5%99%A8%E5%88%9D%E5%A7%8B%E5%8C%96.png)
+![布隆过滤器初始化.png](/asserts/images/2020-08-13-2-Redis缓存中间件-Ⅱ/布隆过滤器初始化.png)
 
 当我们向布隆过滤器中添加数据时，会使用 多个 hash 函数对 key 进行运算，算得一个证书索引值，然后对位数组长度进行取模运算得到一个位置，每个 hash 函数都会算得一个不同的位置。再把位数组的这几个位置都置为 1 就完成了 add 操作，例如，我们添加一个 wmyskxz：
 
-![布隆过滤器添加操作](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E5%B8%83%E9%9A%86%E8%BF%87%E6%BB%A4%E5%99%A8%E6%B7%BB%E5%8A%A0%E6%93%8D%E4%BD%9C.png)
+![布隆过滤器添加操作.png](/asserts/images/2020-08-13-2-Redis缓存中间件-Ⅱ/布隆过滤器添加操作.png)
 
 向布隆过滤器查询 key 是否存在时，跟 add 操作一样，会把这个 key 通过相同的多个 hash 函数进行运算，查看 对应的位置 是否 都 为 1，只要有一个位为 0，那么说明布隆过滤器中这个 key 不存在。如果这几个位置都是 1，并不能说明这个 key 一定存在，只能说极有可能存在，因为这些位置的 1 可能是因为其他的 key 存在导致的
 
 就比如我们在 add 了一定的数据之后，查询一个 不存在 的 key：
 
-![布隆过滤器不存在误判情况](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E5%B8%83%E9%9A%86%E8%BF%87%E6%BB%A4%E5%99%A8%E4%B8%8D%E5%AD%98%E5%9C%A8%E8%AF%AF%E5%88%A4%E6%83%85%E5%86%B5.png)
+![布隆过滤器不存在误判情况.png](/asserts/images/2020-08-13-2-Redis缓存中间件-Ⅱ/布隆过滤器不存在误判情况.png)
 
 很明显，1/3/5 这几个位置的 1 是因为上面第一次添加的 wmyskxz 而导致的，所以这里就存在 误判。幸运的是，布隆过滤器有一个可以预判误判率的公式，比较复杂，感兴趣的朋友可以自行去阅读，比较烧脑.. 只需要记住以下几点就好了：
 
@@ -753,7 +753,7 @@ bf.reserve 有三个参数，分别是 key、error_rate (错误率) 和 initial_
 
 假设现在我们有两台平行的服务 A B，其中 A 服务在 获取锁之后 由于未知神秘力量突然 挂了，那么 B 服务就永远无法获取到锁了：
 
-![redis锁超时](https://gitee.com/zxNchuPG/blogimage/raw/master/img/redis%E9%94%81%E8%B6%85%E6%97%B6.png)
+![redis锁超时.png](/asserts/images/2020-08-13-2-Redis缓存中间件-Ⅱ/redis锁超时.png)
 
 所以需要额外设置一个超时时间，来保证服务的可用性
 
@@ -769,7 +769,7 @@ bf.reserve 有三个参数，分别是 key、error_rate (错误率) 和 initial_
 
 Java中在 GC 的时候会发生 STW(Stop-The-World)，这本身是为了保障垃圾回收器的正常执行，但可能会引发如下的问题：
 
-![Redis章节GC引发锁安全问题](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Redis%E7%AB%A0%E8%8A%82GC%E5%BC%95%E5%8F%91%E9%94%81%E5%AE%89%E5%85%A8%E9%97%AE%E9%A2%98.png)
+![Redis章节GC引发锁安全问题.png](/asserts/images/2020-08-13-2-Redis缓存中间件-Ⅱ/Redis章节GC引发锁安全问题.png)
 
 服务 A 获取了锁并设置了超时时间，但是服务 A 出现了 STW 且时间较长，导致了分布式锁进行了超时释放，在这个期间服务 B 获取到了锁，待服务 A STW 结束之后又恢复了锁，这就导致了 服务 A 和服务 B 同时获取到了锁，这个时候分布式锁就不安全了
 

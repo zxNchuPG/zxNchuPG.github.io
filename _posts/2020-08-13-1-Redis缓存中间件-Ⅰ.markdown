@@ -49,7 +49,7 @@ tags:
 
 常见的单体架构图如下，使用 Nginx 来做负载均衡，部署两个相同的服务到服务器，两个服务使用同一个数据库，并且使用的是本地缓存
 
-![redis章节之本地缓存](https://gitee.com/zxNchuPG/blogimage/raw/master/img/redis%E7%AB%A0%E8%8A%82%E4%B9%8B%E6%9C%AC%E5%9C%B0%E7%BC%93%E5%AD%98.png)
+![redis章节之本地缓存.png](/asserts/images/2020-08-13-1-Redis缓存中间件-Ⅰ/redis章节之本地缓存.png)
 
 那本地缓存的方案有：
 
@@ -79,7 +79,7 @@ tags:
 
 如下图所示，就是一个简单的使用分布式缓存的架构图。使用 Nginx 来做负载均衡，部署两个相同的服务到服务器，两个服务使用同一个数据库和缓存
 
-![redis章节之分布式缓存](https://gitee.com/zxNchuPG/blogimage/raw/master/img/redis%E7%AB%A0%E8%8A%82%E4%B9%8B%E5%88%86%E5%B8%83%E5%BC%8F%E7%BC%93%E5%AD%98.png)
+![redis章节之分布式缓存.png](/asserts/images/2020-08-13-1-Redis缓存中间件-Ⅰ/redis章节之分布式缓存.png)
 
 本地的缓存的优势是低依赖，比较轻量并且通常相比于使用分布式缓存要更加简单
 
@@ -221,7 +221,7 @@ Redis 官方很敷衍就随便给了一点解释。不过基本要点也都说�
 
 ## 缓存数据的处理流程是怎样的
 
-![缓存数据的处理流程](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E7%BC%93%E5%AD%98%E6%95%B0%E6%8D%AE%E7%9A%84%E5%A4%84%E7%90%86%E6%B5%81%E7%A8%8B.png)
+![缓存数据的处理流程.png](/asserts/images/2020-08-13-1-Redis缓存中间件-Ⅰ/缓存数据的处理流程.png)
 
 - 如果用户请求的数据在缓存中就直接返回
 - 缓存中不存在的话就看数据库中是否存在
@@ -236,7 +236,7 @@ Redis 官方很敷衍就随便给了一点解释。不过基本要点也都说�
 
 下面我们主要从“高性能”和“高并发”这两点来看待这个问题
 
-![为什么要用Redis](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E4%B8%BA%E4%BB%80%E4%B9%88%E8%A6%81%E7%94%A8Redis.png)
+![为什么要用Redis.png](/asserts/images/2020-08-13-1-Redis缓存中间件-Ⅰ/为什么要用Redis.png)
 
 **高性能：**
 
@@ -285,7 +285,8 @@ Redis 通过 IO 多路复用程序 监听来自客户端的大量连接（或者
 - 文件事件分派器（将 socket 关联到相应的事件处理器）
 - 事件处理器（连接应答处理器、命令请求处理器、命令回复处理器）
 
-![Redis文件事件处理器](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Redis%E6%96%87%E4%BB%B6%E4%BA%8B%E4%BB%B6%E5%A4%84%E7%90%86%E5%99%A8.png)
+![Redis文件事件处理器.png](/asserts/images/2020-08-13-1-Redis缓存中间件-Ⅰ/Redis文件事件处理器.png)
+
 
 ---
 
@@ -347,7 +348,7 @@ Redis 通过一个叫做过期字典（可以看作是 hash 表）来保存数�
 
 过期字典的键指向 Redis 数据库中的某个 key(键) ，过期字典的值是一个 long 类型的整数，这个整数保存了字典 key 所指向的数据库键的过期时间（毫秒精度的 UNIX 时间戳）
 
-![Redis过期字典](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Redis%E8%BF%87%E6%9C%9F%E5%AD%97%E5%85%B8.png)
+![Redis过期字典.png](/asserts/images/2020-08-13-1-Redis缓存中间件-Ⅰ/Redis过期字典.png)
 
 过期字典是存储在redisDb这个结构里的：
 
@@ -605,7 +606,7 @@ Redis 的事务像是提供了一种将多个命令请求打包的功能。然�
 
 为什么要用主从这样的架构模式，前面提到了单机QPS（每秒查询率）是有上限的，而且 Redis 的特性就是必须支撑读高并发的，那一台机器又读又写，服务器的是顶不住的。但是可以让这个 master 机器去写，数据同步给别的 slave 机器，他们都拿去读，分发掉大量的请求那是不是好很多，而且扩容的时候还可以轻松实现水平扩容
 
-![redis主从同步](https://gitee.com/zxNchuPG/blogimage/raw/master/img/redis%E4%B8%BB%E4%BB%8E%E5%90%8C%E6%AD%A5.png)
+![redis主从同步.png](/asserts/images/2020-08-13-1-Redis缓存中间件-Ⅰ/redis主从同步.png)
 
 启动一台 slave 的时候，它会发送一个 psync 命令给 master ，如果是这个 slave 第一次连接到 master，它会触发一个全量复制，master 就会启动一个线程，生成 RDB 快照，还会把新的写请求都缓存在内存中，RDB 文件生成后，master 会将这个 RDB 发送给 slave ，slave 拿到之后做的第一件事情就是写进本地的磁盘，然后加载进内存，之后 master 会把内存里面缓存的那些新命名（AOF）都发给 slave。有新的数据进入 master 使用 AOF 嘛，增量的就像MySQL 的 Binlog 一样，把日志增量同步给从服务就好了
 
@@ -637,7 +638,7 @@ repl_backlog_size：保存在主节点上的一个固定长度的先进先出队
 
 主节点响应写命令时，不但会把命名发送给从节点，还会写入复制积压缓冲区，用于复制命令丢失的数据补救
 
-![Psync执行流程](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Psync%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B.jpg)
+![Psync执行流程.png](/asserts/images/2020-08-13-1-Redis缓存中间件-Ⅰ/Psync执行流程.png)
 
 上面是 Psync(支持全量和部分复制) 的执行流程，从节点发送 psync[runId][offset] 命令，主节点有三种响应：
 
@@ -645,7 +646,7 @@ repl_backlog_size：保存在主节点上的一个固定长度的先进先出队
 2. CONTINUE：进行部分复制
 3. ERR：不支持 psync 命令，进行全量复制
 
-![主从全量复制过程](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E4%B8%BB%E4%BB%8E%E5%85%A8%E9%87%8F%E5%A4%8D%E5%88%B6%E8%BF%87%E7%A8%8B.png)
+![主从全量复制过程.png](/asserts/images/2020-08-13-1-Redis缓存中间件-Ⅰ/主从全量复制过程.png)
 
 上面是全量复制的流程。主要有以下几步：
 
@@ -687,7 +688,7 @@ repl_backlog_size：保存在主节点上的一个固定长度的先进先出队
 
 ## 主从复制的问题主流解决方案：哨兵
 
-![哨兵架构图](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E5%93%A8%E5%85%B5%E6%9E%B6%E6%9E%84%E5%9B%BE.png)
+![哨兵架构图.png](/asserts/images/2020-08-13-1-Redis缓存中间件-Ⅰ/哨兵架构图.png)
 
 上面是 Redis Sentinel（哨兵）的架构图。Redis Sentinel（哨兵）主要功能包括主节点存活检测、主从运行情况检测、自动故障转移、主从切换
 
@@ -704,32 +705,32 @@ Redis Sentinel 最小配置是一主一从。Redis 的 Sentinel 系统可以用�
 
 ## 哨兵工作原理
 
-![哨兵工作原理](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E5%93%A8%E5%85%B5%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86.png)
+![哨兵工作原理.png](/asserts/images/2020-08-13-1-Redis缓存中间件-Ⅰ/哨兵工作原理.png)
 
 1. 每个 Sentinel 节点都需要定期执行以下任务：每个 Sentinel 以每秒一次的频率，向它所知的主服务器、从服务器以及其他的 Sentinel 实例发送一个 PING 命令（如上图）
 
-![哨兵工作原理2](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E5%93%A8%E5%85%B5%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%862.png)
+![哨兵工作原理2.png](/asserts/images/2020-08-13-1-Redis缓存中间件-Ⅰ/哨兵工作原理2.png)
 
 2. 如果一个实例距离最后一次有效回复 PING 命令的时间超过 down-after-milliseconds 所指定的值，那么这个实例会被 Sentinel 标记为主观下线（如上图）
 
-![哨兵工作原理3](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E5%93%A8%E5%85%B5%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%863.png)
+![哨兵工作原理3.png](/asserts/images/2020-08-13-1-Redis缓存中间件-Ⅰ/哨兵工作原理3.png)
 
 3. 如果一个主服务器被标记为主观下线，那么正在监视这个服务器的所有 Sentinel 节点，要以每秒一次的频率确认主服务器的确进入了主观下线状态
 
-![哨兵工作原理4](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E5%93%A8%E5%85%B5%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%864.png)
+![哨兵工作原理4.png](/asserts/images/2020-08-13-1-Redis缓存中间件-Ⅰ/哨兵工作原理4.png)
 
 4. 如果一个主服务器被标记为主观下线，并且有足够数量的 Sentinel（至少要达到配置文件指定的数量）在指定的时间范围内同意这一判断，那么这个主服务器被标记为客观下线
 
-![哨兵工作原理5](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E5%93%A8%E5%85%B5%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%865.png)
+![哨兵工作原理5.png](/asserts/images/2020-08-13-1-Redis缓存中间件-Ⅰ/哨兵工作原理5.png)
 
 5. 一般情况下，每个 Sentinel 会以每 10 秒一次的频率向它已知的所有主服务器和从服务器发送 INFO 命令
 当一个主服务器被标记为客观下线时，Sentinel 向下线主服务器的所有从服务器发送 INFO 命令的频率，会从 10 秒一次改为每秒一次
 
-![哨兵工作原理6](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E5%93%A8%E5%85%B5%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%866.png)
+![哨兵工作原理6.png](/asserts/images/2020-08-13-1-Redis缓存中间件-Ⅰ/哨兵工作原理6.png)
 
 6. Sentinel 和其他 Sentinel 协商客观下线的主节点的状态，如果处于 SDOWN 状态，则投票自动选出新的主节点，将剩余从节点指向新的主节点进行数据复制
 
-![哨兵工作原理7](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E5%93%A8%E5%85%B5%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%867.png)
+![哨兵工作原理7.png](/asserts/images/2020-08-13-1-Redis缓存中间件-Ⅰ/哨兵工作原理7.png)
 
 7. 当没有足够数量的Sentinel同意主服务器下线时，主服务器的客观下线状态就会被移除
 
@@ -776,7 +777,7 @@ redis 单例提供了一种数据缓存方式和丰富的数据操作 api ，但
 
 主从模式很好的解决了数据备份问题，并且由于主从服务数据几乎是一致的，因而可以将写入数据的命令发送给主机执行，而读取数据的命令发送给不同的从机执行，从而达到读写分离的目的。如下所示主机 redis-A 分别有 redis-B、redis-C、redis-D、redis-E 四个从机：
 
-![redis主从模式](https://gitee.com/zxNchuPG/blogimage/raw/master/img/redis%E4%B8%BB%E4%BB%8E%E6%A8%A1%E5%BC%8F.jpg)
+![redis主从模式.png](/asserts/images/2020-08-13-1-Redis缓存中间件-Ⅰ/redis主从模式.png)
 
 上面介绍了 redis 单例的配置方式，而上面我们也介绍了主从模式其实也是多个 redis 实例组成的，因而 redis 主从模式的配置可以理解为多个不同的 redis 实例通过一定的配置告知其相互之间的主从关系
 
@@ -877,7 +878,7 @@ redis 主从模式解决了数据备份和单例可能存在的性能问题，�
 
 每个 sentinel 节点其实就是一个 redis 实例，与主从节点不同的是 sentinel 节点作用是用于监控 redis 数据节点的，而 sentinel 节点集合则表示监控一组主从 redis 实例多个 sentinel 监控节点的集合，比如有主节点 master 和从节点 slave-1、slave-2，为了监控这三个主从节点，这里配置 N 个s entinel 节点sentinel-1，sentinel-2，...，sentinel-N。如下图是 sentinel 监控主从节点的示例图：
 
-![redis哨兵模式](https://gitee.com/zxNchuPG/blogimage/raw/master/img/redis%E5%93%A8%E5%85%B5%E6%A8%A1%E5%BC%8F.jpg)
+![redis哨兵模式.png](/asserts/images/2020-08-13-1-Redis缓存中间件-Ⅰ/redis哨兵模式.png)
 
 从图中可以看出，对于一组主从节点，sentinel 只是在其外部额外添加的一组用于监控作用的 redis 实例。在主从节点和 **sentinel 节点集合**配置好之后，sentinel 节点之间会相互发送消息，以检测其余 sentinel 节点是否正常工作，并且 sentinel 节点也会向主从节点发送消息，以检测监控的主从节点是否正常工作
 
