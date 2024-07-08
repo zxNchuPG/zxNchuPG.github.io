@@ -26,7 +26,7 @@ RabbitMQ 是采用 Erlang 语言实现 AMQP(Advanced Message Queuing Protocol，
 
 AMQP 里主要说两个组件：Exchange 和 Queue（在 AMQP 1.0 里还会有变动），如下图所示，绿色的 X 就是  Exchange ，红色的是 Queue ，这两者都在 Server 端，又称作 Broker ，这部分是 RabbitMQ  实现的，而蓝色的则是客户端，通常有 Producer（生产者） 和 Consumer（消费者） 两种类型
 
-![AMQP](https://gitee.com/zxNchuPG/blogimage/raw/master/img/AMQP.png)
+![AMQP.png](../asserts/images/2020-08-22-RabbitMQ入门/AMQP.png)
 
 RabbitMQ 发展到今天，被越来越多的人认可，这和它在易用性、扩展性、可靠性和高可用性等方面的卓著表现是分不开的。RabbitMQ 的具体特点可以概括为以下几点：
 
@@ -47,7 +47,7 @@ RabbitMQ 整体上是一个生产者与消费者模型，主要负责接收、�
 
 **RabbitMQ 的整体模型架构**
 
-![RabbitMQ的整体模型架构](https://gitee.com/zxNchuPG/blogimage/raw/master/img/RabbitMQ%E7%9A%84%E6%95%B4%E4%BD%93%E6%A8%A1%E5%9E%8B%E6%9E%B6%E6%9E%84.jpg)
+![RabbitMQ的整体模型架构.png](../asserts/images/2020-08-22-RabbitMQ入门/RabbitMQ的整体模型架构.png)
 
 **Producer(生产者) 和 Consumer(消费者)**
 
@@ -64,7 +64,7 @@ Exchange(交换器) 用来接收生产者发送的消息并将这些消息路由
 
 RabbitMQ 的 Exchange(交换器) 有 4 种类型，不同的类型对应着不同的路由策略：direct(默认)，fanout, topic, 和 headers，不同类型的 Exchange 转发消息的策略有所区别。这个会在介绍 Exchange Types(交换器类型) 的时候介绍到
 
-![RabbitMQ之Exchange交换器](https://gitee.com/zxNchuPG/blogimage/raw/master/img/RabbitMQ%E4%B9%8BExchange%E4%BA%A4%E6%8D%A2%E5%99%A8.jpg)
+![RabbitMQ之Exchange交换器.png](../asserts/images/2020-08-22-RabbitMQ入门/RabbitMQ之Exchange交换器.png)
 
 生产者将消息发给交换器的时候，一般会指定一个 RoutingKey(路由键)，用来指定这个消息的路由规则，而这个 RoutingKey 需要与交换器类型和绑定键(BindingKey)联合使用才能最终生效
 
@@ -88,7 +88,7 @@ RabbitMQ 不支持队列层面的广播消费，如果有广播消费的需求�
 
 下图展示了生产者将消息存入 RabbitMQ Broker，以及消费者从 Broker 中消费数据的整个流程
 
-![rabbitMQ流程](https://gitee.com/zxNchuPG/blogimage/raw/master/img/rabbitMQ%E6%B5%81%E7%A8%8B.jpg)
+![rabbitMQ流程.png](../asserts/images/2020-08-22-RabbitMQ入门/rabbitMQ流程.png)
 
 ---
 
@@ -104,7 +104,7 @@ fanout 类型的 Exchange 路由规则非常简单，它会把所有发送到该
 
 direct 类型的 Exchange 路由规则也很简单，它会把消息路由到那些 Bindingkey 与 RoutingKey 完全匹配的 Queue 中
 
-![RabbitMQ之direct交换器](https://gitee.com/zxNchuPG/blogimage/raw/master/img/RabbitMQ%E4%B9%8Bdirect%E4%BA%A4%E6%8D%A2%E5%99%A8.jpg)
+![RabbitMQ之direct交换器.png](../asserts/images/2020-08-22-RabbitMQ入门/RabbitMQ之direct交换器.png)
 
 以上图为例，如果发送消息的时候设置路由键为 “warning” ,那么消息会路由到 Queue1 和 Queue2。如果在发送消息的时候设置路由键为 "Info" 或者 "debug"，消息只会路由到Queue2。如果以其他的路由键发送消息，则消息不会路由到这两个队列中
 
@@ -118,7 +118,7 @@ direct 类型常用在处理有优先级的任务，根据任务的优先级把�
 - BindingKey 和 RoutingKey 一样也是点号 “.” 分隔的字符串
 - BindingKey 中可以存在两种特殊字符串 “*” 和 “#” ，用于做模糊匹配，其中“”用于匹配一个单词，“#” 用于匹配多个单词(可以是零个)
 
-![RabbitMQ之Topic交换器](https://gitee.com/zxNchuPG/blogimage/raw/master/img/RabbitMQ%E4%B9%8BTopic%E4%BA%A4%E6%8D%A2%E5%99%A8.jpg)
+![RabbitMQ之Topic交换器.png](../asserts/images/2020-08-22-RabbitMQ入门/RabbitMQ之Topic交换器.png)
 
 以上图为例：
 - 路由键为 “com.rabbitmq.client” 的消息会同时路由到 Queue1 和 Queue2
