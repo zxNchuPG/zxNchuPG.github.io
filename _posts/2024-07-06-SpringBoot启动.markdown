@@ -3,12 +3,14 @@ layout:      post
 title:       "SpringBoot启动流程"
 subtitle:    "SpringBoot启动流程"
 author:      "Ekko"
-header-img:  "/asserts/images/2024-07-06-SpringBoot启动/bg-20240706.jpg"
+header-img:  "asserts/images/2024-07-06-SpringBoot启动/bg-20240706.jpg"
 catalog:     true
 tags:
   - 学习笔记
   - SpringBoot
 ---
+
+> 参考资料 [SpringBoot启动流程](https://www.cnblogs.com/hefeng2014/p/17770183.html)
 
 [TOC]
 

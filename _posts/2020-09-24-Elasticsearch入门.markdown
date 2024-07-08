@@ -104,7 +104,7 @@ ES 使用了倒排索引（ inverted index ），该结构对于全文检索非�
 
 把这种索引称为 inverted index 反向索引，国内翻译成倒排索引
 
-![ES倒排索引](https://gitee.com/zxNchuPG/blogimage/raw/master/img/ES%E5%80%92%E6%8E%92%E7%B4%A2%E5%BC%95.png)
+![ES倒排索引](/asserts/images/2020-09-24-Elasticsearch入门/ES倒排索引.png)
 
 
 Elasticsearch 内置了一些分词器切分这些词
@@ -122,7 +122,7 @@ Elasticsearch 分词器主要由三部分组成：
 
 中文分词器用得最多的就是 IK
 
-![ES数据结构](https://gitee.com/zxNchuPG/blogimage/raw/master/img/ES%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84.png)
+![ES数据结构](/asserts/images/2020-09-24-Elasticsearch入门/ES数据结构.png)
 
 输入一段文字，Elasticsearch 会根据分词器对文字进行分词（也就是图上所看到的 **Ada/Allen/Sara..** )
 
@@ -141,13 +141,13 @@ Term Index 在内存中是以 FST（Finite State Transducers）的形式保存�
 
 PostingList 会使用 Frame Of Reference（FOR） 编码技术对里边的数据进行压缩，节约磁盘空间
 
-![PostingList](https://gitee.com/zxNchuPG/blogimage/raw/master/img/PostingList.png)
+![PostingList.png](/asserts/images/2020-09-24-Elasticsearch入门/PostingList.png)
 
 PostingList 里边存的是 文档ID，查询的时候往往需要对这些文档 ID 做交集和并集的操作（比如在多条件查询时) ， PostingList 使用 Roaring Bitmaps 来对 文档ID 进行交并集操作
 
 使用 Roaring Bitmaps 的好处就是可以节省空间和快速得出交并集的结果
 
-![RoaringBitmaps](https://gitee.com/zxNchuPG/blogimage/raw/master/img/RoaringBitmaps.png)
+![RoaringBitmaps.png](/asserts/images/2020-09-24-Elasticsearch入门/RoaringBitmaps.png)
 
 ---
 
@@ -168,7 +168,7 @@ PostingList 里边存的是 文档ID，查询的时候往往需要对这些文�
 | Schema | Mapping |
 | SQL | DSL |
 
-![Elasticsearch集群](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Elasticsearch%E9%9B%86%E7%BE%A4.jpg)
+![Elasticsearch集群.png](/asserts/images/2020-09-24-Elasticsearch入门/Elasticsearch集群.png)
 
 一个 Elasticsearch 集群会有多个 Elasticsearch 节点，所谓节点实际上就是运行着 Elasticsearch 进程的机器
 
@@ -178,7 +178,7 @@ PostingList 里边存的是 文档ID，查询的时候往往需要对这些文�
 
 比如现在集群里边有 4 个节点，现在有一个 Index（表），想将这个 Index 在 4 个节点上存储，可以设置为 4 个分片。这 4 个分片的数据合起来就是 Index 的数据
 
-![Elasticsearch集群分片](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Elasticsearch%E9%9B%86%E7%BE%A4%E5%88%86%E7%89%87.png)
+![Elasticsearch集群分片.png](/asserts/images/2020-09-24-Elasticsearch入门/Elasticsearch集群分片.png)
 
 **分片的原因：**
 
@@ -191,11 +191,11 @@ PostingList 里边存的是 文档ID，查询的时候往往需要对这些文�
 
 > 这里主副本和很多分布式框架的原理几乎都是一致的
 
-![Elasticsearch集群分片副本](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Elasticsearch%E9%9B%86%E7%BE%A4%E5%88%86%E7%89%87%E5%89%AF%E6%9C%AC.png)
+![Elasticsearch集群分片副本.png](/asserts/images/2020-09-24-Elasticsearch入门/Elasticsearch集群分片副本.png)
 
 如果某个节点挂了，前面所提高的 Master Node 就会把对应的副本分片提拔为主分片，这样即便节点挂了，数据就不会丢
 
-![Elasticsearch的架构总结](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Elasticsearch%E7%9A%84%E6%9E%B6%E6%9E%84%E6%80%BB%E7%BB%93.png)
+![Elasticsearch的架构总结.png](/asserts/images/2020-09-24-Elasticsearch入门/Elasticsearch的架构总结.png)
 
 ---
 
@@ -205,7 +205,7 @@ PostingList 里边存的是 文档ID，查询的时候往往需要对这些文�
 
 客户端写入一条数据，到 Elasticsearch 集群里边就是由节点来处理这次请求：
 
-![Elasticsearch写请求](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Elasticsearch%E5%86%99%E8%AF%B7%E6%B1%82.png)
+![Elasticsearch写请求.png](/asserts/images/2020-09-24-Elasticsearch入门/Elasticsearch写请求.png)
 
 集群上的每个节点都是 coordinating node（协调节点），协调节点表明这个节点可以做路由。比如 节点1 接收到了请求，但发现这个请求的数据应该是由 节点2 处理（因为主分片在 节点2 上），所以会把请求转发到节点2上
 
@@ -221,7 +221,7 @@ PostingList 里边存的是 文档ID，查询的时候往往需要对这些文�
 5. 每隔 5s 中，translog 从 buffer flush 到磁盘中
 6. 定期/定量从 FileSystemCache 中，结合 translog 内容 flush index 到磁盘中
 
-![Elasticsearch写操作](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Elasticsearch%E5%86%99%E6%93%8D%E4%BD%9C.png)
+![Elasticsearch写操作.png](/asserts/images/2020-09-24-Elasticsearch入门/Elasticsearch写操作.png)
 
 * Elasticsearch 会把数据先写入内存缓冲区，然后每隔 1s 刷新到文件系统缓存区（当数据被刷新到文件系统缓冲区以后，数据才可以被检索到）。所以：Elasticsearch 写入的数据需要 1s 才能查询到
 * 为了防止节点宕机，内存中的数据丢失，Elasticsearch 会另写一份数据到日志文件上，但最开始的还是写到内存缓冲区，每隔 5s 才会将缓冲区的刷到磁盘中。所以：Elasticsearch 某个节点如果挂了，可能会造成有 5s 的数据丢失
@@ -232,7 +232,7 @@ PostingList 里边存的是 文档ID，查询的时候往往需要对这些文�
 
 > 写内存缓冲区（定时去生成 segment，生成 translog ），能够让数据能被索引、被持久化。最后通过 commit 完成一次的持久化
 
-![Elasticsearch写操作2](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Elasticsearch%E5%86%99%E6%93%8D%E4%BD%9C2.png)
+![Elasticsearch写操作2.png](/asserts/images/2020-09-24-Elasticsearch入门/Elasticsearch写操作2.png)
 
 等主分片写完了以后，会将数据并行发送到副本集节点上，等到所有的节点写入成功就返回 ack 给协调节点，协调节点返回 ack 给客户端，完成一次的写入
 
@@ -248,7 +248,7 @@ Elasticsearch 的更新和删除操作流程：
 
 在合并的过程中，会把带有 delete 状态的 doc 给物理删除掉
 
-![Elasticsearch删除操作](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Elasticsearch%E5%88%A0%E9%99%A4%E6%93%8D%E4%BD%9C.png)
+![Elasticsearch删除操作.png](/asserts/images/2020-09-24-Elasticsearch入门/Elasticsearch删除操作.png)
 
 ---
 
@@ -274,7 +274,7 @@ public Document doc(int docID);
 
 * 同时去查询内存和硬盘的 Segement 文件
 
-![Elasticsearch查询操作](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Elasticsearch%E6%9F%A5%E8%AF%A2%E6%93%8D%E4%BD%9C.png)
+![Elasticsearch查询操作.png](/asserts/images/2020-09-24-Elasticsearch入门/Elasticsearch查询操作.png)
 
 从上面所讲的写入流程可以知道：Get（通过 ID 去查 Doc 是实时的），Query（通过 query 去匹配 Doc 是近实时的）
 
@@ -289,7 +289,7 @@ Elasticsearch 查询又分可以为三个阶段
 > 这里的 **分** 指的是词频率和文档的频率（Term Frequency、Document Frequency）众所周知，出现频率越高，相关性就更强
 
 
-![Elasticsearch查询操作2](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Elasticsearch%E6%9F%A5%E8%AF%A2%E6%93%8D%E4%BD%9C2.png)
+![Elasticsearch查询操作2.png](/asserts/images/2020-09-24-Elasticsearch入门/Elasticsearch查询操作2.png)
 
 一般用得最多的就是 QUERY_THEN_FETCH （按分算），第一种查询完就返回整个 Doc 内容（QUERY_AND_FETCH）只适合于只需要查一个分片的请求
 
@@ -312,7 +312,7 @@ Elasticsearch 查询又分可以为三个阶段
 
 > 由于 Elasticsearch 是分布式的，所以需要从各个节点都拉取对应的数据，然后最终统一合成给客户端，只是 Elasticsearch 把这些活都干了，我们在使用的时候无感知而已
 
-![Elasticsearch查询流程](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Elasticsearch%E6%9F%A5%E8%AF%A2%E6%B5%81%E7%A8%8B.png)
+![Elasticsearch查询流程.png](/asserts/images/2020-09-24-Elasticsearch入门/Elasticsearch查询流程.png)
 
 ---
 
@@ -1368,7 +1368,7 @@ public class ElasticSearchBulkOut {
 }
 ```
 
-![bulk批量导出结果](https://gitee.com/zxNchuPG/blogimage/raw/master/img/bulk%E6%89%B9%E9%87%8F%E5%AF%BC%E5%87%BA%E7%BB%93%E6%9E%9C.png)
+![bulk批量导出结果.png](/asserts/images/2020-09-24-Elasticsearch入门/bulk批量导出结果.png)
 
 ---
 
