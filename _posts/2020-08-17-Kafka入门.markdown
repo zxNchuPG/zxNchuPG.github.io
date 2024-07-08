@@ -49,13 +49,13 @@ Kafka 是由 Apache 软件基金会开发的一个开源流处理平台。该项
 
 ## 基础架构
 
-![kafka基础架构](https://gitee.com/zxNchuPG/blogimage/raw/master/img/kafka%E5%9F%BA%E7%A1%80%E6%9E%B6%E6%9E%84.jpg)
+![kafka基础架构.png](/asserts/images/2020-08-17-Kafka入门/kafka基础架构.png)
 
 ---
 
 ## 生产者（producer）和 消费者（consumer）
 
-![kafka生产者与消费者](https://gitee.com/zxNchuPG/blogimage/raw/master/img/kafka%E7%94%9F%E4%BA%A7%E8%80%85%E4%B8%8E%E6%B6%88%E8%B4%B9%E8%80%85.png)
+![kafka生产者与消费者.png](/asserts/images/2020-08-17-Kafka入门/kafka生产者与消费者.png)
 
 对于 Kafka 来说客户端有两种基本类型：
 
@@ -72,7 +72,7 @@ Consumer(消费者)与生产者对应的是消费者，应用程序可以通过 
 
 ## Broker 和集群（Cluster）
 
-![kafka集群与Broker](https://gitee.com/zxNchuPG/blogimage/raw/master/img/kafka%E9%9B%86%E7%BE%A4%E4%B8%8EBroker.png)
+![kafka集群与Broker.png](/asserts/images/2020-08-17-Kafka入门/kafka集群与Broker.png)
 
 **Broker：** Broker是kafka实例，每个服务器上有一个或多个kafka的实例，我们姑且认为每个broker对应一台服务器。每个kafka集群内的broker都有一个不重复的编号，如图中的broker-1、broker-2等
 
@@ -90,7 +90,7 @@ Kafka 的一个关键性质是日志保留（retention），我们可以配置�
 
 ## 主题（Topic）与分区（Partition）
 
-![kafka主题与分区](https://gitee.com/zxNchuPG/blogimage/raw/master/img/kafka%E4%B8%BB%E9%A2%98%E4%B8%8E%E5%88%86%E5%8C%BA.png)
+![kafka主题与分区.png](/asserts/images/2020-08-17-Kafka入门/kafka主题与分区.png)
 
 **Topic：** 消息的主题，是一个逻辑的概念，可以理解为消息的分类，每一条发送到 Kafka 的消息都有一个类别，这就是 topic，producer 负责将消息发送到特定的 topic(发送到 Kafka 集群中的每一条消息都必须指定一个 topic)，而 consumer 负责订阅 topic 并进行消费
 
@@ -138,7 +138,7 @@ kafka 的数据就保存在 topic。在每个 broker（kafka实例）上都可�
 
 上述的 Topic 其实是逻辑上的概念，面相消费者和生产者，物理上存储的其实是 Partition，每一个 Partition 最终对应一个目录，里面存储所有的消息和索引文件。默认情况下，每一个 Topic 在创建时如果不指定 Partition 数量时只会创建 1 个 Partition。比如，我创建了一个 Topic 名字为 test ，没有指定 Partition 的数量，那么会默认创建一个 test-0 的文件夹，这里的命名规则是：`<topic_name>-<partition_id>`
 
-![kafka存储在文件系统上](https://gitee.com/zxNchuPG/blogimage/raw/master/img/kafka%E5%AD%98%E5%82%A8%E5%9C%A8%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F%E4%B8%8A.png)
+![kafka存储在文件系统上.png](/asserts/images/2020-08-17-Kafka入门/kafka存储在文件系统上.png)
 
 任何发布到 Partition 的消息都会被追加到 Partition 数据文件的尾部，这样的顺序写磁盘操作让 Kafka 的效率非常高（经验证，顺序写磁盘效率比随机写内存还要高，这是 Kafka 高吞吐率的一个很重要的保证）
 
@@ -178,7 +178,7 @@ kafka 的数据就保存在 topic。在每个 broker（kafka实例）上都可�
 
 以上面的一对 Segment File 为例，说明一下索引文件和数据文件对应关系：
 
-![kafka索引文件和数据文件关系](https://gitee.com/zxNchuPG/blogimage/raw/master/img/kafka%E7%B4%A2%E5%BC%95%E6%96%87%E4%BB%B6%E5%92%8C%E6%95%B0%E6%8D%AE%E6%96%87%E4%BB%B6%E5%85%B3%E7%B3%BB.png)
+![kafka索引文件和数据文件关系.png](/asserts/images/2020-08-17-Kafka入门/kafka索引文件和数据文件关系.png)
 
 其中以索引文件中元数据 `<3, 497>` 为例，依次在数据文件中表示第 3 个 message（在全局 Partition 表示第 368769 + 3 = 368772 个 message）以及该消息的物理偏移地址为 497
 
@@ -194,7 +194,7 @@ kafka 的数据就保存在 topic。在每个 broker（kafka实例）上都可�
 
 partition 是比较具体的东西，Partition 在服务器上的表现形式就是一个一个的文件夹，每个 partition 的文件夹下面会有多组 segment 文件，每组 segment 文件又包含.index文件、.log文件、.timeindex文件（早期版本中没有）三个文件， log文件就实际是存储message的地方，而index和timeindex文件为索引文件，用于检索消息
 
-![partition结构](https://gitee.com/zxNchuPG/blogimage/raw/master/img/partition%E7%BB%93%E6%9E%84.jpg)
+![partition结构.png](/asserts/images/2020-08-17-Kafka入门/partition结构.png)
 
 如上图，这个 partition 有三组 segment 文件，每个 log 文件的大小是一样的，但是存储的 message 数量是不一定相等的（每条的 message 大小不一致）。文件的命名是以该segment 最小 offset 来命名的，如 000.index 存储 offset 为 0~368795 的消息，kafka 就是利用 **分段+索引** 的方式来解决查找效率的问题
 
@@ -212,7 +212,7 @@ Kafka 是如何准确的知道 message 的偏移的呢？这是因为在 Kafka �
 
 假如现在需要查找一个offset 为 368801 的 message 是什么样的过程呢？我们先看看下面的图：
 
-![kafka查找消息](https://gitee.com/zxNchuPG/blogimage/raw/master/img/kafka%E6%9F%A5%E6%89%BE%E6%B6%88%E6%81%AF.jpg)
+![kafka查找消息.png](/asserts/images/2020-08-17-Kafka入门/kafka查找消息.png)
 
 1. 先找到 offset 的 368801 message 所在的 segment 文件（利用二分法查找），这里找到的就是在第二个 segment 文件
 2. 打开找到的 segment 中的 .index 文件（也就是 368796.index 文件，该文件起始偏移量为 368796+1，我们要查找的 offset 为 368801 的 message 在该 index 内的偏移量为 368796 + 5= 368801，所以这里要查找的相对 offset 为 5）。由于该文件采用的是稀疏索引的方式存储着相对 offset 及对应 message 物理偏移量的关系，所以直接找相对 offset 为5的索引找不到，这里同样利用二分法查找相对 offset 小于或者等于指定的相对 offset 的索引条目中最大的那个相对 offset，所以找到的是相对 offset 为 4 的这个索引
@@ -243,7 +243,7 @@ Kafka 是如何准确的知道 message 的偏移的呢？这是因为在 Kafka �
 
 不同的业务需要使用不同的写入方式和配置。具体的方式我们在这里不做讨论，现在先看下生产者写消息的基本流程：
 
-![kafka生产者写消息的基本流程](https://gitee.com/zxNchuPG/blogimage/raw/master/img/kafka%E7%94%9F%E4%BA%A7%E8%80%85%E5%86%99%E6%B6%88%E6%81%AF%E7%9A%84%E5%9F%BA%E6%9C%AC%E6%B5%81%E7%A8%8B.png)
+![kafka生产者写消息的基本流程.png](/asserts/images/2020-08-17-Kafka入门/kafka生产者写消息的基本流程.png)
 
 流程如下：
 
@@ -256,11 +256,11 @@ Kafka 是如何准确的知道 message 的偏移的呢？这是因为在 Kafka �
 
 producer 在写入数据的时候永远的找 leader，不会直接将数据写入 follower！那 leader 怎么找呢？写入的流程又是什么样的呢？我们看下图：
 
-![kafka生产者找leader写消息](https://gitee.com/zxNchuPG/blogimage/raw/master/img/kafka%E7%94%9F%E4%BA%A7%E8%80%85%E6%89%BEleader%E5%86%99%E6%B6%88%E6%81%AF.jpg)
+![kafka生产者找leader写消息.png](/asserts/images/2020-08-17-Kafka入门/kafka生产者找leader写消息.png)
 
 发送的流程就在图中已经说明了，需要注意的一点是，消息写入 leader 后，follower 是主动的去 leader 进行同步的！producer 采用 push 模式将数据发布到 broker，每条消息追加到分区中，顺序写入磁盘，所以保证同一分区内的数据是有序的！写入示意图如下：
 
-![kafka生产者顺序写入](https://gitee.com/zxNchuPG/blogimage/raw/master/img/kafka%E7%94%9F%E4%BA%A7%E8%80%85%E9%A1%BA%E5%BA%8F%E5%86%99%E5%85%A5.jpg)
+![kafka生产者顺序写入.png](/asserts/images/2020-08-17-Kafka入门/kafka生产者顺序写入.png)
 
 上面说到数据会写入到不同的分区，那 kafka 为什么要做分区呢？相信大家应该也能猜到，分区的主要目的是：
 
@@ -294,25 +294,25 @@ producer 在写入数据的时候永远的找 leader，不会直接将数据写�
 
 Kafka 消费者是**消费组**的一部分，当多个消费者形成一个消费组来消费主题时，每个消费者会收到不同分区的消息。假设有一个 T1 主题，该主题有 4 个分区；同时我们有一个消费组 G1，这个消费组只有一个消费者 C1。那么消费者 C1 将会收到这 4 个分区的消息，如下所示：
 
-![kafka消费者与消费组](https://gitee.com/zxNchuPG/blogimage/raw/master/img/kafka%E6%B6%88%E8%B4%B9%E8%80%85%E4%B8%8E%E6%B6%88%E8%B4%B9%E7%BB%84.png)
+![kafka消费者与消费组.png](/asserts/images/2020-08-17-Kafka入门/kafka消费者与消费组.png)
 
 如果我们增加新的消费者C2到消费组G1，那么每个消费者将会分别收到两个分区的消息，如下所示：
 
-![kafka消费者与消费组2](https://gitee.com/zxNchuPG/blogimage/raw/master/img/kafka%E6%B6%88%E8%B4%B9%E8%80%85%E4%B8%8E%E6%B6%88%E8%B4%B9%E7%BB%842.png)
+![kafka消费者与消费组2.png](/asserts/images/2020-08-17-Kafka入门/kafka消费者与消费组2.png)
 
 如果增加到4个消费者，那么每个消费者将会分别收到一个分区的消息，如下所示：
 
-![kafka消费者与消费组3](https://gitee.com/zxNchuPG/blogimage/raw/master/img/kafka%E6%B6%88%E8%B4%B9%E8%80%85%E4%B8%8E%E6%B6%88%E8%B4%B9%E7%BB%843.png)
+![kafka消费者与消费组3.png](/asserts/images/2020-08-17-Kafka入门/kafka消费者与消费组3.png)
 
 但如果我们继续增加消费者到这个消费组，剩余的消费者将会空闲，不会收到任何消息：
 
-![kafka消费者与消费组4](https://gitee.com/zxNchuPG/blogimage/raw/master/img/kafka%E6%B6%88%E8%B4%B9%E8%80%85%E4%B8%8E%E6%B6%88%E8%B4%B9%E7%BB%844.png)
+![kafka消费者与消费组4.png](/asserts/images/2020-08-17-Kafka入门/kafka消费者与消费组4.png)
 
 总而言之，我们可以通过增加消费组的消费者来进行水平扩展提升消费能力。这也是为什么建议创建主题时使用比较多的分区数，这样可以在消费负载高的情况下增加消费者来提升性能。另外，消费者的数量不应该比分区数多，因为多出来的消费者是空闲的，没有任何帮助
 
 **Kafka 一个很重要的特性就是，只需写入一次消息，可以支持任意多的应用读取这个消息** 换句话说，每个应用都可以读到全量的消息。为了使得每个应用都能读到全量消息，应用需要有不同的消费组。对于上面的例子，假如我们新增了一个新的消费组 G2，而这个消费组有两个消费者，那么会是这样的：
 
-![kafka消费者与消费组5](https://gitee.com/zxNchuPG/blogimage/raw/master/img/kafka%E6%B6%88%E8%B4%B9%E8%80%85%E4%B8%8E%E6%B6%88%E8%B4%B9%E7%BB%845.png)
+![kafka消费者与消费组5.png](/asserts/images/2020-08-17-Kafka入门/kafka消费者与消费组5.png)
 
 在这个场景中，消费组 G1 和消费组 G2 都能收到 T1 主题的全量消息，在逻辑意义上来说它们属于不同的应用
 
@@ -349,7 +349,7 @@ Kafka 消费者是**消费组**的一部分，当多个消费者形成一个消�
 
 无论消息是否被消费，除非消息到期 Partition 从不删除消息。例如设置保留时间为 2 天，则消息发布 2 天内任何 Group 都可以消费，2 天后，消息自动被删除。 Partition 会为每个 Consumer Group 保存一个偏移量，记录 Group 消费到的位置。 如下图：
 
-![Partition保留偏移量](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Partition%E4%BF%9D%E7%95%99%E5%81%8F%E7%A7%BB%E9%87%8F.png)
+![Partition保留偏移量.png](/asserts/images/2020-08-17-Kafka入门/Partition保留偏移量.png)
 
 ---
 
@@ -397,7 +397,7 @@ It sounds pretty good。但是这个问题就像为什么 setTimeout 不准确�
 
 此时你就会产品经理商量，是否允许有一定的误差呢？产品经理同意了。ok，这个问题突然就变得简单起来了
 
-![kafka简单延时队列](https://gitee.com/zxNchuPG/blogimage/raw/master/img/kafka%E7%AE%80%E5%8D%95%E5%BB%B6%E6%97%B6%E9%98%9F%E5%88%97.png)
+![kafka简单延时队列.png](/asserts/images/2020-08-17-Kafka入门/kafka简单延时队列.png)
 
 我们可以按照消息的预计发送时间，划分出来一些延时等级。例如我们这里是 2h，那么我们可以划分出来，5s、10s、30s、1min、2min、5min、10min、20min、30min、45min、1h、2h。延时的消息按照不同的延时等级，被放入不同的 topic 当中，如果是和等级不一致的消息，会被强制转为和等级一致的延时时间，这样延时的误差可以控制在两个延时等级的时间差范围内。例如，现在有个消息要在 19s 之后被消费，按照我们定下来的规则，他会被投递到 30s 的延时等级中，也就是说这个消息将会在 30s 后被消费，比起秒级延时队列，这条消息的误差晚了 11s 被消费。虽然存在着一定的误差，但是误差算是可控，并且这样只需要增加少量的 topic，就能实现延时队列的功能，而且非常简单
 
@@ -416,9 +416,9 @@ kafka 和传统的 MQ 一样，由 producer，broker 和 consumer 组成
 kafka 对外使用 topic 的概念，生产者往 topic 里写消息，消费者从 topic 读消息。为了做到水平扩展，一个 topic 实际是由多个 partition 组成的，遇到瓶颈时，可以通过增加 partition 的数量来进行横向扩容。单个 parition 内是保证消息有序。
 每新写一条消息，kafka 就是在对应的文件 append 写，所以性能非常高。
 
-![kafka71210](https://gitee.com/zxNchuPG/blogimage/raw/master/img/kafka71210.png)
+![kafka71210.png](/asserts/images/2020-08-17-Kafka入门/kafka71210.png)
 
-![kafka71211](https://gitee.com/zxNchuPG/blogimage/raw/master/img/kafka71211.png)
+![kafka71211.png](/asserts/images/2020-08-17-Kafka入门/kafka71211.png)
 
 **consumerGroup：** 每个 Consumer 会组成一个 Group。kafka 中一个 parititon 只能被每个 Group 中的一个 consumer 线程去消费，也就是说，如果一个 partition 被 group1 中的 consumer1 去消费了那么其中的 consumer2 就不能去消费。如果你想多个 consumer 去消费，只能再去开一个 group
 
@@ -436,7 +436,7 @@ consumer 有个 enable.auto.commit 的属性，是读自动提交，默认 true�
 
 **Topic 和 Partition：** topic 相当于传统意义上的 MQ，producer 端发送的 message 必须指定是发送到哪个 topic，但是不需要指定 topic 下的哪个 partition，因为 kafka 会把收到的 message 进行 load balance，均匀的分布在这个 topic 下的不同的 partition 上( `hash(message) % [partition数量]` )。每个 Topic 是有多个 Partition 组成的每个 Partiton 里的位置就是一个 Message 每个 partition 在存储层面是 append log 文件。任何发布到此 partition 的消息都会被直接追加到 log 文件的尾部，每条消息在文件中的位置称为 offset(偏移量)。消费者消费的时候根据 offset 去消费，同时消息被消费并不会消失，需要保留一段时间后(根据 broker 中的配置)才会被删除。设计 partition 的原因应该是 kafka 是基于文件存储的，通过分区，可以将日志内容分散到多个 broker 上，避免文件尺寸达到磁盘上限
 
-![kafka71212](https://gitee.com/zxNchuPG/blogimage/raw/master/img/kafka71212.png)
+![kafka71212.png](/asserts/images/2020-08-17-Kafka入门/kafka71212.png)
 
 每个 partition 都会有 partition replica，也就是 partition 备份，kafka 可以配置 partition 需要的 replica 个数。当存在多副本的情况下，会尽量把多个副本，分配到不同的 broker 上。kafka 会为 partition 选出一个 leader，leader 会去处理所有对 partition 的请求，不论读写，同时也只有 leader 会去处理，然后再同步到其他的 follower。当 broker 挂了后，所有 leader 在该 broker 上的 partition 都会重新选举，选出一个 leader。(这里不像分布式文件存储系统那样会自动进行复制保持副本数)
 
@@ -505,7 +505,7 @@ Kafka 容灾主要依赖于 Replication 机制，Replication 可以在 server �
 
 高水位截止：(补充一下高水位截止的含义，因为 leader 是取最小的 HW，那么就可能存在 follower 比 leader 高的情况，这时 follower 需要把多出来的部分 truncate，称为高水位截止)之所以把这里再次拿出来说的原因是，我在看到这个地方的时候就产生一种疑问：高水位截止会不会导致数据丢失？这里我们就需要明白几点，leader 和 follower 的 LEO 和 HW 是什么时候更新的，在此之前，我们需要重新来理解一下 kafka 的 HW 和 LEO 机制(上述的数据一致性部分，请参考起来看，因为 kafka 的一致性确实依赖于 HW 和 LEO 机制)
 
-![kafka71213](https://gitee.com/zxNchuPG/blogimage/raw/master/img/kafka71213.png)
+![kafka71213.png](/asserts/images/2020-08-17-Kafka入门/kafka71213.png)
 
 LEO：即日志末端位移(log end offset)，记录了该副本底层日志(log)中下一条消息的位移值。注意是下一条消息！也就是说，如果 LEO=10，那么表示该副本保存了 10 条消息，位移值范围是`[0, 9]`。另外，leader LEO 和 follower LEO 的更新是有区别的。
 
@@ -555,7 +555,7 @@ leader 更新 HW：这个地方是最重要的，上面也说了，leader 的 HW
 
 假设我们现在只有一主一从两副本。一个 leader 一个 follower，某个时刻时，leader 收到了 follower 的 FETCH 请求，这时 leader 去更新自己的 HW，这个时候 follower 重启了，重启后需要重新去拉 HW。再去发一个 FETCH 请求，这个时候恰好 leader 挂了。那么就要重新选主，follower 就会成为新主，这个时候 follower 里的 HW 并没有更新，但是对于 consumer 而言，这个 HW 已经更新过了，也就是说，这个数据就不存在了。
 
-![kafka71214](https://gitee.com/zxNchuPG/blogimage/raw/master/img/kafka71214.png)
+![kafka71214.png](/asserts/images/2020-08-17-Kafka入门/kafka71214.png)
 
 ---
 
@@ -563,7 +563,7 @@ leader 更新 HW：这个地方是最重要的，上面也说了，leader 的 HW
 
 我们还是只有一主一从两副本。一个 leader 一个 follower。假设此时 leader 收到了一条消息 m2，情况同上时，也就是 leader 刚更新完 HW，follower 还没来得及更新的那一刻，leader 和 follower 全挂了。这个时候要等最先复活的，之前的 follower 先复活了，并且这个时候成为了新的 leader，它的接收了新消息 m3，这个时候新 leader 的 HW 会+1。注意这个时候新 leader 的 HW 和原来 follower 的 HW 位置是一样的。然后旧的 leader 活了，成为了 follower，此时，两者的 HW 相同，但是这个位置的数据却不一致。
 
-![kafka71215](https://gitee.com/zxNchuPG/blogimage/raw/master/img/kafka71215.png)
+![kafka71215.png](/asserts/images/2020-08-17-Kafka入门/kafka71215.png)
 
 综上其实说明一个问题，kafka 使用 HW 值来决定副本备份的进度，而 follower 的 HW 值的更新通常需要额外一轮 FETCH 请求才能完成(参考 followerHW 更新时间)，而这种设计是有问题的。
 
@@ -589,7 +589,7 @@ Leader Epoch Sequence File: 存储 Leader Epoch 和 Leader Epoch Start Offset �
 
 解决数据丢失：A 重启后，向 B 发送 LeaderEpochRequest 请求，此时由于 Leader Epoch 相等，所以 B 返回给 A 的是 B 的 LEO。此时 B 挂掉，A 接收到 LEO=2，与自己相同，所以不会截断，A 成为 leader，在文件中添加新的 Leader epoch 和开始偏移即可
 
-![kafka71216](https://gitee.com/zxNchuPG/blogimage/raw/master/img/kafka71216.png)
+![kafka71216.png](/asserts/images/2020-08-17-Kafka入门/kafka71216.png)
 
 这是官方给出的解释，我在这里有个问题，如果 A 刚重启完，还没来得及发 LeaderEpochRequest，B 就挂了，这个时候怎么办？因为这里不是按 HW 进行截止的，而是主要依赖于 LEO。如果此时 B 直接挂了，A 就会被选为 leader，那么就要依赖于 A 的 LEO，这个时候 A 的 LEO 是处于 2 的位置的，HW 是否会直接变成 2 而不进行截止。(此处是我的推论，未经证实，只是我看到的时候产生了疑问)
 
@@ -603,7 +603,7 @@ Leader Epoch Sequence File: 存储 Leader Epoch 和 Leader Epoch Start Offset �
 
 ## kafka 的存储
 
-![kafka71218](https://gitee.com/zxNchuPG/blogimage/raw/master/img/kafka71218.png)
+![kafka71218.png](/asserts/images/2020-08-17-Kafka入门/kafka71218.png)
 
 Kafka 中的 message 是以 topic 为基本单位进行组织的，不同的 topic 之间是相互独立的。每个 topic 又可以分为不同的 partition，每个 partition 存储一部分的 message 信息。这些基础的结构希望大家牢记
 
@@ -626,7 +626,7 @@ partition 在 Topic 中存储分布：
 
 partiton 中文件存储方式：借图说话，如下
 
-![kafka71219](https://gitee.com/zxNchuPG/blogimage/raw/master/img/kafka71219.jpg)
+![kafka71219.png](/asserts/images/2020-08-17-Kafka入门/kafka71219.png)
 
 每个 partion(目录)相当于一个巨型文件被平均分配到多个大小相等 segment(段)数据文件中。但每个段 segment file 消息数量不一定相等，这种特性方便 old segment file 快速被删除。每个 partiton 只需要支持顺序读写就行了，segment 文件生命周期由服务端配置参数决定。这样做的好处就是能快速删除无用文件，有效提高磁盘利用率。
 
