@@ -479,7 +479,7 @@ settings.xml中的profile元素是pom.xml中profile元素的裁剪版本。它�
 
 ## 依赖管理
 
-![maven依赖](https://gitee.com/zxNchuPG/blogimage/raw/master/img/maven%E4%BE%9D%E8%B5%96.png)
+![maven依赖.png](/asserts/images/2021-02-09-Maven详解/maven依赖.png)
 
 声明了 A 的依赖后， Maven 自动把 aa 都加入项目依赖，不需要自己区研究 A 是否需要依赖 aa 
 
@@ -576,7 +576,7 @@ Maven通过对jar包进行PGP签名确保任何一个jar包一经发布就无法
 
 ## 构建流程
 
-![maven生命周期](https://gitee.com/zxNchuPG/blogimage/raw/master/img/maven%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F.png)
+![maven生命周期.png](/asserts/images/2021-02-09-Maven详解/maven生命周期.png)
 
 maven 中包含三个生命周期，每个生命周期包含了多个步骤（phase）， goal 则是绑定到 phase 上的，没一个 phase 都对应 1 个或多个 goal，goal 是存在于 maven plugin 中，因此大多数的 maven 功能实际上是存在于插件中，一个 maven 插件提供了一组可以被运行的 goal
 

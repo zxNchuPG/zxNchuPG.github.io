@@ -284,7 +284,7 @@ Linux/Unix 的文件调用权限分为三级 : 文件所有者（Owner）、用�
 
 八进制语法：
 
-![chmod文件权限](https://gitee.com/zxNchuPG/blogimage/raw/master/img/chmod%E6%96%87%E4%BB%B6%E6%9D%83%E9%99%90.png)
+![chmod文件权限.png](/asserts/images/2021-01-09-Linux常用命令/chmod文件权限.png)
 
 765 将这样解释：
 
@@ -449,7 +449,7 @@ find /etc -name "host*" -print
 
 ## vim/vi 文本编辑器
 
-![linux下vim](https://gitee.com/zxNchuPG/blogimage/raw/master/img/linux%E4%B8%8Bvim.png)
+![linux下vim.png](/asserts/images/2021-01-09-Linux常用命令/linux下vim.png)
 
 Vim是从 vi 发展出来的一个文本编辑器
 
