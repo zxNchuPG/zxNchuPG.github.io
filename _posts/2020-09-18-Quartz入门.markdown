@@ -432,7 +432,7 @@ Trigger 是这些任务的执行规则，JobDetail（ 或 Job ）代表的是具
 
 > 多个触发器可以指向同一个任务，但一个触发器只能指向一个任务
 
-![trigger触发器](https://gitee.com/zxNchuPG/blogimage/raw/master/img/trigger%E8%A7%A6%E5%8F%91%E5%99%A8.png)
+![trigger触发器.png](/asserts/images/2020-09-18-Quartz入门/trigger触发器.png)
 
 > 常用的两个 CronTriggerImpl、SimpleTriggerImpl
 
@@ -459,7 +459,7 @@ Trigger 接口主要描述了一个任务（ Job ）的调度优先级、开始�
 
 > CronScheduleBuilder 返回的是 CronTriggerImpl 类型
 
-![ScheduleBuilder子类](https://gitee.com/zxNchuPG/blogimage/raw/master/img/ScheduleBuilder%E5%AD%90%E7%B1%BB.png)
+![ScheduleBuilder子类.png](/asserts/images/2020-09-18-Quartz入门/ScheduleBuilder子类.png)
 
 SimpleScheduleBuilder 继承结构可以看到它属于 ScheduleBuilder（ abstract 修饰） 类的子类，而 ScheduleBuilder 子类的实现由上图所示
 
@@ -503,7 +503,7 @@ SimpleSchedulerBuilder使用静态方法返回实例，相关的设置方法基�
 
 通过查看 JobDetail 、 Trigger 及 JobExecutionContext 的源码可以发现，他们中都存在 JobDataMap 这个类型，它是以 Map 的形式存储我们的一些自定义数据的。当 Job 对象的 execute 方法被调用时，JobDataMap 会通过 JobExecutionContext 传递给 execute 方法，它可以用来装载任何可序列化的数据对象。JobDataMap 实现了 Java 中的 Map 接口，提供了一些自己的方法来存储数据
 
-![JobDataMap继承关系](https://gitee.com/zxNchuPG/blogimage/raw/master/img/JobDataMap%E7%BB%A7%E6%89%BF%E5%85%B3%E7%B3%BB.png)
+![JobDataMap继承关系.png](/asserts/images/2020-09-18-Quartz入门/JobDataMap继承关系.png)
 
 > JobDataMap 当 Java 中的 map 来用就行了
 
@@ -513,11 +513,11 @@ SimpleSchedulerBuilder使用静态方法返回实例，相关的设置方法基�
 
 Scheduler 任务调度器也是一个接口，它定义了调度任务中的基本操作骨架
 
-![Scheduler实现类](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Scheduler%E5%AE%9E%E7%8E%B0%E7%B1%BB.png)
+![Scheduler实现类.png](/asserts/images/2020-09-18-Quartz入门/Scheduler实现类.png)
 
 通过 SchedulerFactory 调度器构建工厂的接口子工厂实例来完成，它有两个具体的工厂实现
 
-![SchedulerFactory实现类](https://gitee.com/zxNchuPG/blogimage/raw/master/img/SchedulerFactory%E5%AE%9E%E7%8E%B0%E7%B1%BB.png)
+![SchedulerFactory实现类.png](/asserts/images/2020-09-18-Quartz入门/SchedulerFactory实现类.png)
 
 一般使用的是 StdSchedulerFactory 工厂来获取 Scheduler 实例，因为它可以使用配置文件方式配置参数
 
@@ -587,7 +587,7 @@ public class QuartzScheduler {
 }
 ```
 
-![Quartz运行结果](https://gitee.com/zxNchuPG/blogimage/raw/master/img/Quartz%E8%BF%90%E8%A1%8C%E7%BB%93%E6%9E%9C.png)
+![Quartz运行结果.png](/asserts/images/2020-09-18-Quartz入门/Quartz运行结果.png)
 
 ---
 
