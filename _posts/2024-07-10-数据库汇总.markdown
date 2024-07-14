@@ -1,7 +1,7 @@
 ---
 layout:      post
-title:       "消息队列"
-subtitle:    "Message Queue"
+title:       "数据库汇总"
+subtitle:    "SQL"
 author:      "Ekko"
 header-img:  "img/bg/bg-messageQueue.jpg"
 catalog:     true
