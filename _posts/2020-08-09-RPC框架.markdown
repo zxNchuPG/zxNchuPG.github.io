@@ -56,7 +56,7 @@ int l_times_r = Multiply(lvalue, rvalue);
 
 当系统改造为分布式应用时，将很多可以共享的功能都单独抽出来，放到一个服务中，让别的服务去调用
 
-![RCP方法调用](https://gitee.com/zxNchuPG/blogimage/raw/master/img/RCP%E6%96%B9%E6%B3%95%E8%B0%83%E7%94%A8.png)
+![RCP方法调用.png](/asserts/images/2020-08-09-RPC框架/RCP方法调用.png)
 
 但是 service A 中并没有 Service B 的 CalculatorImpl 实现类
 
@@ -76,17 +76,17 @@ int l_times_r = Multiply(lvalue, rvalue);
 - 类或函数的参数
 - 类或函数的返回值
 
-![RPC远程调用必要元素](https://gitee.com/zxNchuPG/blogimage/raw/master/img/RPC%E8%BF%9C%E7%A8%8B%E8%B0%83%E7%94%A8%E5%BF%85%E8%A6%81%E5%85%83%E7%B4%A0.jpg)
+![RPC远程调用必要元素.png](/asserts/images/2020-08-09-RPC框架/RPC远程调用必要元素.png)
 
 远程调用肯定也不会缺少这三要素，唯一的区别在于这三要素是要被传输过去的，这其中就涉及协议编码和解码的过程
 
 Service A 需要通过网络传输来告诉 Service B，它想要 add 函数，传入的两个参数分别是 3 和 5 ，返回的结果放在 result 里面就可以
 
-![RPC调用add示例](https://gitee.com/zxNchuPG/blogimage/raw/master/img/RPC%E8%B0%83%E7%94%A8add%E7%A4%BA%E4%BE%8B.jpg)
+![RPC调用add示例.png](/asserts/images/2020-08-09-RPC框架/RPC调用add示例.png)
 
 传输的报文里面按照约定的协议格式给出了函数名和参数，大致这样：
 
-![RPC协议格式示例](https://gitee.com/zxNchuPG/blogimage/raw/master/img/RPC%E5%8D%8F%E8%AE%AE%E6%A0%BC%E5%BC%8F%E7%A4%BA%E4%BE%8B.jpg)
+![RPC协议格式示例.png](/asserts/images/2020-08-09-RPC框架/RPC协议格式示例.png)
 
 > 上述的编码只是一种举例不代表实际应用，为了提高传输效率可以进行二进制编码（只有二进制数据才能在网络中传输）
 
@@ -99,7 +99,7 @@ Service A 需要通过网络传输来告诉 Service B，它想要 add 函数，�
 
 ## 如何实现一个RPC
 
-![完整的RPC过程](https://gitee.com/zxNchuPG/blogimage/raw/master/img/%E5%AE%8C%E6%95%B4%E7%9A%84RPC%E8%BF%87%E7%A8%8B.png)
+![完整的RPC过程.png](/asserts/images/2020-08-09-RPC框架/完整的RPC过程.png)
 
 以左边的 Client 端为例，Application就是 RPC 的调用方，Client Stub 就是我们上面说到的代理对象，也就是那个看起来像是 Calculator 的实现类，其实内部是通过 RPC 方式来进行远程调用的代理对象，至于 Client Run-time Library，则是实现远程调用的工具包，比如 JDK 的 Socket，最后通过底层网络实现实现数据的传输
 
@@ -129,7 +129,7 @@ RPC 的核心功能主要由 5 个模块 **（客户端、客户端 Stub、网�
 
 实现案例：RMI ( Remote Method Invocation，远程方法调用 ) 也就是  RPC 本身的实现方式
 
-![RMI架构图](https://gitee.com/zxNchuPG/blogimage/raw/master/img/RMI%E6%9E%B6%E6%9E%84%E5%9B%BE.jpg)
+![RMI架构图.png](/asserts/images/2020-08-09-RPC框架/RMI架构图.png)
 
 - Registry(服务发现)：借助 JNDI 发布并调用了 RMI 服务。实际上，JNDI 就是一个注册表，服务端将服务对象放入到注册表中，客户端从注册表中获取服务对象
 
@@ -173,15 +173,15 @@ RPC代码实现可参考[知乎柳树](https://zhuanlan.zhihu.com/p/36528189)
 
 RPC是一种内部服务框架，可以涉及服务注册、服务治理、服务发现、熔断机制、负载均衡等，其中“RPC 协议”就指明了程序如何进行网络传输和序列化
 
-![RPC完整框架](https://gitee.com/zxNchuPG/blogimage/raw/master/img/RPC%E5%AE%8C%E6%95%B4%E6%A1%86%E6%9E%B6.jpg)
+![RPC完整框架.png](/asserts/images/2020-08-09-RPC框架/RPC完整框架.png)
 
 RPC协议模块是很重要的部分，这部分也是前面提到的 Service A 调用 Service B 时传输报文的过程
 
-![RPC核心功能](https://gitee.com/zxNchuPG/blogimage/raw/master/img/RPC%E6%A0%B8%E5%BF%83%E5%8A%9F%E8%83%BD.jpg)
+![RPC核心功能.png](/asserts/images/2020-08-09-RPC框架/RPC核心功能.png)
 
 一个 RPC 的核心功能主要有 5 个部分组成，分别是：客户端、客户端 Stub、网络传输模块、服务端 Stub、服务端等
 
-![RPC核心功能图](https://gitee.com/zxNchuPG/blogimage/raw/master/img/RPC%E6%A0%B8%E5%BF%83%E5%8A%9F%E8%83%BD%E5%9B%BE.jpg)
+![RPC核心功能图.png](/asserts/images/2020-08-09-RPC框架/RPC核心功能图.png)
 
 - 客户端( Client )：服务调用方
 - 客户端存根( Client Stub )：存放服务端地址信息，将客户端的请求参数数据信息打包成网络消息，再通过网络传输发送给服务端
@@ -237,7 +237,7 @@ HTTP协议，以其中的Restful规范为代表，其优势很大。它可读性
 
 而RPC则与HTTP互补
 
-![HTTP和RPC关系图](https://gitee.com/zxNchuPG/blogimage/raw/master/img/HTTP%E5%92%8CRPC%E5%85%B3%E7%B3%BB%E5%9B%BE.jpg)
+![HTTP和RPC关系图.png](/asserts/images/2020-08-09-RPC框架/HTTP和RPC关系图.png)
 
 HTTP（图中蓝色框）出现了两次。其中一个是和RPC并列的，都是跨应用调用方法的解决方案；另一个则是被RPC包含的，是RPC通信过程的可选协议之一
 
@@ -268,7 +268,7 @@ Service A 调用 Service B 的过程是应用间的内部过程，牺牲可读�
     - 定位到实际要调用的方法，然后输入参数，执行方法
     - 按照调用的路径返回调用的结果
 
-![RPC调用与被调用过程](https://gitee.com/zxNchuPG/blogimage/raw/master/img/RPC%E8%B0%83%E7%94%A8%E4%B8%8E%E8%A2%AB%E8%B0%83%E7%94%A8%E8%BF%87%E7%A8%8B.jpg)
+![RPC调用与被调用过程.png](/asserts/images/2020-08-09-RPC框架/RPC调用与被调用过程.png)
 
 调用方调用内部的一个方法，但是被 RPC 框架偷梁换柱为远程的一个方法。之间的通信数据可读性不需要好，只需要 RPC 框架能读懂即可，因此效率可以更高。通常使用 UDP 或者 TCP 作为通讯协议，也可以使用 HTTP
 
