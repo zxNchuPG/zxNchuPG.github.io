@@ -1,0 +1,400 @@
+---
+layout:      post
+title:       "redis数据结构"
+subtitle:    "Redis"
+author:      "Ekko"
+header-img:  "img/bg/bg-Redis.jpg"
+catalog:     true
+tags:
+  - 学习笔记
+  - 缓存中间件
+---
+
+[TOC]
+
+---
+
+## RedisObject
+
+所有 Redis 键值对的统一封装，用于管理数据的类型、编码、引用计数等元信息
+
+```c
+typedef struct redisObject {
+    unsigned type:4;        // 数据类型（4位）
+    unsigned encoding:4;    // 编码方式（4位）
+    unsigned lru:LRU_BITS;  // LRU/LFU 信息（默认24位，用于缓存淘汰）
+    int refcount;           // 引用计数（用于内存回收）
+    void *ptr;              // 指向实际数据的指针（如SDS、dict、ziplist等）
+} robj;
+
+// type 数据类型
+#define OBJ_STRING 0    // 字符串
+#define OBJ_LIST 1      // 列表
+#define OBJ_SET 2       // 集合
+#define OBJ_ZSET 3      // 有序集合
+#define OBJ_HASH 4      // 哈希
+
+// encoding 编码方式，表示当前对象实际存储的编码结构
+#define OBJ_ENCODING_RAW 0        // 原始字符串（SDS，长度>39字节）
+#define OBJ_ENCODING_EMBSTR 1     // 嵌入式字符串（SDS，长度<=39字节，与robj连续存储）
+#define OBJ_ENCODING_INT 2        // 整数（直接存储long，无需SDS）
+#define OBJ_ENCODING_HT 3         // 哈希表（dict，用于哈希/集合等）
+#define OBJ_ENCODING_ZIPMAP 4     // 压缩映射（已废弃，Redis 2.6后用ziplist替代）
+#define OBJ_ENCODING_LINKEDLIST 5 // 双向链表（已废弃，列表用ziplist或quicklist）
+#define OBJ_ENCODING_ZIPLIST 6    // 压缩列表（紧凑存储小数据，用于列表/哈希/有序集合）
+#define OBJ_ENCODING_INTSET 7     // 整数集合（存储整数值的集合，元素少且小）
+#define OBJ_ENCODING_SKIPLIST 8   // 跳表（与dict结合用于有序集合）
+#define OBJ_ENCODING_EMBSTR_RAW 9 // （内部临时使用，不对外暴露）
+#define OBJ_ENCODING_QUICKLIST 10 // 快速列表（Redis 3.2+ 列表的默认编码，结合ziplist和链表）
+```
+---
+
+## SDS 简单动态字符串
+
+```c
+struct __attribute__ ((__packed__)) sdshdrXX {
+    unsigned int len;     // 字符串实际长度（已使用字节数，不包含结尾的\0）
+    unsigned int alloc;   // 字符串总容量（已分配字节数，不包含结尾的\0）
+    unsigned char flags;  // 标志位（低3位表示SDS类型，高5位未使用）
+    char buf[];           // 柔性数组，存储字符串实际数据（结尾自动添加\0）
+};
+```
+
+---
+
+### 问题一：为什么不用C原生字符串（chat*数组）
+
+* 不能存储二进制数据：C 字符串以 \0 作为结束标志，若内容包含 \0（如图片、音频），会被误认为字符串结束
+* 长度获取低效：需要遍历整个字符串直到 \0，时间复杂度为 O(n)
+* 内存重分配频繁：每次修改字符串长度（增 / 减）都需要重新分配内存，效率低下
+
+**思考**
+
+先提几个重要的点：预分配、惰性释放优化、小于1M，2倍空间扩容、大于1M，空闲空间给1M
+
+* **常数时间获取长度：** 长度用 len 字段，直接获取。类似 ArrayList 中的 size 字段
+* **杜绝缓冲区溢出：** 修改字符串（如拼接 sdscat）时，SDS 会先检查 alloc - len 是否足够。若足够，直接使用空闲空间；若不足，自动扩容（分配足够内存）后再修改，避免缓冲区溢出。
+* **减少内存重分配次数：** 
+    1. 预分配：字符串增长时，除了分配必要空间，还会额外分配空闲空间（减少后续增长的重分配）。
+        * 若增长后 len < 1MB，空闲空间 = len（总容量 alloc = 2*len）
+        * 若增长后 len >= 1MB，空闲空间固定为 1MB（总容量 alloc = len + 1MB）
+    2. 惰性释放：字符串缩短时，不立即释放多余空间，而是保留为空闲空间（alloc 不变，len 减小），供后续增长使用。若需手动释放，可调用 sdstrim 函数
+* **二进制安全：** SDS 用 len 标识字符串结束，而非 \0，因此可以存储任意二进制数据（如图片、视频、包含 \0 的数据）。例如，即使 buf 中包含 \0，len 仍会记录完整长度，保证数据正确读取
+
+---
+
+## ZipList 压缩列表
+
+误区：名字叫列表，但其实物理结构和数组没区别。只是逻辑功能上模拟了链表的核心特性
+比如：
+1. 元素按顺序排列
+2. 支持从任意节点双向遍历（向前 / 向后访问元素）
+3. 支持动态插入 / 删除元素（不依赖固定大小的内存块）
+
+---
+
+ZipList没有具体的结构体，以宏定义的方式实现
+```c
+/* ziplist 的整体结构：[zlbytes][zltail][zllen][entries][zlend] */
+
+// 1. zlbytes：4字节，总字节数（包括自身）
+#define ZIPLIST_BYTES(zl)       (*((uint32_t*)(zl)))
+
+// 2. zltail：4字节，尾元素（最后一个entry）的偏移量（从ziplist起始地址开始算）
+#define ZIPLIST_TAIL(zl)        (*((uint32_t*)((zl) + 4)))
+
+// 3. zllen：2字节，元素个数（entry数量）
+#define ZIPLIST_LENGTH(zl)      (*((uint16_t*)((zl) + 8)))
+
+// 4. 头部总大小：zlbytes(4) + zltail(4) + zllen(2) = 10字节
+#define ZIPLIST_HEADER_SIZE     10
+
+// 5. 第一个entry的起始地址：头部之后的第一个字节
+#define ZIPLIST_ENTRY_HEAD(zl)  ((zl) + ZIPLIST_HEADER_SIZE)
+
+// 6. 尾元素（最后一个entry）的起始地址：zl + zltail（通过zltail偏移量计算）
+#define ZIPLIST_ENTRY_TAIL(zl)  ((zl) + intrev32ifbe(ZIPLIST_TAIL(zl)))
+
+// 7. zlend：1字节，结束标识（固定为0xFF），位于整个ziplist的最后一个字节
+#define ZIPLIST_ENTRY_END(zl)   ((zl) + intrev32ifbe(ZIPLIST_BYTES(zl)) - 1)
+```
+
+```c
++-----------------------+-----------------------+-----------------------+
+| previous_entry_length | encoding              | data                  |
++-----------------------+-----------------------+-----------------------+
+
+1. previous_entry_length（前一个元素的长度）
+作用：记录前一个 entry 的总字节数，用于双向遍历（从后往前找元素）。
+2. encoding（编码字段）
+作用：标识当前 entry 的 data 部分是字符串还是整数，以及 data 的长度
+3. data（实际数据）
+
+typedef struct {
+    unsigned int prevlen;  // 前一个 entry 的长度
+    unsigned int len;      // 当前 entry 的数据长度（字符串长度或整数字节数）
+    unsigned int encoding; // 编码类型（字符串/整数）
+    unsigned char *p;      // entry 的起始地址
+} zipEntry;
+```
+
+创建空的ZipList
+```c
+unsigned char *ziplistNew(void) {
+    // 空ziplist的总长度：头部10字节 + zlend 1字节 = 11字节
+    unsigned int bytes = ZIPLIST_HEADER_SIZE + 1; 
+    unsigned char *zl = zmalloc(bytes);  // 分配11字节的连续内存
+
+    // 初始化zlbytes：总字节数11（转换为小端字节序存储）
+    ZIPLIST_BYTES(zl) = intrev32ifbe(bytes); 
+
+    // 初始化zltail：尾元素偏移量为10（空列表中，尾元素位置就是头部结束处）
+    ZIPLIST_TAIL(zl) = intrev32ifbe(ZIPLIST_HEADER_SIZE); 
+
+    // 初始化zllen：元素个数0
+    ZIPLIST_LENGTH(zl) = 0; 
+
+    // 初始化zlend：最后一个字节设为0xFF
+    zl[bytes - 1] = ZIP_END; 
+
+    return zl;
+}
+```
+
+---
+
+### 问题一：为什么不用普通的双向链表
+* 每个节点包含 prev/next 指针（8 字节 ×2=16 字节），对于小数据（如整数、短字符串），指针开销甚至超过数据本身，内存浪费严重
+* 节点分散存储，不利用 CPU 缓存（局部性差）
+
+**思考**
+
+* **资源浪费：** 没有指针开销，通过时间换空间
+* **类似数组：** 由连续的一块内存组成的顺序数据结构
+
+---
+
+### 问题二：和数组什么区别
+
+ziplist 只是物理上是连续内存
+
+* **元素大小不固定：** 数组要求所有元素类型 / 大小相同（如 int[10]），但 ziplist 的 entry 大小由元素内容动态决定（字符串长度、整数类型不同，entry 大小不同）
+* **编码复杂：** 数组元素直接存储值，ziplist 的 entry 包含前向长度、编码信息等元数据，用于实现双向遍历和动态操作
+* **功能定位：** 数组是通用的连续存储结构，ziplist 则是为 “小数据有序集合” 设计的专用结构，侧重内存效率和链表式操作，因此更贴近 “列表” 的逻辑功能
+
+---
+
+### 问题三：如何实现动态插入、删除
+
+先说下普通链表：创建新节点、删除新节点，都是改变 头尾指针 进行串联。所以在物理层面，并不关心内存是否连续
+
+**插入流程**
+
+1. 定位前向长度
+2. 编码新元素
+3. 内存重分配
+4. 移动数据
+5. 写入新元素
+6. 更新元信息
+7. 处理连锁更新：更新每个Entry
+
+**删除流程**
+
+1. 计算删除长度
+2. 移动数据：后面的数据往前移，覆盖被删除的 entry
+3. 内存收缩
+4. 更新元数据
+5. 处理连锁更新
+
+总结：和数组的操作极其相似。区别在于：
+* 数组是通过索引快速定位，而zipList是通过头部或者尾部，计算编码找到元素的位置。
+* 数组中，每个元素占用的空间相同，无法优化。比如 int arr[5]，存1和100000都是4个字节。zipList动态决定，存1用1个字节，用100000用2个字节。内存利用率高
+
+---
+
+## Dick 哈希表
+
+哈希表节点（dictEntry）：存储单个键值对
+
+```c
+typedef struct dictEntry {
+    void *key;                  // 键（如字符串对象SDS）
+    union {                     // 值（支持多种类型，节省内存）
+        void *val;              // 通用指针（如指向redisObject）
+        uint64_t u64;           // 无符号整数（小整数优化）
+        int64_t s64;            // 有符号整数
+        double d;               // 浮点数
+    } v;
+    struct dictEntry *next;     // 下一个节点的指针（解决哈希冲突的链表）
+} dictEntry;
+```
+
+哈希表（dictht）：管理哈希桶数组
+
+```c
+typedef struct dictht {
+    dictEntry **table;          // 哈希桶数组（存储dictEntry指针）
+    unsigned long size;         // 数组容量（必须是2的幂，如4、8、16...）
+    unsigned long sizemask;     // 掩码（size-1，用于计算数组索引）
+    unsigned long used;         // 已存储的节点数量（key总数）
+} dictht;
+```
+
+哈希表管理结构（dict）：协调哈希表的扩容 / 缩容
+
+```c
+typedef struct dict {
+    dictType *type;             // 类型特定函数（哈希、复制、比较、销毁键值对）
+    void *privdata;             // 类型函数的私有数据（传给type函数的参数）
+    dictht ht[2];               // 两个哈希表（ht[0]正常使用，ht[1]用于扩容/缩容）
+    long rehashidx;             // 重哈希索引（-1表示未在重哈希，否则表示当前迁移的桶索引）
+    unsigned long iterators;    // 当前正在使用的迭代器数量（防止重哈希时迭代器失效）
+} dict;
+```
+
+---
+
+### 问题一：和Java HashMap区别在哪
+
+1. dict 用两个哈希表（ht[0] 和 ht[1]）实现渐进式扩容，避免一次性迁移的性能波动。当哈希表需要扩容时，若直接将 ht[0] 中的所有数据一次性迁移到 ht[1]，在数据量大的场景（如百万级键值对），会占用大量 CPU 时间，导致 Redis 无法处理其他命令，产生明显的响应延迟。渐进式扩容将迁移工作分散到多次哈希表操作中（如每次查询、插入、删除时顺带迁移一小部分数据），避免单次操作的耗时过长
+2. dict 冲突节点始终以 **单链表** 存储，不支持红黑树
+3. HashMap 扩容时直接分配新数组（容量翻倍），并一次性将所有节点从旧数组迁移到新数组
+4. dict 支持缩容，当 used / size < 0.1 时触发（删除键后可能触发），释放空闲空间
+
+---
+
+### 问题二：dict 单链表存储，怎么保证长度不会出现无限增长
+
+**核心逻辑是：** 通过动态调整哈希桶数组容量，将链表长度维持在合理范围，同时从根源减少冲突集中的可能性
+
+**扩容机制强制分散链表节点：** 通过扩容（哈希桶数组容量翻倍）将原本集中在单个桶的冲突节点，分散到更多桶中，从而缩短链表长度
+
+**扩容的触发条件：** 由 负载因子 决定
+
+* 负载因子 = 已存储节点数（used） / 哈希桶数组容量（size）
+* 默认负载因子阈值为 1（即当节点数超过桶容量时，触发扩容）
+* 特殊场景（如 BGSAVE 持久化时），阈值临时提高到 5（避免扩容影响持久化性能，但仍会在后续触发扩容）
+
+当负载因子超过阈值时，dict 启动渐进式扩容，将桶容量翻倍（始终为 2 的幂）
+
+---
+
+## QuickList 快速列表
+
+总结：zipList压缩列表，上面再套一层普通链表
+
+![quickList.png](/asserts/images/2025-10-17-redis数据结构-2/quickList.png)
+
+```c
+typedef struct quicklist {
+    quicklistNode *head;  // 头节点指针
+    quicklistNode *tail;  // 尾节点指针
+    unsigned long count;  // 所有节点中元素的总数量（整个列表的长度）
+    unsigned int len;     // 链表的节点数量（quicklistNode 的个数）
+    int fill : QL_FILL_BITS;  // 每个节点的 ziplist 最大填充限制（由配置决定）
+    unsigned int compress : QL_COMP_BITS;  // 两端节点的压缩深度（由配置决定）
+    unsigned int bookmark_count: QL_BM_BITS;  // 书签数量（用于快速定位）
+    quicklistBookmark bookmarks[];  // 书签数组（优化遍历性能）
+} quicklist;
+```
+
+```c
+typedef struct quicklistNode {
+    struct quicklistNode *prev; //上一个node节点
+    struct quicklistNode *next; //下一个node
+    unsigned char *zl;            //保存的数据 压缩前ziplist 压缩后压缩的数据
+    unsigned int sz;             /* ziplist size in bytes */
+    unsigned int count : 16;     /* count of items in ziplist */
+    unsigned int encoding : 2;   /* RAW==1 or LZF==2 */
+    unsigned int container : 2;  /* NONE==1 or ZIPLIST==2 */
+    unsigned int recompress : 1; /* was this node previous compressed? */
+    unsigned int attempted_compress : 1; /* node can't compress; too small */
+    unsigned int extra : 10; /* more bits to steal for future usage */
+} quicklistNode;
+```
+
+---
+
+### 问题一：和Java LinkedList 链表有什么区别
+
+LinkedList，每个元素节点，都有头尾指针的内存开销
+zipList讲过，紧凑型内存，且逻辑功能上模拟链表
+redis的quickList这种批量存储，减少指针开销
+
+* java LinkedList 100个数据，对应100个节点，每个节点都有头尾指针，那么就是200个头尾指针
+* redis quickList 100个数据，假设每个Node节点中的zipList存10个紧凑型，那么只需要10个链表节点，一共才20个头尾指针
+
+---
+
+### 问题二：为什么不直接用 zipList
+
+zipList 物理结构和数组一样，只是在逻辑功能上是链表。数组的典型问题在于，每次动态删除插入，要移动数据。数据量越大，效率越慢
+
+**分段式理念**，把一个大的链表，分成10个小的 zipList，动态删除插入，只需要移动小的zipList即可
+
+quickList的每个节点大小可配置，list-max-ziplist-size 限制每个 ziplist 的大小，避免单个ziplist 过长导致插入 / 删除性能下降
+
+---
+
+### 问题三：如果往中间插元素，超过zipList大小怎么办
+
+**头部 / 尾部（高频场景）：** 
+首尾节点的 ziplist 未达配置的大小限制（fill），直接插入
+
+**插入到中间位置（低频场景）**
+* 定位目标元素所在的 quicklistNode（需遍历节点，找到包含目标位置的节点）
+* 检查该节点的 ziplist 是否有空间
+    1. 若有空间：直接插入到 ziplist 的对应位置
+    2. 若空间不足：将该节点的 ziplist 分裂为两个 ziplist，新建一个 quicklistNode 存储后半部分，再插入新元素到前半部分的 ziplist 中
+
+总结：插入超过zipList大小限制，节点分裂，新建一个节点。删除导致zipList太小，合并节点
+
+---
+
+## SkipList 跳表
+
+**通用的有序数据结构**
+
+跳表节点（zskiplistNode）
+```c
+typedef struct zskiplistNode {
+    sds ele;                // 有序集合的成员（字符串，如"user1"）
+    double score;           // 分值（排序的依据，如100.0）
+    struct zskiplistNode *backward;  // 后退指针（仅用于从后向前遍历，指向当前节点的前一个节点）
+    struct zskiplistLevel {
+        struct zskiplistNode *forward;  // 同一层级的前进指针（指向该层的下一个节点）
+        unsigned long span;             // 跨度（当前节点到下一个节点之间的元素个数，用于计算排名）
+    } level[];              // 柔性数组，存储各层级的索引信息（层级数不固定）
+} zskiplistNode;
+```
+
+跳表管理结构（zskiplist）
+```c
+typedef struct zskiplist {
+    struct zskiplistNode *header, *tail;  // 头节点（哨兵，不存数据）和尾节点
+    unsigned long length;                 // 跳表中的节点总数（元素个数）
+    int level;                            // 跳表当前的最大层级（所有节点的最高层级）
+} zskiplist;
+```
+
+![skipList.png](/asserts/images/2025-10-17-redis数据结构-2/skipList.png)
+
+**总结：** 其实就是一个链表。链表节点类型 zskiplistNode ，通过 backward 反向查找。通过zskiplistLevel 结构中的 forward 正向查询。 zskiplistLevel 结构是跳越查询的关键（也就是多层索引指针）
+
+底层： zskiplistLevel[0].forward = 节点20
+第二层： zskiplistLevel[1].forward = 节点30
+第三层： zskiplistLevel[2].forward = NULL
+
+---
+
+### 问题一：相比红黑树，有什么优势
+
+![跳表红黑树对比.png](/asserts/images/2025-10-17-redis数据结构-2/跳表红黑树对比.png)
+
+### 问题二：skipList 查找步骤
+
+**前提：** 跳表的有序性，跳表中的所有节点按 score（分值）升序排列
+
+**核心逻辑：** 从最高层级的索引开始，利用高层指针 “跳跃” 过大量无关节点，逐步降低层级，最终在底层链表中精准定位目标
+
+从跳表的 头节点header 开始（头节点是哨兵，不存实际数据）
