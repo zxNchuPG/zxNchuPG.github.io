@@ -3,7 +3,7 @@ layout:      post
 title:       "redis数据结构"
 subtitle:    "Redis"
 author:      "Ekko"
-header-img:  "img/bg/bg-Redis.jpg"
+header-img:  "img/bg/bg-redis-2.jpg"
 catalog:     true
 tags:
   - 学习笔记
@@ -283,7 +283,7 @@ typedef struct dict {
 
 总结：zipList压缩列表，上面再套一层普通链表
 
-![quickList.png](/asserts/images/2025-10-17-redis数据结构-2/quickList.png)
+![quickList.png](/asserts/images/2025-10-17-redis数据结构/quickList.png)
 
 ```c
 typedef struct quicklist {
@@ -377,7 +377,7 @@ typedef struct zskiplist {
 } zskiplist;
 ```
 
-![skipList.png](/asserts/images/2025-10-17-redis数据结构-2/skipList.png)
+![skipList.png](/asserts/images/2025-10-17-redis数据结构/skipList.png)
 
 **总结：** 其实就是一个链表。链表节点类型 zskiplistNode ，通过 backward 反向查找。通过zskiplistLevel 结构中的 forward 正向查询。 zskiplistLevel 结构是跳越查询的关键（也就是多层索引指针）
 
@@ -389,7 +389,7 @@ typedef struct zskiplist {
 
 ### 问题一：相比红黑树，有什么优势
 
-![跳表红黑树对比.png](/asserts/images/2025-10-17-redis数据结构-2/跳表红黑树对比.png)
+![跳表红黑树对比.png](/asserts/images/2025-10-17-redis数据结构/跳表红黑树对比.png)
 
 ### 问题二：skipList 查找步骤
 
