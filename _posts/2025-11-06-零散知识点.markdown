@@ -1,0 +1,85 @@
+---
+layout:      post
+title:       "零散知识点"
+subtitle:    "mysql"
+author:      "Ekko"
+header-img:  "img/bg/bg-scattered.png"
+catalog:     true
+tags:
+  - 学习笔记
+  - 数据库
+---
+
+[TOC]
+
+---
+
+## 问题一：为什么越来越多人喜欢用构造器注入
+
+1、不可变性 (Immutability)
+
+构造器注入强制依赖项为 final，确保对象不可变
+
+清晰的契约：对象创建时所有依赖必须就位
+
+```java
+@Service
+public class UserService {
+    
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final EmailService emailService;
+
+    // 构造器注入 - 所有依赖都是 final
+    public UserService(UserRepository userRepository, 
+                      PasswordEncoder passwordEncoder,
+                      EmailService emailService) {
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.emailService = emailService;
+    }
+    
+    // 业务方法...
+}
+```
+
+2、依赖完整性保证
+
+构造器注入确保对象在创建时所有依赖都可用
+
+Setter注入，有一些场景下注入失败，运行的时候才会NPE异常
+
+1. 缺少 @Component
+2. 缺少 @Autowired
+3. 复杂依赖关系
+4. @PostConstruct 中使用
+
+3、避免循环依赖问题
+
+构造器注入能更早地暴露循环依赖问题
+
+启动失败：BeanCurrentlyInCreationException
+
+---
+
+## 什么是 Spring
+
+IOC、AOP
+
+---
+
+## 什么是 Spring MVC
+
+DispatcherServlet、HandlerMapping、ModelAndView
+
+---
+
+## 什么是 SpringBoot
+
+配置、内嵌 servlet 容器、jar包独立运行
+
+---
+
+## 什么是 SpringCloud
+
+微服务框架集合，注册中心、网关、限流、负载均衡... ...
