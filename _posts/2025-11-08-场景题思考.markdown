@@ -1,0 +1,150 @@
+---
+layout:      post
+title:       "场景题思考"
+subtitle:    "mysql"
+author:      "Ekko"
+header-img:  "img/bg/bg-scattered.png"
+catalog:     true
+tags:
+  - 学习笔记
+  - 实战
+---
+
+[TOC]
+
+---
+
+## 百万级EXCEL读取
+
+1、EasyExcel
+
+基于POI的事件驱动模型，逐行解析，内存占用低
+
+2、Apache POI (SAX模式)	
+
+事件驱动、流式读取
+
+3、逐行读取后，及时批量处理，及时释放，因为等完全读取完整个excel的时候，内存也会爆炸
+
+---
+
+### 思考一：支持多线程读吗
+
+理论上不支持，核心限制：EasyExcel的读取是顺序流式解析，XML解析器必须按顺序读取文件内容
+
+其他场景可以考虑多线程，比如 多个 sheet 页面、读取出来后的数据处理
+
+---
+
+### 思考二：excel文件本身就很大，二进制流文件怎么处理的？内存不会溢出吗
+
+EasyExcel：不加载整个XML到内存。边读边解析，遇到标签触发事件
+
+物理文件 (磁盘) 
+    ↓ (文件流)
+ZIP解压流 (xlsx本质是ZIP)
+    ↓ (XML流)  
+XML解析器 (SAX)
+    ↓ (事件)
+EasyExcel监听器
+    ↓ (对象)
+你的业务处理
+
+---
+
+### 思考三：excel不是本地文件，而是通过http请求过来的，内存如何处理
+
+```java
+// 整个文件加载到内存！ 不推荐
+byte[] bytes = file.getBytes();
+
+// 直接使用文件流，不加载到内存
+InputStream inputStream = file.getInputStream();
+```
+
+有一个POST接口，接收一个MultipartFile（实际上Spring MVC在处理MultipartFile时，如果文件超过一定大小，会临时存储到磁盘，但可以通过配置使其不存盘，直接流式读取）
+
+方式一：使用MultipartFile，但Spring默认会使用临时文件，所以对于大文件，我们确保临时文件存在，然后EasyExcel从临时文件读取，这样也不会内存溢出，但会有磁盘IO
+
+方式二：完全流式解析，不保存到临时文件。我们可以通过自定义解析HttpServletRequest来实现，但这样就需要自己处理multipart/form-data的解析。不过，Spring提供了Streaming API
+
+实际上，Spring MVC的MultipartFile接口默认实现是将文件存储到临时文件，所以我们可以直接使用MultipartFile，然后通过EasyExcel读取这个临时文件。但是，如果不想落盘，我们也可以直接读取MultipartFile的InputStream，因为MultipartFile的InputStream也是从临时文件读取的，所以不会内存溢出
+
+---
+
+### 思考四：反过来，java输出excel文件，文件太大，如何处理
+
+不推荐：POI XSSFWorkbook
+
+```java
+// ❌ 危险：使用POI的XSSFWorkbook
+@GetMapping("/export-oom")
+public void exportOOM(HttpServletResponse response) {
+    Workbook workbook = new XSSFWorkbook(); // 在内存中构建整个Excel
+    Sheet sheet = workbook.createSheet("数据");
+    
+    // 写入100万行数据
+    for (int i = 0; i < 1000000; i++) {
+        Row row = sheet.createRow(i);
+        for (int j = 0; j < 20; j++) {
+            row.createCell(j).setCellValue("数据行-" + i + "-列-" + j);
+        }
+        // 每写入一行，内存占用就增加一点，直到OOM
+    }
+    
+    // 永远执行不到这里...
+    response.setContentType("application/vnd.ms-excel");
+    workbook.write(response.getOutputStream());
+}
+```
+
+推荐 POI SXSSF
+
+```java
+@GetMapping("/export-safe")
+public void exportSafe(HttpServletResponse response) throws IOException {
+    response.setContentType("application/vnd.ms-excel");
+    response.setHeader("Content-Disposition", "attachment; filename=large-file.xlsx");
+    
+    // 🎯 关键：使用SXSSFWorkbook，设置行内存窗口
+    Workbook workbook = new SXSSFWorkbook(100); // 只在内存中保留100行
+    Sheet sheet = workbook.createSheet("数据");
+    
+    try {
+        // 写入表头
+        Row headerRow = sheet.createRow(0);
+        for (int i = 0; i < 20; i++) {
+            headerRow.createCell(i).setCellValue("列头-" + i);
+        }
+        
+        // 流式写入数据
+        for (int rowNum = 1; rowNum <= 1000000; rowNum++) {
+            Row row = sheet.createRow(rowNum);
+            for (int colNum = 0; colNum < 20; colNum++) {
+                row.createCell(colNum).setCellValue("数据-" + rowNum + "-" + colNum);
+            }
+            
+            // 每1000行手动刷新一次（可选）
+            if (rowNum % 1000 == 0) {
+                ((SXSSFSheet) sheet).flushRows(100); // 刷新并保留100行在内存
+            }
+            
+            // 进度跟踪
+            if (rowNum % 10000 == 0) {
+                log.info("已生成 {} 行数据", rowNum);
+            }
+        }
+        
+        workbook.write(response.getOutputStream());
+        
+    } finally {
+        // 🎯 重要：清理临时文件
+        if (workbook instanceof SXSSFWorkbook) {
+            ((SXSSFWorkbook) workbook).dispose();
+        }
+        workbook.close();
+    }
+}
+```
+
+---

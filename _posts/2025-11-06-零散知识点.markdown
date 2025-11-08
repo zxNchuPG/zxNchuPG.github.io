@@ -62,6 +62,60 @@ Setter注入，有一些场景下注入失败，运行的时候才会NPE异常
 
 ---
 
+## 主线程等待子线程完成
+
+CountDownLatch
+
+Future
+
+---
+
+## 对象的创建过程
+
+类加载检查
+    ↓ （加载、验证、准备、解析、初始化）
+内存分配
+    ↓
+初始化零值（默认值）
+    ↓
+设置对象头（MarkWord、类型指针）
+    ↓
+执行构造方法
+    ↓
+引用关联
+
+---
+
+## Http Referer
+
+Referer 是HTTP请求头中的一个字段，表示当前请求是从哪个页面链接过来的
+
+Referer 可以被伪造
+
+---
+
+## SimpleDateFormat 线程不安全
+
+```java
+public class SimpleDateFormat extends DateFormat {
+
+}
+
+public abstract class DateFormat extends Format {
+    protected Calendar calendar;
+}
+```
+
+Calendar 对象用于日期计算，这个对象的状态会在每次格式化和解析时被修改
+
+解决方案：
+
+1. jdk1.8   DateTimeFormatter
+
+2. 每次使用的时候，new 新的 SimpleDateFormat 对象 （不推荐）
+
+---
+
 ## 什么是 Spring
 
 IOC、AOP
