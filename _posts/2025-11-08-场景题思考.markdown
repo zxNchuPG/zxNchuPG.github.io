@@ -55,7 +55,7 @@ XML解析器 (SAX)
 EasyExcel监听器
 
     ↓ (对象)
-    
+
 你的业务处理
 
 ---
@@ -156,3 +156,20 @@ public void exportSafe(HttpServletResponse response) throws IOException {
 ```
 
 ---
+
+## 接口防刷
+
+1、 分布式限流
+
+redis + lua 脚本 实现计数器
+
+令牌桶、固定窗口、滑动窗口
+
+2、 设备指纹识别
+
+3、 请求签名
+
+4、 ip 黑名单
+
+---
+

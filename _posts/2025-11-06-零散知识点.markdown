@@ -91,7 +91,7 @@ Future
 执行构造方法
 
     ↓
-    
+
 引用关联
 
 ---
@@ -194,6 +194,277 @@ SpringBoot 主要优化的就是这部分内容
 @EnableAutoConfiguration -> 加载 Spring.factories -> 条件筛选(@Conditional) -> 动态注册Bean
 
 启动类注解 @SpringBootApplication 包含了 @EnableAutoConfiguration
+
+---
+
+## SPI 机制
+
+服务发现机制，动态加载第三方实现，无需硬编码依赖。通过配置文件做到 接口与实现 的解耦
+
+对扩展开放、对修改关闭
+
+在 jar 包的 META-INF/services 目录下查找以接口全限定命名的文件
+
+典型应用场景：
+
+1、 JDBC 驱动
+
+```java
+com.mysql.cj.jdbc.Driver
+```
+
+2、 日志桥接
+
+```java
+ch.qos.logback.classic.servlet.LogbackServletContainerInitializer
+```
+
+3、 SpringBoot 自动配置
+
+spring.factories 文件
+
+```java
+# Logging Systems
+org.springframework.boot.logging.LoggingSystemFactory=\
+org.springframework.boot.logging.logback.LogbackLoggingSystem.Factory,\
+org.springframework.boot.logging.log4j2.Log4J2LoggingSystem.Factory,\
+org.springframework.boot.logging.java.JavaLoggingSystem.Factory
+
+# PropertySource Loaders
+org.springframework.boot.env.PropertySourceLoader=\
+org.springframework.boot.env.PropertiesPropertySourceLoader,\
+org.springframework.boot.env.YamlPropertySourceLoader
+
+...
+...
+```
+
+---
+
+## Spring 解决循环依赖
+
+总结：三级缓存
+
+```java
+public class DefaultSingletonBeanRegistry {
+    
+    // 一级缓存：完整的单例Bean（已初始化完成）
+    // 职责：提供最终可用的Bean实例
+    private final Map<String, Object> singletonObjects = new ConcurrentHashMap<>(256);
+    
+    // 二级缓存：早期Bean引用（已创建但未初始化完成）
+    // 职责：保证在创建过程中引用的一致性，避免重复创建
+    private final Map<String, Object> earlySingletonObjects = new ConcurrentHashMap<>(16);
+    
+    // 三级缓存：Bean工厂
+    // 职责：延迟创建早期引用，支持复杂的代理逻辑
+    private final Map<String, ObjectFactory<?>> singletonFactories = new HashMap<>(16);
+}
+```
+
+```xml
+// 创建 ServiceA 的流程
+1. 创建 ServiceA 实例（构造函数调用）
+2. 将 ServiceA 的 ObjectFactory 放入三级缓存
+3. 开始属性注入，发现需要 ServiceB
+4. 暂停 ServiceA 的创建，开始创建 ServiceB
+
+// 创建 ServiceB 的流程  
+5. 创建 ServiceB 实例（构造函数调用）
+6. 将 ServiceB 的 ObjectFactory 放入三级缓存
+7. 开始属性注入，发现需要 ServiceA
+8. 从三级缓存中获取 ServiceA 的早期引用
+9. ServiceB 完成属性注入和初始化
+10. ServiceB 放入一级缓存
+
+// 回到 ServiceA 的创建
+11. 获取已完成的 ServiceB 实例
+12. ServiceA 完成属性注入和初始化
+13. ServiceA 放入一级缓存
+```
+
+从上面这个流程可以看出，循环依赖，其实只需要2层缓存对不对？那二级缓存是干嘛用的呢？
+
+---
+
+###  问题一：Spring循环依赖有3级缓存，二级缓存干嘛的
+
+总结：避免重复创建代理对象
+
+1、 C 需要 A 时，从三级缓存获取，调用 ObjectFactory 创建 A 的早期引用（可能是代理对象）
+
+2、 如果后续还有其他 Bean 也需要 A 的早期引用，会重复调用 ObjectFactory
+
+3、 对于需要 AOP 代理的 Bean，每次都会创建新的代理实例
+
+问题就在这，多次创建新的代理对象，违反了单例原则。同一个类，代理对象不一致。二级缓存就是解决这个问题
+
+3级缓存完整流程
+
+```java
+// 以 A → B → C → A 的循环依赖为例，且A需要AOP代理
+
+// 步骤1: 开始创建A
+1. beforeSingletonCreation("serviceA") // 标记A正在创建
+2. instance = createBeanInstance("serviceA") // 实例化A
+3. addSingletonFactory("serviceA", () -> getEarlyBeanReference("serviceA", mbd, bean))
+   // 三级缓存: {serviceA: ObjectFactory}
+   // 二级缓存: {}
+   // 一级缓存: {}
+
+// 步骤2: A注入B，触发B的创建
+4. populateBean("serviceA") → 发现需要B
+5. getSingleton("serviceB") → 不存在，开始创建B
+
+// 步骤3: 开始创建B  
+6. beforeSingletonCreation("serviceB")
+7. instance = createBeanInstance("serviceB") 
+8. addSingletonFactory("serviceB", ...)
+   // 三级缓存: {
+   // serviceA: ObjectFactory, 
+   // serviceB: ObjectFactory
+   // }
+
+// 步骤4: B注入C，触发C的创建
+9. populateBean("serviceB") → 发现需要C
+10. getSingleton("serviceC") → 不存在，开始创建C
+
+// 步骤5: 开始创建C
+11. beforeSingletonCreation("serviceC")
+12. instance = createBeanInstance("serviceC")
+13. addSingletonFactory("serviceC", ...)
+    // 三级缓存: {
+    // serviceA: ObjectFactory, 
+    // serviceB: ObjectFactory, 
+    // serviceC: ObjectFactory
+    // }
+
+// 步骤6: C注入A，触发获取A的早期引用
+14. populateBean("serviceC") → 发现需要A
+15. getSingleton("serviceA") 
+    - 一级缓存: 无
+    - 二级缓存: 无  
+    - 三级缓存: 有ObjectFactory
+16. singletonObject = singletonFactory.getObject() // 创建A的代理对象
+17. earlySingletonObjects.put("serviceA", singletonObject) // 放入二级缓存
+18. singletonFactories.remove("serviceA") // 移除三级缓存
+    // 三级缓存: {
+    // serviceB: ObjectFactory, 
+    // serviceC: ObjectFactory
+    // }
+
+    // 二级缓存: {
+    // serviceA: ProxyA
+    // }
+
+    // 一级缓存: {}
+
+// 步骤7: C完成创建
+19. initializeBean("serviceC")
+20. addSingleton("serviceC", ...) // 放入一级缓存
+    // 一级缓存: {
+    // serviceC: CompleteC
+    // }
+
+// 步骤8: B完成创建  
+21. B从一级缓存获取C，完成注入
+22. initializeBean("serviceB")
+23. addSingleton("serviceB", ...)
+    // 一级缓存: {
+    // serviceB: CompleteB, 
+    // serviceC: CompleteC
+    // }
+
+// 步骤9: A完成创建
+24. A从一级缓存获取B，完成属性注入
+25. 执行initializeBean("serviceA") - 初始化回调(@PostConstruct等)
+26. 在doCreateBean的最后阶段：
+    
+    // 检查是否有早期暴露的引用
+    Object earlySingletonReference = getSingleton(beanName, false);
+    if (earlySingletonReference != null) {
+        // 如果初始化后对象没有被增强，就使用早期暴露的代理对象
+        if (exposedObject == bean) {  // exposedObject是初始化后的对象，bean是原始对象
+            exposedObject = earlySingletonReference;  // 使用二级缓存中的代理对象
+        }
+    }
+    
+27. addSingleton("serviceA", exposedObject) // 将最终对象放入一级缓存
+    // 同时清理缓存：
+    // - 从 singletonFactories 移除 (三级缓存)
+    // - 从 earlySingletonObjects 移除 (二级缓存)  
+    // - 添加到 singletonObjects (一级缓存)
+
+// 最终状态：
+// 一级缓存: {
+// serviceA: ProxyA, 
+// serviceB: CompleteB, 
+// serviceC: CompleteC
+// }
+// 二级缓存: {}
+// 三级缓存: {}
+```
+
+看完这个过程，看起来没有问题，但有一个细节点？二级缓存解决的是 重复创建 的问题，但是，不经过二级缓存，直接放 一级缓存 是不是也合理？因为最终的实例bean，都在一级缓存，二级缓存看似有些多余啊
+
+---
+
+### 问题二：代理对象，为什么不能直接放一级缓存？
+
+上面的依赖，是比较简单的依赖，所以有误解。如果多次依赖较复杂的情况
+
+没有 二级缓存
+```java
+// 创建流程：
+1. A开始创建，ObjectFactory放入三级缓存
+2. B需要A → 调用ObjectFactory创建代理Proxy1
+3. C需要A → 调用ObjectFactory创建代理Proxy2  
+4. D需要A → 调用ObjectFactory创建代理Proxy3
+5. 最终：B持有Proxy1，C持有Proxy2，D持有Proxy3
+6. 三个代理对象不一致！
+```
+
+有 二级缓存
+```java
+// 创建流程：
+1. A开始创建，ObjectFactory放入三级缓存  
+2. B需要A → 调用ObjectFactory创建代理Proxy1 → 放入二级缓存
+3. C需要A → 从二级缓存直接获取Proxy1
+4. D需要A → 从二级缓存直接获取Proxy1
+5. 最终：B、C、D都持有同一个Proxy1
+```
+
+是不是就清晰了？一级缓存，是最终态的实例Bean
+
+A还没有完成最终的实例化，但是中间很多其他类依赖，他们只能通过三级缓存，但是代理类三级缓存又会有重复创建的风险，所以需要一个中间态的缓存持有
+
+从最终结果来看，一级缓存中的A对象，其实是从二级缓存晋升上来的
+
+---
+
+### 问题三：为什么三级缓存是 HashMap，其他两个是 ConcurrentHashMap ？
+
+总结：三级缓存所有操作，都在 synchronized (this.singletonObjects) 代码块中执行，没有必要上 ConcurrentHashMap
+
+一级和二级缓存因为可能在同步块外被访问（读取），所以需要线程安全的ConcurrentHashMap
+
+```java
+protected Object getSingleton(String beanName, boolean allowEarlyReference) {
+    // 一级缓存
+	Object singletonObject = this.singletonObjects.get(beanName);
+	if (singletonObject == null && isSingletonCurrentlyInCreation(beanName)) {
+        // 二级缓存
+		singletonObject = this.earlySingletonObjects.get(beanName);
+		if (singletonObject == null && allowEarlyReference) {
+            // 同步代码块
+			synchronized (this.singletonObjects) {
+                // 三级缓存
+                ObjectFactory<?> singletonFactory = this.singletonFactories.get(beanName);
+            }
+        }
+    }
+}
+```
 
 ---
 
