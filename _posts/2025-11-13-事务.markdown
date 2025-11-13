@@ -1,0 +1,112 @@
+---
+layout:      post
+title:       "事务"
+subtitle:    "实战"
+author:      "Ekko"
+header-img:  "img/bg/bg-scattered.png"
+catalog:     true
+tags:
+  - 学习笔记
+  - 实战
+---
+
+[TOC]
+
+---
+
+```java
+public enum TransactionPhase {
+    // 事务即将提交但尚未提交
+    BEFORE_COMMIT,
+    // 事务已提交
+    AFTER_COMMIT,
+    // 事务已回滚
+    AFTER_ROLLBACK,
+    // 事务完成（无论提交还是回滚）
+    AFTER_COMPLETION;
+
+    private TransactionPhase() {
+    }
+}
+```
+
+Seata
+
+2pc
+
+3pc
+
+tcc
+
+XA
+
+saga
+
+## @Transactional
+
+代理机制：Spring AOP 创建代理对象拦截方法调用
+
+事务拦截：TransactionInterceptor 负责事务的开启、提交、回滚
+
+事务管理：PlatformTransactionManager 抽象不同数据源的事务操作
+
+资源绑定：通过 ThreadLocal 管理连接等事务资源
+
+传播控制：根据传播行为决定事务的创建、加入、挂起等
+
+同步回调：TransactionSynchronization 提供事务生命周期钩子
+
+```java
+    /*
+    事务执行时间线：
+    
+    T0: TransactionInterceptor.invoke() 开始
+        ↓
+    T1: 获取 @Transactional 配置
+        ↓  
+    T2: 根据传播行为处理现有事务
+        ↓
+    T3: DataSourceTransactionManager.doBegin()
+        - 获取数据库连接
+        - 设置隔离级别、只读等
+        - 关闭自动提交
+        - 绑定连接到ThreadLocal
+        ↓
+    T4: 执行目标业务方法
+        - userRepository.save(user)
+        - 其他数据库操作
+        ↓
+    T5: 业务方法执行完成
+        ↓
+    T6: 提交事务 DataSourceTransactionManager.doCommit()
+        ↓
+    T7: 清理ThreadLocal资源
+        ↓
+    T8: 返回结果
+    
+    异常情况：
+    T4: 业务方法抛出异常
+        ↓
+    T5: 回滚事务 DataSourceTransactionManager.doRollback()
+        ↓  
+    T6: 清理ThreadLocal资源
+        ↓
+    T7: 重新抛出异常
+    */
+```
+
+## 本地事务表
+
+其实还是一种弱一致性，通过最终对账的方式，保证最终一致性
+
+通过定时任务或者其他方式，扫描 本地事务表，补偿重试机制。超过重试次数，告警人工兜底
+
+![本地事务表.png](/asserts/images/2025-11-13-事务/本地事务表.png)
+
+
+## RocketMQ 事务消息
+
+RocketMQ 的事务消息，二阶段提交，仅仅是确保业务操作与消息发送的原子性（说简单点，就是保证消息一定发送成功）。其实还是弱一致性
+
+
+
