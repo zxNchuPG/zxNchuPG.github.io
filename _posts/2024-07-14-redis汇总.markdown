@@ -399,6 +399,137 @@ redis 的单线程的，keys 指令会导致线程阻塞一段时间，线上服
 
 这个时候可以使用 scan 指令，scan 指令可以无阻塞的提取出指定模式的 key 列表，但是会有一定的重复概率，在客户端做一次去重就可以了，但是整体所花费的时间 会比直接用 keys 指令长
 
+---
+
+## redis 内存碎片
+
+```mermaid
+graph LR
+    A[Redis内存申请] --> B[分配器分配内存块]
+    B --> C[数据写入]
+    C --> D[数据删除/修改]
+    D --> E[产生空闲内存块]
+    E --> F{空闲块是否连续且足够大?}
+    F -- 是 --> G[被新数据重用]
+    F -- 否 --> H[内存碎片]
+```
+
+```shell
+# 内存碎片率 = 操作系统分配的内存 / Redis实际使用的内存
+mem_fragmentation_ratio = used_memory_rss / used_memory
+
+# 查看命令
+redis-cli info memory
+
+# 关键指标输出示例：
+used_memory: 1073741824       # Redis分配的内存总量
+used_memory_rss: 1610612736   # 操作系统看到Redis使用的内存
+mem_fragmentation_ratio: 1.5  # 碎片率 = 1610612736 / 1073741824
+
+# 其他相关指标：
+mem_fragmentation_bytes: 536870912  # 碎片内存字节数
+active_defrag_running: 0            # 是否正在执行碎片整理
+
+```
+
+```conf
+# 碎片率含义：
+mem_fragmentation_ratio < 1.0  # 内存交换到磁盘，性能极差
+mem_fragmentation_ratio ≈ 1.0  # 理想状态，几乎没有碎片
+mem_fragmentation_ratio 1.0 - 1.5  # 正常范围
+mem_fragmentation_ratio > 1.5  # 碎片较多，需要考虑优化
+mem_fragmentation_ratio > 2.0  # 严重碎片，必须处理
+```
+
+Redis 使用 jemalloc 作为默认内存分配器
+
+**解决方法：**
+
+1. 重启 Redis（最简单有效）
+
+2. 启用自动内存碎片整理（Redis 4.0+）
+
+```shell
+# redis.conf 配置
+# 启用自动碎片整理
+activedefrag yes
+
+# 碎片整理触发条件
+active-defrag-ignore-bytes 100mb          # 碎片达到100MB开始整理
+active-defrag-threshold-lower 10          # 碎片率10%开始整理
+active-defrag-threshold-upper 100         # 碎片率100%尽力整理
+
+# CPU占用控制
+active-defrag-cycle-min 5                 # 最小CPU使用百分比
+active-defrag-cycle-max 75                # 最大CPU使用百分比
+
+# 应用配置
+redis-cli config set activedefrag yes
+redis-cli config rewrite
+```
+
+---
+
+## redis 碎片整理
+
+```mermaid
+flowchart TD
+    A[Redis Server 运行中] --> B{监控碎片条件<br>active-defrag-ignore-bytes<br>active-defrag-threshold-lower};
+    B -- 条件满足 --> C[启动自动碎片整理];
+    C --> D[主线程循环中<br>增量执行碎片整理];
+    D --> E[查找并搬运键值对<br>合并空闲内存块];
+    E --> F{监控CPU使用<br>active-defrag-cycle-min/max};
+    F -- CPU占用低 --> D;
+    F -- CPU占用达到上限 --> G[暂停整理<br>等待下一个周期];
+    G --> D;
+    B -- 条件不满足 --> H[保持监控状态];
+```
+
+1、 查找待移动的键
+Redis 会在自己的键空间中扫描，寻找那些值在物理内存中存储位置比较分散，或者其旁边有足够空闲空间的键。这部分工作会分多次执行，避免长时间阻塞
+
+2、 搬运数据与释放旧空间
+对于找到的符合条件的键，Redis 会为它重新分配一块连续的内存空间，然后将数据复制过去。接着，释放原来的内存空间。这个"释放"动作，是把空间交还给内存分配器（如jemalloc），后续可以重新利用
+
+3、 合并空闲内存块
+内存分配器在察觉到这些被释放回来的小块空闲内存，并且当这些空闲块相邻时，就会尝试将它们合并成一个更大的连续空闲内存块。这样，之后需要存储较大数据时，就有连续空间可用了
+
+---
+
+### 问题一：redis碎片整理，是主线程吗？会不会阻塞读写请求
+
+总结：内存碎片整理是在主线程执行的，会阻塞
+
+但它是渐进式、可中断的，并且通过精细的CPU时间控制，基本不会对正常的读写请求造成明显阻塞
+
+```bash
+1. CPU时间限制
+
+# redis.conf 中的关键配置
+active-defrag-cycle-min 5    # 最少使用5%的CPU时间进行整理
+active-defrag-cycle-max 75   # 最多使用75%的CPU时间
+
+2. 单次处理量限制
+#define DEFRAG_MAX_SCAN 1000  // 每次循环最多处理1000个键
+#define DEFRAG_MAX_SLOT 10    // 每次最多整理10个内存slot
+
+3. 避免大键
+# 如果一个Hash有100万个字段，整理它可能需要几十毫秒
+# 在此期间，主线程会被这个键的整理操作占用
+```
+
+```bash
+# 假设配置：active-defrag-cycle-max 50 # 最多使用50%的CPU时间
+
+时间线 (1ms为单位)：
+[请求][请求][整理][请求][整理][请求][请求][整理][请求]...
+   1ms  1ms  1ms  1ms  1ms  1ms  1ms  1ms  1ms
+
+# 在这个例子中：
+# - 碎片整理占用约 30% 的CPU时间 (3/10)
+# - 正常请求占用约 70% 的CPU时间 (7/10)
+# - 每个整理操作都很短暂，不会长期阻塞
+```
 
 
 
