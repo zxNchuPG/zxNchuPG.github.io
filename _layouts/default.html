@@ -17,14 +17,20 @@
 <img src="/img/icon_wechat.png" width="0" height="0" />
 <!-- Migrate from head to bottom, no longer block render and still work -->
 
-<!-- 在 HTML 模板的 <head> 或 </body> 前添加 -->
-<script type="module" src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs"></script>
+<!-- 放在 </body> 前，替换之前的脚本 -->
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
 <script>
-  // 初始化 Mermaid，让它自动识别并渲染页面中的 mermaid 代码块
-  mermaid.initialize({ 
-    startOnLoad: true,  // 页面加载完成后自动渲染
-    theme: 'default'    // 可选：设置主题（default/dark/forest等）
-  });
+  // 等待脚本完全加载后再执行
+  if (window.mermaid) {  // 确认 mermaid 已加载
+    document.addEventListener('DOMContentLoaded', function() {
+      mermaid.initialize({
+        startOnLoad: true,
+        theme: 'default'
+      });
+    });
+  } else {
+    console.error('Mermaid 脚本加载失败！');
+  }
 </script>
 
 </body>
