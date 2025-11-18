@@ -59,6 +59,19 @@ module.exports = function(grunt) {
                 }
             },
         },
+        mermaid: {
+            options: {
+                // 可选配置
+            },
+            dist: {
+                files: [{
+                    expand: true,
+                    cwd: 'src/',
+                    src: ['**/*.md', '**/*.html'],
+                    dest: 'dist/'
+                }]
+            }
+        }
     });
 
     // Load the plugins.
@@ -66,8 +79,10 @@ module.exports = function(grunt) {
     grunt.loadNpmTasks('grunt-contrib-less');
     grunt.loadNpmTasks('grunt-banner');
     grunt.loadNpmTasks('grunt-contrib-watch');
+    grunt.loadNpmTasks('grunt-mermaid'); 
 
     // Default task(s).
-    grunt.registerTask('default', ['uglify', 'less', 'usebanner']);
+    grunt.registerTask('default', ['mermaid', 'uglify', 'less', 'usebanner']);
+
 
 };
