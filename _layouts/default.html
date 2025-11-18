@@ -17,11 +17,16 @@
 <img src="/img/icon_wechat.png" width="0" height="0" />
 <!-- Migrate from head to bottom, no longer block render and still work -->
 
-</body>
-
-<script type="module">
-    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-    mermaid.initialize({ startOnLoad: true });
+<!-- 在 HTML 模板的 <head> 或 </body> 前添加 -->
+<script type="module" src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs"></script>
+<script>
+  // 初始化 Mermaid，让它自动识别并渲染页面中的 mermaid 代码块
+  mermaid.initialize({ 
+    startOnLoad: true,  // 页面加载完成后自动渲染
+    theme: 'default'    // 可选：设置主题（default/dark/forest等）
+  });
 </script>
+
+</body>
 
 </html>
