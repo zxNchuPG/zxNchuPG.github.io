@@ -56,7 +56,7 @@ saga
 
 同步回调：TransactionSynchronization 提供事务生命周期钩子
 
-```java
+```bash
     /*
     事务执行时间线：
     

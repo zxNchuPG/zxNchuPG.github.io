@@ -554,6 +554,57 @@ binlog dump 线程发送 binlog 日志给从库，一旦 binlog dump 线程将 b
 
 --- 
 
+### 新的从节点，数据同步流程
+
+总结：
+
+1. mysqldump 备份主库（加 --single-transaction）
+
+2. 备份文件拷到从库并导入
+
+3. 在从库执行 CHANGE MASTER TO ... MASTER_AUTO_POSITION=1;
+
+4. 在从库执行 START SLAVE;
+
+5. 执行 SHOW SLAVE STATUS\G 检查状态
+
+```mermaid
+flowchart TD
+    A[准备新从库服务器] --> B
+
+    subgraph B [第一步: 主库热备份]
+        B1[主库: mysqldump备份<br>（不锁表/短暂锁表）] --> B2[得到备份文件<br>master_data.sql]
+    end
+
+    B --> C
+    subgraph C [第二步: 从库恢复数据]
+        C1[从库: 导入备份文件] --> C2[从库数据与主库<br>备份时状态一致]
+    end
+
+    C --> D
+    subgraph D [第三步: 建立同步]
+        D1[从库: 配置主库信息<br>（CHANGE MASTER TO）] --> D2[从库: 启动同步<br>（START SLAVE）]
+    end
+
+    D --> E[监控同步状态<br>（SHOW SLAVE STATUS）]
+```
+
+---
+
+使用 mysqldump 工具，登录主库服务器，执行以下命令进行备份：
+
+```bash
+mysqldump -u root -p --all-databases --single-transaction --master-data=2 > /tmp/master_data.sql
+```
+
+--all-databases：备份所有数据库
+
+--single-transaction：这个参数最重要！ 它会在备份开始前启动一个事务，确保拿到一个一致性的数据快照，并且不会锁表，对线上业务影响极小
+
+**--master-data=2：这个参数会在备份文件里，以注释的形式记录下备份时主库的二进制日志位置。这是从库开始同步的起点，至关重要**
+
+---
+
 ## union 和 union all
 
 |特性 | union    |union all|

@@ -1,0 +1,324 @@
+---
+layout:      post
+title:       "架构"
+subtitle:    "实战"
+author:      "Ekko"
+header-img:  "img/bg/bg-scattered.png"
+catalog:     true
+tags:
+  - 学习笔记
+  - 实战
+---
+
+[TOC]
+
+---
+
+```mermaid
+graph TD
+    A[用户] --> B[DNS轮询/全局负载均衡]
+    
+    B --> C[负载均衡器集群<br>云LB/F5/HAProxy]
+    B --> D[负载均衡器集群<br>云LB/F5/HAProxy]
+    
+    C --> E[Web服务器区]
+    D --> E
+    
+    subgraph E [Web/网关层]
+        F[Nginx 01<br>10.0.1.10] --> G[Gateway 01<br>192.168.1.10]
+        H[Nginx 02<br>10.0.1.11] --> I[Gateway 02<br>192.168.1.11]
+        J[Nginx 03<br>10.0.1.12] --> K[Gateway 03<br>192.168.1.12]
+    end
+    
+    E --> L[服务注册中心集群<br>Nacos/Eureka]
+    
+    subgraph M [业务微服务集群]
+        L --> N[用户服务集群<br>3节点]
+        L --> O[订单服务集群<br>5节点]
+        L --> P[商品服务集群<br>4节点]
+        L --> Q[支付服务集群<br>3节点]
+    end
+    
+    M --> R[数据层集群]
+    
+    subgraph R [分布式数据层]
+        S[MySQL集群<br>主从复制]
+        T[Redis集群<br>分片]
+        U[Elasticsearch集群<br>分布式]
+    end
+```
+
+硬件服务器：物理机器（戴尔PowerEdge、HP ProLiant）
+
+Web服务器：Nginx、Apache（处理HTTP请求）
+
+应用服务器：Tomcat、Jetty、Undertow（运行Java应用）
+
+云服务器：EC2、ECS、虚拟机
+
+---
+
+## 请求到响应
+
+```mermaid
+flowchart TD
+    A[用户浏览器] --> B[1. 点击按钮/提交表单]
+    B --> C[2. DNS解析域名]
+    C --> D[3. 请求到达负载均衡器<br>Nginx/云LB]
+    
+    D --> E[4. 网关 Gateway<br>认证/路由/限流]
+    E --> F[5. 服务注册中心<br>Eureka/Nacos]
+    
+    subgraph G [SpringCloud微服务集群]
+        F --> H[6. 路由到具体服务<br>Service A]
+        F --> I[Service B]
+        F --> J[Service C]
+    end
+    
+    H --> K[7. Tomcat接收请求]
+    K --> L[8. Spring MVC调度]
+    L --> M[9. 你的Controller方法]
+    
+    M --> N[10. 返回JSON响应]
+    N --> O[11. 响应沿原路返回]
+    O --> A
+```
+
+---
+
+## nginx 工作
+
+```mermaid
+graph TD
+    A[外部请求<br>120.79.100.201:443] --> B[服务器网络接口]
+    B --> C[操作系统内核<br>TCP/IP协议栈]
+    C --> D[端口分发器]
+    
+    D --> E{Nginx Worker进程<br>正在监听 0.0.0.0:443}
+    E --> F[接受连接]
+    F --> G[处理HTTPS请求]
+    
+    G --> H[SSL解密]
+    H --> I[根据nginx.conf路由]
+    I --> J[反向代理到localhost:8080]
+```
+
+```nginx
+# /etc/nginx/conf.d/api.shop.com.conf
+
+# HTTP服务 - 监听80端口
+server {
+    # 关键配置：监听所有IP的80端口
+    listen 80;
+    # 指定这个server块处理哪个域名的请求
+    server_name api.shop.com;
+    
+    # 将HTTP请求重定向到HTTPS
+    return 301 https://$server_name$request_uri;
+}
+
+# HTTPS服务 - 监听443端口  
+server {
+    # 关键配置：监听所有IP的443端口，并启用SSL
+    listen 443 ssl;
+    server_name api.shop.com;
+    
+    # SSL证书配置
+    ssl_certificate /etc/ssl/certs/api.shop.com.crt;
+    ssl_certificate_key /etc/ssl/private/api.shop.com.key;
+    
+    # SSL协议配置
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-RSA-AES256-GCM-SHA512:...;
+    
+    # 业务路由配置
+    location /api/ {
+        # 反向代理到SpringCloud Gateway
+        proxy_pass http://localhost:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    
+    # 静态文件服务
+    location /static/ {
+        root /var/www/html;
+        expires 30d;
+    }
+}
+```
+
+```bash
+# 1. 客户端发起HTTPS请求
+curl https://api.shop.com/api/users/123
+
+# 2. 服务器网络层面
+请求到达 120.79.100.201:443
+↓
+操作系统TCP栈接收数据包
+↓
+检查哪个进程在监听443端口 → 找到Nginx Worker进程
+↓
+将连接交给Nginx
+
+# 3. Nginx处理阶段
+Nginx接受SSL连接
+↓
+SSL握手、证书验证、密钥交换
+↓
+解密HTTPS数据，得到原始HTTP请求
+↓
+根据nginx.conf路由到对应的location块
+↓
+反向代理到 http://localhost:8080/api/users/123
+
+# 4. 内部转发
+建立到localhost:8080的新HTTP连接
+↓
+SpringCloud Gateway接收请求
+↓
+后续微服务处理...
+```
+
+---
+
+## 负载均衡分层
+
+```mermaid
+graph LR
+    A[客户端] --> B[第一层: 全局负载均衡<br>DNS/云LB]
+    B --> C[第二层: 反向代理负载均衡<br>Nginx/HAProxy]
+    C --> D[第三层: 网关动态路由<br>SpringCloud Gateway]
+    D --> E[第四层: 微服务客户端负载均衡<br>Ribbon/LoadBalancer]
+    E --> F[具体服务实例]
+```
+
+|层级|技术|作用|特点|
+|:---|:----|:---|:----|
+|第一层  |DNS轮询、云LB|流量分发到不同机房/区域|基于地理位置的负载均衡|
+|第二层|Nginx、HAProxy|反向代理，分发到网关集群|7层负载，支持SSL终止、静态缓存|
+|第三层|SpringCloud Gateway|微服务路由、认证、限流|基于服务名的动态路由|
+|第四层|Ribbon、LoadBalancer|服务实例级别的负载均衡|客户端负载均衡，更灵活|
+
+---
+
+### Gateway路由 和 Ribbon负载均衡
+
+```mermaid
+sequenceDiagram
+    participant C as 客户端
+    participant G as Gateway<br/>(路由决策)
+    participant R as Ribbon<br/>(实例选择)
+    participant E as 服务注册中心
+    participant U1 as user-service<br/>实例A
+    participant U2 as user-service<br/>实例B
+    participant S1 as shop-service<br/>实例A
+    participant S2 as shop-service<br/>实例B
+
+    Note over U1,S2: 所有服务实例注册
+    U1->>E: 注册 user-service
+    U2->>E: 注册 user-service
+    S1->>E: 注册 shop-service
+    S2->>E: 注册 shop-service
+
+    Note over C: 请求1: /api/users/1
+    C->>G: GET /api/users/1
+    Note over G: 1. 路由决策<br/>Path=/api/users/** → user-service
+    G->>R: 2. 需要调用 user-service
+    R->>E: 3. 获取user-service实例列表
+    E-->>R: 返回 [实例A, 实例B]
+    Note over R: 4. 负载均衡<br/>选择实例A
+    R-->>G: 返回实例A地址
+    G->>U1: 5. 转发请求到实例A
+    U1-->>G: 返回响应
+    G-->>C: 返回响应
+
+    Note over C: 请求2: /api/shops/1
+    C->>G: GET /api/shops/1
+    Note over G: 1. 路由决策<br/>Path=/api/shops/** → shop-service
+    G->>R: 2. 需要调用 shop-service
+    R->>E: 3. 获取shop-service实例列表
+    E-->>R: 返回 [实例A, 实例B]
+    Note over R: 4. 负载均衡<br/>选择实例A
+    R-->>G: 返回实例A地址
+    G->>S1: 5. 转发请求到实例A
+    S1-->>G: 返回响应
+    G-->>C: 返回响应
+```
+
+---
+
+## tomcat 和 spring mvc
+
+```mermaid
+sequenceDiagram
+    participant C as 客户端 (Browser)
+    participant T as Tomcat
+    participant D as DispatcherServlet (Spring MVC 核心)
+    participant H as HandlerMapping
+    participant Co as Controller
+    participant S as Service
+    participant V as ViewResolver
+    participant J as JSP/HTML
+
+    Note over T, D: 1. Tomcat 接收并解析请求
+    C->>T: HTTP Request (GET /users/1)
+    T->>D: 生成 HttpServletRequest/Response<br>并传递给 DispatcherServlet
+
+    Note over D, H: 2. Spring MVC 处理请求
+    D->>H: 查询处理请求的 Controller 方法
+    H-->>D: 返回 @GetMapping("/users/{id}") 方法
+
+    Note over D, Co: 3. 执行业务逻辑
+    D->>Co: 调用 Controller 方法，并传递参数
+    Co->>S: 调用 Service 层业务逻辑
+    S-->>Co: 返回业务数据 (User对象)
+    Co-->>D: 返回视图名或数据 ("userDetail")
+
+    Note over D, V: 4. 渲染视图
+    D->>V: 解析视图名 "userDetail"
+    V-->>D: 返回对应的 JSP/HTML 页面
+    D->>J: 将模型数据填充到视图
+    J-->>D: 生成最终的 HTML
+
+    Note over T, C: 5. 返回响应
+    D-->>T: 返回 HTML 内容
+    T-->>C: HTTP Response
+```
+
+**连接桥梁 - DispatcherServlet**
+
+这是连接 Tomcat 和 Spring MVC 的关键组件
+
+Tomcat 是一个容器，属于基础设施，认Servlet规范
+
+DispatcherServlet 就是 Spring MVC 按照Servlet标准工作的代表
+
+---
+
+## Tomcat 参数
+
+```mermaid
+graph TD
+    A[客户端请求] --> B{连接数检查}
+    B -->|当前连接 < max-connections| C[建立TCP连接]
+    B -->|当前连接 >= max-connections| D[拒绝连接或等待]
+    
+    C --> E{线程池检查}
+    E -->|有空闲线程| F[分配线程处理请求]
+    E -->|无空闲线程| G[请求在连接中等待]
+    
+    F --> H[业务处理]
+    H --> I[返回响应]
+    I --> J[释放线程]
+    J --> K[保持或关闭连接]
+```
+
+| 参数名|  默认值   |推荐值|说明|配置示例 (YAML)
+|:-------|:-----------|:--|:--|:--
+|max-threads|200|推荐根据CPU核数调整|这是Tomcat工作线程池的最大线程数。增加此值可以处理更多并发请求，但设置过高会导致线程间上下文切换开销增大，反而可能降低性能。建议根据服务器CPU核心数和具体应用场景（I/O密集型或CPU密集型）调整|server: tomcat: threads: max: 800
+|min-spare-threads|10|推荐：50-100|最小空闲线程数。保证即使没有请求，也有一定数量的线程待命，以应对突发流量，避免请求到来时再创建线程带来的延迟|server: tomcat: threads: min-spare: 100|
+|max-connections|8192|推荐：10000+|Tomcat能同时处理的最大连接数。当所有线程都在忙碌时，新的连接会排队等待|server: tomcat: max-connections: 10000|
+|accept-count|100|推荐：500-1000|当所有工作线程都被占用，且连接数达到max-connections后，新的请求会进入一个等待队列，此值即队列长度。超过此队列长度的连接请求将被拒绝|server: tomcat: accept-count: 1000|
+|connection-timeout|20000毫秒|推荐：20000毫秒左右|连接超时时间。指连接建立后，等待请求数据的超时时间。设置过短可能会断开的慢速连接|server: tomcat: connection-timeout: 20000|
