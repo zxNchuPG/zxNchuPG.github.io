@@ -1,6 +1,6 @@
 # 关于我
 
-更多关于我的信息请查看[我的博客](https://zxNchuPG.github.io/about/)
+更多关于我的信息请查看[我的博客](https://zxnchupg.github.io/)
 
 我的[个人简历](https://zxNchuPG.github.io/my_CV.html)
 
