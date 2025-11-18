@@ -18,18 +18,12 @@
 <!-- Migrate from head to bottom, no longer block render and still work -->
 
 <!-- 放在 </body> 前，替换之前的脚本 -->
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script src="https://unpkg.com/mermaid@10.9.1/dist/mermaid.min.js"></script>
 <script>
-  // 等待脚本完全加载后再执行
-  if (window.mermaid) {  // 确认 mermaid 已加载
+  if (window.mermaid) {
     document.addEventListener('DOMContentLoaded', function() {
-      mermaid.initialize({
-        startOnLoad: true,
-        theme: 'default'
-      });
+      mermaid.initialize({ startOnLoad: true });
     });
-  } else {
-    console.error('Mermaid 脚本加载失败！');
   }
 </script>
 
