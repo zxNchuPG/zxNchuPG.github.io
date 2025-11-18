@@ -55,7 +55,14 @@ kramdown:
       line_numbers: true
       start_line: 1
 
+# 新增：声明启用 jekyll-mermaid 插件
+plugins:
+  - jekyll-mermaid  # 关键：让 Jekyll 加载 Mermaid 插件
 
+# 可选：配置 Mermaid 主题（插件支持的额外设置）
+mermaid:
+  theme: default  # 可选 dark/forest/neutral 等
+  start_on_load: true
 
 # Disqus 设置
 # disqus_username: hux
