@@ -13,31 +13,39 @@
     {% include footer.html %}
 
 
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/8.8.4/mermaid.min.js"></script>
+        <script>
+            var config = {
+                startOnLoad:true,
+                flowchart:{
+                    useMaxWidth:false,
+                    htmlLabels:true
+                }
+            };
+            mermaid.initialize(config);
+            $(function(){
+                var elements = document.getElementsByClassName("language-mermaid");
+                for (var i = elements.length; i--;) {
+                    element = elements[i];
+                    var graphDefinition = element.innerText;
+                    if (graphDefinition) {
+                        var svg = mermaid.render('ha_mermaid_' + i, graphDefinition, function(svg){});
+                        if (svg) {
+                            var svgElement = document.createElement('div');
+                            preNode = element.parentNode;
+                            svgElement.innerHTML = svg;
+                            svgElement.setAttribute('class', 'mermaid');
+                            svgElement.setAttribute('data-processed', 'true');
+                            preNode.parentNode.replaceChild(svgElement, preNode);
+                        }
+                    }
+                }
+            });
+        </script>
+        
 <!-- Image to hack wechat -->
 <img src="/img/icon_wechat.png" width="0" height="0" />
 <!-- Migrate from head to bottom, no longer block render and still work -->
-
-<!-- 关键：手动注入 Mermaid 脚本（放在 content 之后，确保代码块已渲染） -->
-    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
-    <script>
-      // 等待 Jekyll 完全渲染页面后再初始化 Mermaid
-      window.addEventListener('load', function() {
-        // 强制查找所有可能的 mermaid 代码块（处理类名可能的变体）
-        const codeBlocks = document.querySelectorAll('pre code[class*="language-mermaid"], pre code[class*="mermaid"]');
-        if (codeBlocks.length > 0 && window.mermaid) {
-          mermaid.initialize({
-            startOnLoad: false,  // 禁用自动加载，手动触发
-            theme: 'default'
-          });
-          // 手动渲染所有找到的代码块
-          codeBlocks.forEach(block => {
-            mermaid.render(`mermaid-${Date.now()}`, block.textContent, (svgCode) => {
-              block.parentNode.innerHTML = svgCode;  // 用 SVG 替换原代码块
-            });
-          });
-        }
-      });
-    </script>
 
 </body>
 
