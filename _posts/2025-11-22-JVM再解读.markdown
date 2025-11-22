@@ -1,0 +1,518 @@
+---
+layout:      post
+title:       "JVM再解读"
+subtitle:    "JVM"
+author:      "Ekko"
+header-img:  "img/bg/bg-jvm.jpg"
+catalog:     true
+tags:
+  - 工作
+  - 面试
+  - 学习笔记
+  - JAVA
+---
+
+[TOC]
+
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                    JVM 运行时数据区                          │
+├─────────────┬─────────────┬─────────────────────────────────┤
+│   线程共享区  │   线程私有区  │         执行引擎                │
+├─────────────┼─────────────┼─────────────────────────────────┤
+│ • 方法区     │ • 程序计数器   │ • 解释器                        │
+│ • 堆内存     │ • 虚拟机栈     │ • JIT编译器                     │
+│ • 运行时常量池│ • 本地方法栈   │ • 垃圾收集器                     │
+│             │             │ • 本地方法接口                    │
+└─────────────┴─────────────┴─────────────────────────────────┘
+```
+
+---
+
+## 监控工具
+
+```bash
+# 命令行工具
+jps     # 查看Java进程
+jstat   # 查看GC统计信息
+jstack  # 查看线程堆栈
+jmap    # 查看内存使用
+
+# 图形化工具
+jconsole
+jvisualvm
+arthas   # 阿里开源诊断工具
+```
+
+---
+
+## 收集器
+
+### 传统收集器
+
+![8之前的内存分配.png](/asserts/images/2020-08-04-JAVA虚拟机-Ⅱ/8之前的内存分配.png)
+
+**物理分区 、逻辑分区**
+
+```java
+public class TraditionalCollectorDesign {
+    /**
+     * 传统收集器（Serial, Parallel, CMS）的设计选择：
+     * - 在堆内存中划出固定的物理区域
+     * - 年轻代：Eden + 2个Survivor（固定比例）
+     * - 老年代：剩余部分、老年代是连续的大内存块
+     * - 大对象直接在老年代的连续空间中分配
+     * - 分代边界是固定的物理地址
+     */
+    // 物理内存布局：
+    // 0x0000 ┌─────────────┐ ← 年轻代起始
+    //        │    Eden     │
+    //        ├─────────────┤
+    //        │  Survivor0  │
+    //        ├─────────────┤
+    //        │  Survivor1  │
+    //        ├─────────────┤ ← 年轻代/老年代边界（固定）
+    //        │   Old Gen   │
+    // 0x8000 └─────────────┘
+}
+```
+
+---
+
+### G1收集器
+
+![8之后的内存分配.png](/asserts/images/2020-08-04-JAVA虚拟机-Ⅱ/8之后的内存分配.png)
+
+**物理不分代 、 逻辑分代**
+
+```java
+public class G1CollectorDesign {
+    /**
+     * G1收集器的设计选择：
+     * - 将堆划分为多个大小相等的Region
+     * - 每个Region可以动态扮演不同角色：：Eden、Survivor、Old、Humongous
+     * - 大对象在连续的Humongous Region中分配
+     * - Humongous Region是特殊类型，不属于Old Generation
+     * - 分代是逻辑概念，不是物理边界
+     */
+    // 逻辑内存布局：
+    // Region0: Eden   │ Region4: Old
+    // Region1: Old    │ Region5: Eden  
+    // Region2: Humongous │ Region6: Survivor
+    // Region3: Survivor │ Region7: Eden
+    // 没有固定的物理分代边界！
+}
+```
+
+---
+
+### G1逻辑分代的核心优势
+
+#### 1、可预测的停顿时间（G1的核心目标）
+
+```java
+public class PredictablePauseTimes {
+    /**
+     * 传统收集器的问题：
+     * - 收集整个年轻代或整个老年代
+     * - 停顿时间随着堆大小增长而增加
+     * 
+     * G1的解决方案：
+     * - 将堆划分为多个Region
+     * - 每次只收集一部分Region（Collection Set）
+     * - 停顿时间可控，通常设定为-XX:MaxGCPauseMillis=200ms
+     */
+    
+    public void demonstratePauseControl() {
+        // G1通过以下机制实现可预测停顿：
+        // 1. 增量式回收：每次只处理部分Region
+        // 2. 优先级回收：优先回收垃圾最多的Region（Garbage-First）
+        // 3. 用户可设定目标停顿时间
+    }
+}
+```
+
+---
+
+#### 2、内存管理的灵活性
+
+```java
+public class FlexibleMemoryManagement {
+    /**
+     * 传统收集器的固定分代问题：
+     * - 新生代/老年代比例固定
+     * - 容易导致过早晋升或内存浪费
+     * 
+     * G1的灵活分代优势：
+     * - Region可以动态改变角色
+     * - 自动调整各代大小
+     * - 更好的内存利用率
+     */
+    
+    // Region角色动态转换示例
+    class RegionRoleTransition {
+        /**
+         * Region生命周期：
+         * 空闲Region → Eden Region → Survivor Region → Old Region
+         *                         ↘ Humongous Region
+         * 
+         * 根据应用需求自动调整：
+         * - 如果年轻代对象存活率高，增加Survivor Region
+         * - 如果分配速率高，增加Eden Region  
+         * - 如果大对象多，分配更多Humongous Region
+         */
+
+        // 场景1：大量短期对象
+        // G1自动增加Eden Region数量，提高吞吐量
+        
+        // 场景2：对象存活率高  
+        // G1自动增加Survivor Region，减少过早晋升
+        
+        // 场景3：内存分配速率变化
+        // G1动态调整Region分配策略
+        
+        // 传统收集器需要手动调整：
+        // -XX:NewRatio, -XX:SurvivorRatio, -Xmn等参数
+        // 而G1自动完成这些调整
+    }
+}
+```
+
+---
+
+#### 3、避免内存碎片
+
+```java
+public class MemoryFragmentationAvoidance {
+    /**
+     * 传统CMS收集器的碎片问题：
+     * - 使用标记-清除算法，不整理内存
+     * - 长时间运行后产生内存碎片
+     * - 导致Full GC和长时间停顿
+     * 
+     * G1的解决方案：
+     * - 在并发标记过程中识别垃圾最多的Region
+     * - 在Mixed GC时，优先回收这些Region并整理内存
+     * - 通过复制算法消除碎片
+     */
+    
+    public void demonstrateDefragmentation() {
+        // G1的内存整理过程：
+        // 回收前：│ Eden │ Old(fragmented) │ Humongous │ Old(fragmented) │
+        // 回收后：│ Eden │ Old(compacted)  │  Free     │ Old(compacted)  │
+        
+        // 优势：
+        // 1. 增量式整理，避免长时间停顿
+        // 2. 选择性整理，只整理最有价值的Region
+        // 3. 持续维护堆的健康状态
+    }
+}
+```
+
+---
+
+#### 4、更好的大对象处理
+
+```java
+public class LargeObjectHandling {
+    /**
+     * 传统收集器的大对象问题：
+     * - 大对象直接进入老年代
+     * - 可能导致老年代碎片化
+     * - 大对象回收需要Full GC
+     * 
+     * G1的Humongous对象优势：
+     * - 专门用Humongous Region管理大对象
+     * - 大对象不会导致老年代碎片
+     * - 可以在并发周期中回收Humongous对象
+     */
+    
+    public void compareLargeObjectManagement() {
+        // 传统收集器：
+        // 老年代布局：│ 小对象 │ 大对象(6M) │ 小对象 │ 大对象(8M) │ → 产生碎片
+        
+        // G1收集器：
+        // Region布局：│ Eden │ Humongous(6M) │ Old │ Humongous(8M) │ → 隔离管理
+    }
+}
+```
+
+---
+
+### 性能对比
+
+#### 停顿时间对比
+
+```java
+public class PauseTimeComparison {
+    /**
+     * 实际应用中的停顿时间表现：
+     */
+    
+    public void comparePauseTimes() {
+        // 传统Parallel GC：
+        // Young GC: 50-100ms（随堆增长而增加）
+        // Full GC:  1-10秒（随堆增长显著增加）
+        
+        // G1 GC：
+        // Young GC: 50-100ms（相对稳定）
+        // Mixed GC: 100-200ms（可控）
+        // Full GC:  极少发生（只在并发模式失败时）
+        
+        // 关键优势：G1的停顿时间更可预测和可控
+    }
+}
+```
+
+思考：应该是 **将堆划分为多个Region** 这个特性带来的优势吧，不再需要整个大分区回收，而是通过 并行处理 多个小Region
+
+---
+
+#### 内存使用效率
+
+```java
+public class MemoryEfficiency {
+    /**
+     * 内存使用效率对比：
+     */
+    
+    public void demonstrateEfficiency() {
+        // 场景：堆大小4GB，对象分配模式变化
+        
+        // 传统收集器（固定分代）：
+        // - 年轻代固定为1.3GB
+        // - 如果实际需要2GB年轻代，会导致频繁GC
+        // - 如果实际需要0.5GB年轻代，造成内存浪费
+        
+        // G1收集器（动态分代）：
+        // - 年轻代可以在0.5GB-2GB之间动态调整
+        // - 根据分配速率和存活率自动优化
+        // - 无内存浪费，适应工作负载变化
+    }
+}
+```
+
+---
+
+### G1收集器参数
+
+```java
+public class G1TuningParameters {
+    /**
+     * G1的调优参数反映其设计优势：
+     */
+    
+    public void tuningExamples() {
+        // 1. 停顿时间目标（核心优势）
+        // -XX:MaxGCPauseMillis=200
+        
+        // 2. 自适应行为控制
+        // -XX:G1HeapWastePercent=5    // 允许的堆浪费比例
+        // -XX:G1MixedGCLiveThresholdPercent=85 // 老年代Region回收阈值
+        
+        // 3. 并发控制  
+        // -XX:ConcGCThreads=4         // 并发GC线程数
+        // -XX:InitiatingHeapOccupancyPercent=45 // 触发并发标记的堆占用率
+        
+        // 对比传统收集器繁琐的调优：
+        // -XX:NewRatio, -XX:SurvivorRatio, -XX:MaxTenuringThreshold等
+    }
+}
+```
+
+---
+
+### G1收集器 - 动态调整
+
+G1垃圾收集器能根据应用程序的运行情况，动态调整内存布局和回收策略，核心目标是尽可能满足你设置的停顿时间目标（通过 -XX:MaxGCPauseMillis 指定），同时保持高吞吐量
+
+G1的Region角色在运行时可以动态改变。例如，一个在一次垃圾回收后空闲出来的Region，下次分配时可能被用作Eden区，也可能用于分配大对象（Humongous区），或者变成Survivor区
+
+|调整维度 | 动态机制概述    |
+|:-------|:-----------|
+|内存管理  |将堆划分为多个固定大小的 Region，Region的角色（Eden、Survivor、Old、Humongous）可以动态变化。新生代（Eden和Survivor Region的集合）的空间会动态扩容或缩容|
+|回收策略|采用 Garbage-First 原则：优先回收垃圾最多（即可回收空间最大）的 Region。通过 Mixed GC 模式，在一次回收中同时处理年轻代和部分老年代 Region|
+|停顿预测|基于衰减平均算法，利用历史GC数据预测下一次GC的耗时。根据预测结果，动态决定每次回收的Region数量，以逼近停顿目标|
+
+---
+
+## 对象内存分配
+
+优先在Eden区分配
+
+超大对象，分配在 老年代（传统收集器） 或者 Humongous区（G1收集器）
+
+
+```bash
+# 针对对象分配的调优参数
+
+# 1. 大对象阈值设置
+-XX:PretenureSizeThreshold=3145728    # 3MB，对象超过此大小直接在老年代分配
+
+# 2. TLAB相关参数
+-XX:+UseTLAB                          # 启用TLAB（默认开启）
+-XX:TLABSize=512k                     # 设置TLAB大小
+-XX:+PrintTLAB                        # 打印TLAB信息
+
+# 3. G1收集器大对象参数
+-XX:+UseG1GC                          # 使用G1收集器
+-XX:G1HeapRegionSize=16m              # 设置Region大小
+-XX:+PrintAdaptiveSizePolicy          # 打印自适应大小策略
+
+# 4. 内存分配监控
+-XX:+PrintGCDetails                   # 打印GC详细信息
+-XX:+PrintHeapAtGC                    # GC时打印堆信息
+-XX:+PrintPromotionFailure            # 打印分配失败信息
+```
+
+---
+
+### 大对象分配：传统收集器
+
+```java
+public class TraditionalLargeObjectAllocation {
+    /**
+     * 使用-XX:PretenureSizeThreshold参数
+     * 对象大小超过该阈值时，直接在老年代分配
+     */
+    
+    public void allocateLargeObject() {
+        // JVM参数：-XX:PretenureSizeThreshold=3145728 (3MB)
+        
+        byte[] smallObj = new byte[2 * 1024 * 1024];  // 在Eden区分配
+        byte[] largeObj = new byte[4 * 1024 * 1024];  // 直接在老年代分配
+        
+        // 为什么直接在老年代分配？
+        // 1. 避免在新生代来回复制大对象
+        // 2. 避免大对象导致频繁的Minor GC
+        // 3. 避免占用大量Eden区空间
+    }
+}
+```
+
+---
+
+### 大对象分配：G1收集器
+
+```java
+public class G1HumongousAllocation {
+    /**
+     * G1堆内存布局：
+     * ┌─────┬─────┬─────┬─────┬─────┬─────┐
+     * │Region│Region│Region│Region│Region│Region│
+     * └─────┴─────┴─────┴─────┴─────┴─────┘
+     * 
+     * 超大对象分配：
+     * 对象大小 > RegionSize/2 → 认定为Humongous对象
+     */
+    
+    public void allocateHumongous() {
+        // 假设Region大小为4MB
+        int regionSize = 4 * 1024 * 1024;
+        
+        // 大小超过2MB的对象被认为是Humongous对象
+        byte[] largeObj1 = new byte[3 * 1024 * 1024];  // Humongous对象
+        byte[] largeObj2 = new byte[8 * 1024 * 1024];  // 需要2个连续Region
+        
+        // 分配过程：
+        // 1. 在老年代寻找连续的Region空间
+        // 2. 如果找不到，触发Full GC尝试整理空间
+        // 3. 如果还找不到，抛出OutOfMemoryError
+    }
+}
+```
+
+---
+
+## safe point 安全点
+
+和GC中的 STW停顿(Stop-The-World) 有关
+
+安全点的工作机制：协作式暂停
+
+说通俗点，就是jvm现在需要GC，但是又不能随时暂停工作中线程，需要各个工作中线程协同配合，到达代码安全点的时候，先暂停工作，等待GC完成
+
+```java
+public class WhySafepoint {
+    private static boolean stop = false;
+    
+    public static void main(String[] args) {
+        // 问题场景：GC需要暂停所有线程来枚举GC Roots
+        // 但如果线程正在执行以下代码：
+        int a = 1;
+        int b = 2;
+        int c = a + b;  // 执行到一半被GC暂停？
+        // 此时JVM无法确定寄存器、栈帧的状态，可能导致错误
+    }
+}
+```
+
+**核心原因：**
+
+GC需要准确枚举GC Roots（栈帧中的引用）
+
+如果线程执行到一半被暂停，栈帧状态不确定
+
+可能导致对象漏标记或错误回收
+
+---
+
+**安全点通常设置在**
+
+```java
+public class SafepointLocations {
+    public void method() {
+        // 1. 方法返回前
+        return; // ← 安全点
+        
+        // 2. 循环跳转处  
+        for (int i = 0; i < 100; i++) {
+            // 循环末尾 ← 安全点
+        }
+        
+        // 3. 抛出异常时
+        throw new RuntimeException(); // ← 安全点
+        
+        // 4. 调用方法时
+        otherMethod(); // ← 安全点
+    }
+    
+    // 但不是所有地方都是安全点！
+    public void notSafepoint() {
+        int a = 1;
+        int b = 2;
+        int c = a + b;  // 这里通常不是安全点
+    }
+}
+```
+
+**执行流程**
+
+```java
+public class GCWithSafepoint {
+    public static void main(String[] args) {
+        // 初始状态：所有线程正常运行
+        // ┌─────┐ ┌─────┐ ┌─────┐
+        // │线程A │ │线程B │ │线程C │ ← 都在执行代码
+        // └─────┘ └─────┘ └─────┘
+        
+        // 步骤1：JVM需要GC，设置安全点请求
+        // JVM.safepointRequested = true
+        
+        // 步骤2：各线程到达最近的安全点后暂停
+        // ┌─────┐ ┌─────┐ ┌─────┐
+        // │线程A │ │线程B │ │线程C │ ← 都在安全点暂停
+        // └─────┘ └─────┘ └─────┘
+        //    ↓       ↓       ↓
+        //  安全点   安全点   安全点
+        
+        // 步骤3：JVM确认所有线程已暂停，执行GC
+        System.gc(); // 实际GC发生在这里
+        
+        // 步骤4：GC完成，恢复所有线程
+        // JVM.safepointRequested = false
+        // 所有线程从安全点继续执行
+    }
+}
+```
