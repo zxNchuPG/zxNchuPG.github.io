@@ -42,6 +42,54 @@ XA
 
 saga
 
+---
+
+## Spring事务 - 核心接口
+
+```java
+// 事务管理的核心入口
+public interface PlatformTransactionManager {
+    TransactionStatus getTransaction(TransactionDefinition definition) throws TransactionException;
+    void commit(TransactionStatus status) throws TransactionException;
+    void rollback(TransactionStatus status) throws TransactionException;
+}
+
+// 事务定义（传播行为、隔离级别、超时等）
+public interface TransactionDefinition {
+    int getPropagationBehavior();
+    int getIsolationLevel();
+    int getTimeout();
+    boolean isReadOnly();
+    String getName();
+}
+
+// 事务状态
+public interface TransactionStatus {
+    boolean isNewTransaction();
+    boolean hasSavepoint();
+    void setRollbackOnly();
+    boolean isRollbackOnly();
+    boolean isCompleted();
+}
+```
+
+---
+
+## Spring事务 - 管理器
+
+```java
+// JDBC 事务（最常用）
+public class DataSourceTransactionManager implements PlatformTransactionManager
+
+// JPA 事务  
+public class JpaTransactionManager implements PlatformTransactionManager
+
+// JTA 分布式事务
+public class JtaTransactionManager implements PlatformTransactionManager
+```
+
+---
+
 ## @Transactional
 
 代理机制：Spring AOP 创建代理对象拦截方法调用
