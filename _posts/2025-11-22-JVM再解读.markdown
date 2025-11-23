@@ -425,6 +425,201 @@ public class G1HumongousAllocation {
 
 ---
 
+## 从分区、对象晋升比较G1收集器
+
+### 传统收集器的固定分区问题
+
+```java
+public class TraditionalFixedPartition {
+    /**
+     * 传统收集器的固定分区导致内存浪费
+     */
+    
+    // 典型的新生代布局（-XX:NewRatio=2, -XX:SurvivorRatio=8）
+    // ┌─────────────────┐
+    // │      Eden       │ 80% 年轻代
+    // ├─────────────────┤
+    // │   Survivor0     │ 10% 年轻代 ← 一半时间闲置
+    // ├─────────────────┤
+    // │   Survivor1     │ 10% 年轻代 ← 一半时间闲置  
+    // └─────────────────┘
+
+    // 传统收集器内存布局：
+    class TraditionalLayout {
+        // ┌─────────────────────────────────┐
+        // │           年轻代                 │
+        // │    ┌─────┬─────────┬─────┐      │
+        // │    │ Eden│Survivor0│Surv1│      │
+        // │    │ 80% │   10%   │ 10% │      │
+        // │    └─────┴─────────┴─────┘      │
+        // ├─────────────────────────────────┤
+        // │             老年代               │
+        // └─────────────────────────────────┘
+        
+        // 问题1：Survivor空间固定，无法动态调整
+        // - 如果存活对象少：Survivor空间浪费
+        // - 如果存活对象多：导致过早晋升到老年代
+        
+        // 问题2：物理分区限制
+        // - Survivor0和Survivor1必须相邻
+        // - 无法利用碎片化的空闲内存
+    }
+}
+```
+
+---
+
+### G1收集器动态分区
+
+```java
+public class G1DynamicAdvantage {
+    /**
+     * G1的动态Region分配如何减少内存浪费
+     */
+    
+    // Region分布（角色动态变化）：
+    // ┌─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┐
+    // │ Eden │ Eden │ Eden │Surv│ Old │ Eden │Surv│ Hum │
+    // │Region│Region│Region│Region│Region│Region│Region│Region│
+    // └─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┘
+    
+    // 注意：
+    // 1. Survivor Region不是固定的物理位置
+    // 2. 每次GC后，Region的角色可能改变
+    // 3. 没有固定的"Survivor0"和"Survivor1"概念
+
+    public void g1MemoryEfficiency() {
+        // 优势1：按需分配Survivor空间
+        // - 存活对象多：分配更多Survivor Region
+        // - 存活对象少：分配较少Survivor Region
+        // - 没有固定的"一半Survivor空间闲置"问题
+        
+        // 优势2：利用碎片化空间
+        // 传统：只能使用固定的Survivor空间
+        // G1：可以使用堆中任何空闲Region作为Survivor
+        
+    }
+   
+}
+```
+
+---
+
+### 传统收集器-复制存活对象过程
+
+```java
+public void traditionalPromotion() {
+        // 传统复制过程：
+        // 1. 从Eden + Survivor0 复制到 Survivor1
+        // 2. 或者从Eden + Survivor1 复制到 Survivor0
+        // 3. 总是在这两个固定的Survivor空间之间切换
+        
+        // 限制：即使堆中有其他空闲区域，也无法使用
+    }
+```
+
+---
+
+### G1收集器-复制存活对象过程
+
+```java
+public class G1CopyingProcess {
+    /**
+     * G1年轻代GC时，存活对象的复制过程：
+     */
+    
+    public void youngGCInG1() {
+        // 初始状态：多个Eden Region中有存活对象
+        // ┌─────────┐ ┌─────────┐ ┌─────────┐
+        // │ Eden R1 │ │ Eden R2 │ │ Eden R3 │
+        // │  objA   │ │  objB   │ │  objC   │ ← 存活对象
+        // │  objD   │ │         │ │  objE   │
+        // └─────────┘ └─────────┘ └─────────┘
+        
+        // GC过程：
+        // 1. 标记所有Eden Region中的存活对象
+        // 2. 选择空闲Region作为目标Survivor Region
+        // 3. 将存活对象复制到新的Survivor Region
+        
+        // 结果：
+        // ┌─────────┐ ┌─────────┐ ┌─────────────┐
+        // │  Free   │ │  Free   │ │ Survivor R7 │ ← 新分配的Survivor Region
+        // │         │ │         │ │   objA      │
+        // │         │ │         │ │   objB      │
+        // └─────────┘ └─────────┘ │   objC      │
+        //                         │   objD      │
+        //                         │   objE      │
+        //                         └─────────────┘
+
+        // 示例场景：
+        // 堆中有空闲Region：R4, R7, R9, R12
+        // GC时，可以选择R4和R7作为Survivor Region
+        // 下次GC时，可能选择R9和R12作为Survivor Region
+    }
+}
+```
+
+---
+
+### 分区的意义
+
+堆中分：eden、survivor、old 区，其实说白了，这些是根据对象年龄（也就是存活时间）判断，针对不同存活时间的对象，采用不同的回收机制
+
+```java
+public class GenerationalWisdom {
+    /**
+     * 对象年龄的核心意义：预测对象存活概率
+     */
+    
+    public void ageBasedPrediction() {
+        // 对象年龄与存活概率关系：
+        // 年龄0（新创建）：存活概率 5-10%
+        // 年龄1（1次GC）：存活概率 20-30%  
+        // 年龄2（2次GC）：存活概率 50-60%
+        // 年龄5+（5+次GC）：存活概率 90%+
+        
+        // 这就像"生存考验"：
+        // 经历GC次数越多，证明对象越"顽强"
+    }
+    
+    /**
+     * 分代设计体现的工程智慧
+     */
+    
+    // 1. 基于观察而非假设
+    class BasedOnObservation {
+        /**
+         * 不是理论上应该怎样，而是实际观察到的现象：
+         * - 对象生命周期分布不均匀
+         * - 大多数对象很短命
+         * - 少数对象很长寿
+         */
+    }
+    
+    // 2. 差异化处理
+    class DifferentialTreatment {
+        /**
+         * 对不同特征的对象使用不同策略：
+         * - 短期对象：快速分配，快速回收
+         * - 中期对象：观察筛选，避免误判  
+         * - 长期对象：稳定存储，少打扰
+         */
+    }
+    
+    // 3. 渐进式优化
+    class ProgressiveOptimization {
+        /**
+         * 通过多级筛选确保准确性：
+         * - 第一级：Eden区快速淘汰（大多数对象）
+         * - 第二级：Survivor区精细筛选（可能长期的对象）
+         * - 第三级：老年代长期存储（确认长期的对象）
+         */
+    }
+}
+```
+
+---
+
 ## safe point 安全点
 
 和GC中的 STW停顿(Stop-The-World) 有关
