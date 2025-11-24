@@ -17,6 +17,13 @@ tags:
 [TOC]
 
 ---
+
+RPC：一种架构模式，只要符合远程过程调用，都叫rpc。比如 openFeign 就是一种基于http实现的rpc
+
+rpc的序列化效率更高
+
+http超文本传输协议，如果基于http实现的rpc，一样不能摆脱http协议规范的请求头，只不过rpc会视情况压缩这部分内容
+
 ## 什么是RPC
 
 **RPC（Remote Procedure Call 远程过程调用）** 分布式促使 RPC 诞生，RPC让分布式系统更加简单，让开发人员把精力放到业务上，并且提供高效安全的通信
