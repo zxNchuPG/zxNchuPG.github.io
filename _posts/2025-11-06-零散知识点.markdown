@@ -186,6 +186,20 @@ SpringBoot 主要优化的就是这部分内容
 
 启动类注解 @SpringBootApplication 包含了 @EnableAutoConfiguration
 
+**个人理解：先通过spi机制加载Spring.factories注册一些bean，使springboot具备自动装配的能力，再通过 @ComponentScan 扫描包路径等方式，加载其他的bean**
+
+```mermaid
+flowchart TD
+    A[启动类加载] --> B[SpringBootApplication]
+    B --> C[EnableAutoConfiguration]
+    C --> D[AutoConfigurationImportSelector]
+    D --> E[spring.factories加载]
+    E --> F[自动配置类筛选]
+    F --> G[条件注解校验]
+    G --> H[配置类实例化]
+    H --> I[Bean注册到容器]
+```
+
 ---
 
 ## SPI 机制
