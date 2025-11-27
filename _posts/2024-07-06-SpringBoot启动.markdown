@@ -3,7 +3,7 @@ layout:      post
 title:       "SpringBoot启动流程"
 subtitle:    "SpringBoot启动流程"
 author:      "Ekko"
-header-img:  "asserts/images/2024-07-06-SpringBoot启动/bg-20240706.jpg"
+header-img:  "img/bg/bg-20240706.png"
 catalog:     true
 tags:
   - 学习笔记

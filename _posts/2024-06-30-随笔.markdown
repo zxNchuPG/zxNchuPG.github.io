@@ -3,7 +3,7 @@ layout:      post
 title:       "随笔"
 subtitle:    "随笔"
 author:      "Ekko"
-header-img:  "img/bg/bg-20240630.jpg"
+header-img:  "img/bg/bg-20240630.png"
 catalog:     true
 tags:
   - 学习笔记
