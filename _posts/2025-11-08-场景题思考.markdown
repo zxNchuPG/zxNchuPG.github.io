@@ -152,17 +152,215 @@ public void exportSafe(HttpServletResponse response) throws IOException {
 
 ## 接口防刷
 
-1、 分布式限流
+### 1、分布式限流
 
-redis + lua 脚本 实现计数器
+核心思想：在单位时间内限制某个维度（用户/IP/接口）的请求次数
 
-令牌桶、固定窗口、滑动窗口
+**实现方案对比：**
 
-2、 设备指纹识别
+|算法|原理|优点|缺点|
+|:---|:---|:---|:---|
+|固定窗口|将时间划分为固定窗口，每个窗口内维护计数器|实现简单|存在临界突刺问题（窗口边界处瞬间可能承受2倍流量）|
+|滑动窗口|将窗口再细分为多个小格子，按格子滑动统计|平滑流量，解决临界突刺|内存占用略高，需维护多个格子的计数|
+|漏桶|请求进入漏桶排队，以恒定速率流出处理|流量整形，输出平稳|突发流量时延迟高，无法利用空闲容量|
+|令牌桶|以恒定速率生成令牌放入桶中，请求需获取令牌|允许一定突发流量，灵活性好|实现相对复杂|
 
-3、 请求签名
+**Redis + Lua 脚本实现滑动窗口限流：**
 
-4、 ip 黑名单
+```lua
+-- KEYS[1]: 限流key（如 rate_limit:userId:接口名）
+-- ARGV[1]: 窗口大小（毫秒）
+-- ARGV[2]: 最大请求数
+-- ARGV[3]: 当前时间戳（毫秒）
+-- ARGV[4]: 唯一请求标识
+
+local key = KEYS[1]
+local window = tonumber(ARGV[1])
+local limit = tonumber(ARGV[2])
+local now = tonumber(ARGV[3])
+local uuid = ARGV[4]
+
+-- 移除窗口外的旧请求
+redis.call('ZREMRANGEBYSCORE', key, 0, now - window)
+
+-- 统计当前窗口内请求数
+local count = redis.call('ZCARD', key)
+
+if count < limit then
+    -- 未超限，添加当前请求
+    redis.call('ZADD', key, now, uuid)
+    redis.call('PEXPIRE', key, window)
+    return 1  -- 放行
+else
+    return 0  -- 拒绝
+end
+```
+
+**令牌桶 Lua 实现：**
+
+```lua
+-- KEYS[1]: 令牌桶key
+-- ARGV[1]: 桶最大容量
+-- ARGV[2]: 每秒生成令牌数
+-- ARGV[3]: 当前时间戳（秒）
+-- ARGV[4]: 请求令牌数（通常为1）
+
+local capacity = tonumber(ARGV[1])
+local rate = tonumber(ARGV[2])
+local now = tonumber(ARGV[3])
+local requested = tonumber(ARGV[4])
+
+local last_time = tonumber(redis.call('HGET', KEYS[1], 'last_time') or now)
+local tokens = tonumber(redis.call('HGET', KEYS[1], 'tokens') or capacity)
+
+-- 计算新增令牌数
+local elapsed = math.max(0, now - last_time)
+local new_tokens = math.min(capacity, tokens + elapsed * rate)
+
+if new_tokens >= requested then
+    new_tokens = new_tokens - requested
+    redis.call('HSET', KEYS[1], 'tokens', new_tokens)
+    redis.call('HSET', KEYS[1], 'last_time', now)
+    return 1  -- 放行
+else
+    redis.call('HSET', KEYS[1], 'tokens', new_tokens)
+    redis.call('HSET', KEYS[1], 'last_time', now)
+    return 0  -- 拒绝
+end
+```
+
+> 为什么用 Lua？保证原子性，避免并发下 get + set 的竞态条件
+
+---
+
+### 2、设备指纹识别
+
+核心思想：通过采集客户端多维度信息生成唯一设备标识，即使切换IP/账号也能识别同一设备
+
+**采集维度：**
+
+- 浏览器端：Canvas指纹、WebGL指纹、AudioContext指纹、User-Agent、屏幕分辨率、时区、语言、已安装插件列表、字体列表
+- APP端：IMEI/OAID、MAC地址、设备型号、系统版本、安装应用列表
+- 综合特征：TCP/IP协议栈指纹（TTL、窗口大小等）
+
+**使用流程：**
+
+```
+客户端 --> 采集多维度特征 --> Hash生成设备指纹ID --> 携带在请求Header中
+服务端 --> 校验指纹合法性 --> 基于指纹维度做频率控制
+```
+
+**风控策略：**
+
+- 同一设备指纹短时间内大量请求 → 触发验证码或临时封禁
+- 设备指纹频繁变化（模拟器/篡改工具） → 标记为高风险
+- 设备指纹 + 行为分析（请求间隔过于均匀） → 机器人特征
+
+---
+
+### 3、请求签名
+
+核心思想：客户端对请求参数进行签名，服务端验证签名合法性，防止伪造请求和参数篡改
+
+**签名生成流程：**
+
+```
+1. 将所有请求参数按key字典序排列
+2. 拼接为 key1=value1&key2=value2&... 的字符串
+3. 拼接 timestamp + nonce（随机数） + secretKey
+4. 对拼接结果做 HMAC-SHA256 签名
+5. 将 sign、timestamp、nonce 放入请求Header
+```
+
+**服务端校验：**
+
+```java
+// 1. 验证 timestamp 是否在允许时间窗口内（如5分钟），防止重放攻击
+if (Math.abs(System.currentTimeMillis() - timestamp) > 5 * 60 * 1000) {
+    throw new RuntimeException("请求已过期");
+}
+
+// 2. 验证 nonce 是否已使用过（Redis记录，TTL=时间窗口），防止重放
+if (redis.exists("nonce:" + nonce)) {
+    throw new RuntimeException("重复请求");
+}
+redis.setex("nonce:" + nonce, 300, "1");
+
+// 3. 按相同规则重新计算签名并比对
+String serverSign = HmacUtil.sha256(sortedParams + timestamp + nonce, secretKey);
+if (!serverSign.equals(clientSign)) {
+    throw new RuntimeException("签名校验失败");
+}
+```
+
+**关键要素：**
+
+- `timestamp`：防止重放攻击（请求过期失效）
+- `nonce`：防止同一请求在有效期内被重复提交
+- `secretKey`：客户端与服务端约定的密钥，APP可通过SO库存储增加逆向难度
+
+---
+
+### 4、IP 黑名单
+
+**实现层次：**
+
+|层级|方案|特点|
+|:---|:---|:---|
+|网关层|Nginx `deny` 指令 / WAF 规则|性能最高，请求不到达应用层|
+|应用层|拦截器 + Redis 黑名单集合|灵活，可动态增删|
+|云厂商|安全组/ACL规则|适合已知恶意IP段|
+
+**动态黑名单策略：**
+
+```
+短时间触发限流阈值 → 加入灰名单（要求验证码）
+多次触发灰名单 → 加入黑名单（封禁N分钟）
+持续恶意行为 → 加入永久黑名单
+```
+
+> 注意获取真实IP：需正确解析 `X-Forwarded-For`、`X-Real-IP`，防止通过代理绕过。取第一个非内网IP
+
+---
+
+### 5、行为验证码（人机校验）
+
+触发时机：当用户请求频率异常但未达到直接封禁阈值时，弹出验证码进行人机验证
+
+常见方案：滑块验证、点选验证、无感验证（Google reCAPTCHA v3 评分机制）
+
+---
+
+### 6、网关层面统一防护
+
+在 API Gateway（如 Spring Cloud Gateway、Kong、Nginx）层做统一拦截，避免每个服务重复实现：
+
+- 全局限流 Filter：基于路由/用户/IP维度
+- 熔断降级：异常流量直接返回友好提示
+- 请求去重：相同请求短时间内只处理一次
+
+---
+
+### 综合防刷架构
+
+```mermaid
+flowchart TD
+    A[客户端请求] --> B[WAF/CDN层]
+    B --> C{IP黑名单检查}
+    C -- 命中 --> D[直接拒绝]
+    C -- 通过 --> E[网关层]
+    E --> F{请求签名校验}
+    F -- 失败 --> D
+    F -- 通过 --> G{分布式限流}
+    G -- 超限 --> H{是否触发验证码}
+    H -- 是 --> I[返回验证码挑战]
+    H -- 否 --> D
+    G -- 通过 --> J{设备指纹风控}
+    J -- 高风险 --> I
+    J -- 正常 --> K[业务服务处理]
+```
+
+> 防刷不是单一策略能解决的，需要多层防护形成纵深防御体系。前端签名防低成本攻击，限流兜底防突发流量，设备指纹+行为分析对抗高级爬虫
 
 ---
 
@@ -247,10 +445,92 @@ flowchart TD
 
 ---
 
-一般采用 分词模糊搜索
+### 方案一：分词加密 + 密文索引（主流方案）
 
-> 注意：原数据按规则分词加密存储后，查询条件入参同样也要先分词，再去搜索
+核心思想：将明文按规则拆分为多个子串，分别加密后存储，查询时同样分词加密后匹配
 
-还一种思路：明文、密文 做映射表，但这样也失去了加密的初衷。但如果密文映射表，是独立的服务和数据库，从数据库权限上收口，也不是不行
+**存储流程：**
+
+```
+原始数据: "张三丰"
+↓ 分词（如每2个字一组）
+分词结果: ["张三", "三丰", "张三丰"]
+↓ 对每个分词单独加密（如 HmacSHA256）
+加密结果: ["a3f2...", "b7c1...", "e9d4..."]
+↓ 存入密文索引字段（如用逗号拼接或存入关联表）
+```
+
+**查询流程：**
+
+```
+查询条件: "三丰"
+↓ 同样分词+加密
+加密后: "b7c1..."
+↓ SQL: WHERE cipher_index LIKE '%b7c1...%'
+    或 WHERE id IN (SELECT data_id FROM cipher_index_table WHERE token = 'b7c1...')
+```
+
+**分词策略选择：**
+
+|策略|示例（“张三丰”）|适用场景|
+|:---|:---|:---|
+|固定长度N-gram|张三、三丰|中文姓名、短文本|
+|滑动窗口|张、三、丰、张三、三丰、张三丰|需要任意子串匹配|
+|按分隔符|如手机号每4位一组|结构化数据（手机号、身份证号）|
+
+> 注意：分词粒度越细，索引越大，查询越灵活；粒度越粗，存储越小，但只能匹配特定长度的关键词
+
+**代码示例：**
+
+```java
+// 分词工具
+public static List<String> tokenize(String plainText, int gramSize) {
+    List<String> tokens = new ArrayList<>();
+    for (int i = 0; i <= plainText.length() - gramSize; i++) {
+        tokens.add(plainText.substring(i, i + gramSize));
+    }
+    // 加上全文本本身
+    tokens.add(plainText);
+    return tokens;
+}
+
+// 加密分词
+public static List<String> encryptTokens(List<String> tokens, String secretKey) {
+    return tokens.stream()
+        .map(t -> HmacUtil.sha256(t, secretKey))
+        .distinct()
+        .collect(Collectors.toList());
+}
+```
+
+---
+
+### 方案二：明密文映射表（独立服务）
+
+思路：建立独立的映射服务，存储【脱敏后的模糊查询字段 → 数据主键ID】的映射关系
+
+```
+查询服务 --> 映射服务（独立库，严格权限控制） --> 返回ID列表 --> 业务库查密文并解密
+```
+
+优点：查询效率高，支持完整的 LIKE 语义
+
+缺点：映射表存储了部分明文信息，需从架构层面收口安全（独立服务+独立数据库+严格 ACL）
+
+---
+
+### 方案三：同态加密（理论方案，工程化尚不成熟）
+
+同态加密允许在密文上直接计算，解密后结果等价于对明文计算。理论上可以实现密文上的模糊匹配，但当前性能开销极大，不适合生产环境
+
+---
+
+### 方案对比
+
+|方案|安全性|查询性能|实现复杂度|适用场景|
+|:---|:---|:---|:---|:---|
+|分词加密索引|高（不可逆）|中（依赖分词粒度）|中|姓名、手机号、地址等短文本|
+|明密文映射表|中（需架构保护）|高|低|对查询性能要求极高的场景|
+|同态加密|极高|极低|极高|暂不适合生产|
 
 		
