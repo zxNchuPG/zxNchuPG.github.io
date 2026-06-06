@@ -52,7 +52,7 @@ java程序设计语言确实是采用了按值调用，即call by value。也就
 ```java
 int num = 2;
 double num2 = 2.0;
-System.out.println(i == j); // true
+System.out.println(num == num2); // true
 ```
 但是如果比较的是引用类型，那么两个引用必须指向同一个对象，也就是引用类型比较的是两个变量指向的内存地址
 
@@ -329,7 +329,7 @@ private static class IntegerCache {
 
 合法的
 
-Unicode 统一了所有字符的编码，是一个 Character Set，也就是字符集，字符集只是给所有的字符一个唯一编号，但是却没有规定如何存储，不同的字符其存储空间不一样，有的需要一个字节就能存储，有的则需要2、3、4个字节。UTF-8是Unicode的一种实现，"中"是两个字节，所以是合法的
+Unicode 统一了所有字符的编码，是一个 Character Set，也就是字符集，字符集只是给所有的字符一个唯一编号，但是却没有规定如何存储，不同的字符其存储空间不一样，有的需要一个字节就能存储，有的则需要2、3、4个字节。UTF-8是Unicode的一种实现，"中"在UTF-8中占3个字节。但Java的char类型使用UTF-16编码，固定占2个字节，能表示Unicode基本多语言平面（BMP）中的所有字符，"中"的Unicode编码在BMP范围内，所以是合法的
 
 ---
 ## Arrays.asList 获得的 List 使用时需要注意什么
