@@ -42,6 +42,214 @@ tags:
 
 ---
 
+### 垃圾收集算法基础
+
+#### 对象存活判定 —— GC Roots可达性分析
+
+JVM通过 **GC Roots可达性分析** 判定对象是否存活：从GC Roots出发，沿引用链遍历，不可达的对象即为可回收对象。
+
+**GC Roots 包括：**
+- 虚拟机栈中引用的对象（局部变量表）
+- 方法区中类静态属性引用的对象
+- 方法区中常量引用的对象
+- 本地方法栈中 JNI 引用的对象
+- JVM内部引用（如基本类型的Class对象、系统类加载器等）
+- 所有被 `synchronized` 持有的对象
+- JMXBean、JVMTI中注册的回调等
+
+#### 四种基本GC算法
+
+| 算法 | 原理 | 优点 | 缺点 | 适用区域 |
+|------|------|------|------|----------|
+| **标记-清除** | 标记存活对象，清除未标记对象 | 简单，不需移动对象 | 内存碎片、效率不稳定 | 老年代 |
+| **复制算法** | 将存活对象复制到另一半空间 | 无碎片、效率高 | 空间利用率50% | 年轻代(Eden→Survivor) |
+| **标记-整理** | 标记存活对象，向一端移动并清理边界 | 无碎片 | 移动开销大 | 老年代 |
+| **分代收集** | 按对象年龄分区，不同区域用不同算法 | 综合最优 | 实现复杂 | 整堆 |
+
+#### 分代收集理论
+
+- **弱分代假说**：绝大多数对象都是朝生夕死的
+- **强分代假说**：熬过越多次GC的对象越难被回收
+- **跨代引用假说**：跨代引用相对同代引用占极少数（使用记忆集/卡表优化）
+
+### 七种主流垃圾收集器详解
+
+#### 1. Serial GC（串行收集器）
+
+- **引入版本**：JDK 1.3
+- **作用区域**：年轻代（Serial）+ 老年代（Serial Old）
+- **算法**：年轻代复制算法，老年代标记-整理
+- **线程模型**：单线程，STW（Stop The World）
+- **特点**：简单高效，无线程交互开销，适合单核/小堆/客户端
+- **参数**：`-XX:+UseSerialGC`
+
+#### 2. Parallel GC（并行收集器/吞吐量收集器）
+
+- **引入版本**：JDK 1.4（Parallel Scavenge），JDK 5默认（Server模式）
+- **作用区域**：年轻代（Parallel Scavenge）+ 老年代（Parallel Old）
+- **算法**：年轻代复制算法，老年代标记-整理
+- **线程模型**：多线程并行收集，STW
+- **特点**：以吞吐量为目标，支持自适应调节策略
+- **关键参数**：
+  - `-XX:+UseParallelGC`：启用
+  - `-XX:ParallelGCThreads=N`：GC线程数
+  - `-XX:MaxGCPauseMillis=ms`：最大停顿时间目标
+  - `-XX:GCTimeRatio=N`：吞吐量目标（1/(1+N)的时间用于GC）
+  - `-XX:+UseAdaptiveSizePolicy`：自适应策略
+
+#### 3. CMS（Concurrent Mark Sweep）
+
+- **引入版本**：JDK 1.4，**JDK 9废弃，JDK 14移除**
+- **作用区域**：老年代
+- **算法**：标记-清除（不压缩）
+- **线程模型**：并发收集，大部分阶段与用户线程并发执行
+- **工作阶段**：
+  1. **初始标记**（STW）：标记GC Roots直接关联的对象，极快
+  2. **并发标记**：从GC Roots遍历整个对象图，与用户线程并发
+  3. **重新标记**（STW）：修正并发标记期间变化的引用，使用增量更新
+  4. **并发清除**：清除不可达对象，与用户线程并发
+- **缺点**：内存碎片、浮动垃圾、CPU敏感、并发失败退化Serial Old
+- **参数**：`-XX:+UseConcMarkSweepGC`（JDK14+报错）
+
+#### 4. G1（Garbage-First）
+
+- **引入版本**：JDK 7实验性，**JDK 9正式成为默认GC**
+- **作用区域**：整堆（Region化，不再物理分代）
+- **算法**：整体标记-整理，局部复制算法
+- **线程模型**：并发+并行
+- **核心设计**：
+  - 堆划分为2048个等大Region（1MB~32MB）
+  - 逻辑分代：Eden/Survivor/Old/Humongous Region
+  - 优先回收垃圾最多的Region（Garbage-First）
+  - 可预测的停顿时间模型：`-XX:MaxGCPauseMillis=200`（默认200ms）
+- **工作阶段**：
+  1. **初始标记**（STW）：标记GC Roots，借用Minor GC
+  2. **并发标记**：对象图遍历，使用SATB（原始快照）算法
+  3. **最终标记**（STW）：处理SATB缓冲区
+  4. **筛选回收**（STW）：按回收价值排序Region，复制存活对象
+- **关键参数**：
+  - `-XX:+UseG1GC`
+  - `-XX:G1HeapRegionSize=n`：Region大小
+  - `-XX:MaxGCPauseMillis=200`：目标停顿时间
+  - `-XX:G1NewSizePercent=5`：年轻代最小比例
+  - `-XX:G1MaxNewSizePercent=60`：年轻代最大比例
+  - `-XX:InitiatingHeapOccupancyPercent=45`：触发并发标记的堆占用率
+
+#### 5. ZGC
+
+- **引入版本**：JDK 11实验性，**JDK 15正式发布**，JDK 21引入分代
+- **作用区域**：整堆
+- **算法**：标记-整理（并发重定位）
+- **线程模型**：几乎全并发，STW < 1ms
+- **核心技术**：
+  - **着色指针（Colored Pointers）**：利用64位指针中的4位存储GC元数据（Marked0/Marked1/Remapped/Finalizable）
+  - **读屏障（Load Barrier）**：在对象引用加载时检查指针状态，触发自愈
+  - **多重映射（Multi-Mapping）**：同一物理内存映射到多个虚拟地址
+- **工作阶段**：
+  1. **并发标记**：遍历对象图，标记存活对象
+  2. **并发预备重分配**：选择需要清理的Region
+  3. **并发重分配**：移动存活对象到新Region，建立转发表
+  4. **并发重映射**：修复指向旧地址的引用（可延迟到下次GC标记阶段）
+- **关键参数**：
+  - `-XX:+UseZGC`
+  - `-XX:+ZGenerational`（JDK21 分代ZGC）
+  - `-XX:ZAllocationSpikeTolerance=2`
+  - `-XX:ZCollectionInterval=0`（0=只在必要时GC）
+  - `-XX:SoftMaxHeapSize=4g`（软上限）
+
+#### 6. Shenandoah GC
+
+- **引入版本**：JDK 12实验性，**JDK 15正式发布**
+- **作用区域**：整堆
+- **算法**：标记-整理（并发压缩）
+- **线程模型**：几乎全并发
+- **核心技术**：
+  - **Brooks转发指针**：每个对象头前增加一个间接指针，指向对象当前实际位置
+  - **写屏障（Write Barrier）**：在引用更新时维护转发指针一致性
+  - **连接矩阵（Connection Matrix）**：替代G1的记忆集，记录Region间引用关系
+- **工作阶段**：
+  1. **初始标记**（STW）：标记GC Roots
+  2. **并发标记**：遍历对象图
+  3. **最终标记**（STW）：处理剩余SATB、选择回收集
+  4. **并发清理**：回收无存活对象的Region
+  5. **并发疏散**：将回收集中存活对象复制到其他Region（与用户线程并发！）
+  6. **初始引用更新**（STW）：确保所有GC线程完成疏散
+  7. **并发引用更新**：修复堆中所有旧引用
+  8. **最终引用更新**（STW）：修复GC Roots引用
+- **参数**：`-XX:+UseShenandoahGC`
+
+#### 7. Epsilon GC
+
+- **引入版本**：JDK 11
+- **作用区域**：不进行任何回收
+- **算法**：无（No-Op）
+- **特点**：只分配不回收，堆满即OOM
+- **用途**：性能基准测试、极短生命周期程序、内存压力测试
+- **参数**：`-XX:+UseEpsilonGC`
+
+### ZGC vs Shenandoah 对比
+
+| 维度 | ZGC | Shenandoah |
+|------|-----|-----------|
+| 开发者 | Oracle | Red Hat |
+| 核心技术 | 着色指针 + 读屏障 | Brooks转发指针 + 写屏障 |
+| 指针开销 | 无额外空间（复用指针位） | 每对象+1指针字（8字节） |
+| 屏障类型 | 读屏障（Load Barrier） | 写屏障（Write Barrier） |
+| 并发压缩 | 并发重定位 + 转发表 | 并发疏散 + Brooks指针 |
+| 分代支持 | JDK 21引入分代ZGC | 不分代 |
+| 堆大小 | 8MB ~ 16TB | 无明确上限 |
+| 停顿时间 | < 1ms（与堆大小无关） | < 10ms（与堆大小无关） |
+| 内存占用 | 较高（多重映射） | 较高（转发指针） |
+| 平台支持 | Linux/macOS/Windows | Linux/macOS/Windows |
+| JDK发行版 | Oracle JDK / OpenJDK | OpenJDK（非Oracle JDK） |
+
+### GC组合关系（JDK 8时代）
+
+```
+年轻代收集器          老年代收集器
+┌────────────┐      ┌────────────────┐
+│  Serial    │─────→│  Serial Old    │
+├────────────┤      ├────────────────┤
+│  ParNew    │─────→│  CMS           │
+├────────────┤      │  (并发标记清除)  │
+│  Parallel  │─────→├────────────────┤
+│  Scavenge  │─────→│  Parallel Old  │
+└────────────┘      └────────────────┘
+
+可搭配组合：
+Serial     + Serial Old    （客户端默认）
+Serial     + CMS
+ParNew     + Serial Old
+ParNew     + CMS           （JDK8常用低延迟方案）
+Parallel   + Serial Old    （已废弃）
+Parallel   + Parallel Old  （JDK8 Server默认，吞吐量优先）
+
+注：JDK 9+ G1/ZGC/Shenandoah 为整堆收集器，不存在搭配问题
+```
+
+### GC选择决策树
+
+```
+你的应用需要什么？
+│
+├─ 吞吐量最大化（批处理/科学计算）
+│  └─→ Parallel GC
+│
+├─ 延迟敏感（Web服务/API）
+│  ├─ 堆 < 4GB
+│  │  └─→ G1 GC
+│  ├─ 堆 4GB ~ 32GB
+│  │  └─→ G1 GC 或 Shenandoah
+│  └─ 堆 > 32GB 或 要求 <1ms 停顿
+│     └─→ ZGC
+│
+├─ 资源受限（嵌入式/容器小内存）
+│  └─→ Serial GC
+│
+└─ 性能测试/短命程序
+   └─→ Epsilon GC
+```
+
 ## GC选择指南总结
 
 | GC | 适用场景 | 特点 | 启用参数 |
@@ -1614,212 +1822,4 @@ java -XX:+UseZGC -XX:+ZGenerational -Xmx4g -jar app.jar
 
 # 虚拟线程线程dump
 jcmd <pid> Thread.dump_to_file -format=json threads.json
-```
-
-### 垃圾收集算法基础
-
-#### 对象存活判定 —— GC Roots可达性分析
-
-JVM通过 **GC Roots可达性分析** 判定对象是否存活：从GC Roots出发，沿引用链遍历，不可达的对象即为可回收对象。
-
-**GC Roots 包括：**
-- 虚拟机栈中引用的对象（局部变量表）
-- 方法区中类静态属性引用的对象
-- 方法区中常量引用的对象
-- 本地方法栈中 JNI 引用的对象
-- JVM内部引用（如基本类型的Class对象、系统类加载器等）
-- 所有被 `synchronized` 持有的对象
-- JMXBean、JVMTI中注册的回调等
-
-#### 四种基本GC算法
-
-| 算法 | 原理 | 优点 | 缺点 | 适用区域 |
-|------|------|------|------|----------|
-| **标记-清除** | 标记存活对象，清除未标记对象 | 简单，不需移动对象 | 内存碎片、效率不稳定 | 老年代 |
-| **复制算法** | 将存活对象复制到另一半空间 | 无碎片、效率高 | 空间利用率50% | 年轻代(Eden→Survivor) |
-| **标记-整理** | 标记存活对象，向一端移动并清理边界 | 无碎片 | 移动开销大 | 老年代 |
-| **分代收集** | 按对象年龄分区，不同区域用不同算法 | 综合最优 | 实现复杂 | 整堆 |
-
-#### 分代收集理论
-
-- **弱分代假说**：绝大多数对象都是朝生夕死的
-- **强分代假说**：熬过越多次GC的对象越难被回收
-- **跨代引用假说**：跨代引用相对同代引用占极少数（使用记忆集/卡表优化）
-
-### 七种主流垃圾收集器详解
-
-#### 1. Serial GC（串行收集器）
-
-- **引入版本**：JDK 1.3
-- **作用区域**：年轻代（Serial）+ 老年代（Serial Old）
-- **算法**：年轻代复制算法，老年代标记-整理
-- **线程模型**：单线程，STW（Stop The World）
-- **特点**：简单高效，无线程交互开销，适合单核/小堆/客户端
-- **参数**：`-XX:+UseSerialGC`
-
-#### 2. Parallel GC（并行收集器/吞吐量收集器）
-
-- **引入版本**：JDK 1.4（Parallel Scavenge），JDK 5默认（Server模式）
-- **作用区域**：年轻代（Parallel Scavenge）+ 老年代（Parallel Old）
-- **算法**：年轻代复制算法，老年代标记-整理
-- **线程模型**：多线程并行收集，STW
-- **特点**：以吞吐量为目标，支持自适应调节策略
-- **关键参数**：
-  - `-XX:+UseParallelGC`：启用
-  - `-XX:ParallelGCThreads=N`：GC线程数
-  - `-XX:MaxGCPauseMillis=ms`：最大停顿时间目标
-  - `-XX:GCTimeRatio=N`：吞吐量目标（1/(1+N)的时间用于GC）
-  - `-XX:+UseAdaptiveSizePolicy`：自适应策略
-
-#### 3. CMS（Concurrent Mark Sweep）
-
-- **引入版本**：JDK 1.4，**JDK 9废弃，JDK 14移除**
-- **作用区域**：老年代
-- **算法**：标记-清除（不压缩）
-- **线程模型**：并发收集，大部分阶段与用户线程并发执行
-- **工作阶段**：
-  1. **初始标记**（STW）：标记GC Roots直接关联的对象，极快
-  2. **并发标记**：从GC Roots遍历整个对象图，与用户线程并发
-  3. **重新标记**（STW）：修正并发标记期间变化的引用，使用增量更新
-  4. **并发清除**：清除不可达对象，与用户线程并发
-- **缺点**：内存碎片、浮动垃圾、CPU敏感、并发失败退化Serial Old
-- **参数**：`-XX:+UseConcMarkSweepGC`（JDK14+报错）
-
-#### 4. G1（Garbage-First）
-
-- **引入版本**：JDK 7实验性，**JDK 9正式成为默认GC**
-- **作用区域**：整堆（Region化，不再物理分代）
-- **算法**：整体标记-整理，局部复制算法
-- **线程模型**：并发+并行
-- **核心设计**：
-  - 堆划分为2048个等大Region（1MB~32MB）
-  - 逻辑分代：Eden/Survivor/Old/Humongous Region
-  - 优先回收垃圾最多的Region（Garbage-First）
-  - 可预测的停顿时间模型：`-XX:MaxGCPauseMillis=200`（默认200ms）
-- **工作阶段**：
-  1. **初始标记**（STW）：标记GC Roots，借用Minor GC
-  2. **并发标记**：对象图遍历，使用SATB（原始快照）算法
-  3. **最终标记**（STW）：处理SATB缓冲区
-  4. **筛选回收**（STW）：按回收价值排序Region，复制存活对象
-- **关键参数**：
-  - `-XX:+UseG1GC`
-  - `-XX:G1HeapRegionSize=n`：Region大小
-  - `-XX:MaxGCPauseMillis=200`：目标停顿时间
-  - `-XX:G1NewSizePercent=5`：年轻代最小比例
-  - `-XX:G1MaxNewSizePercent=60`：年轻代最大比例
-  - `-XX:InitiatingHeapOccupancyPercent=45`：触发并发标记的堆占用率
-
-#### 5. ZGC
-
-- **引入版本**：JDK 11实验性，**JDK 15正式发布**，JDK 21引入分代
-- **作用区域**：整堆
-- **算法**：标记-整理（并发重定位）
-- **线程模型**：几乎全并发，STW < 1ms
-- **核心技术**：
-  - **着色指针（Colored Pointers）**：利用64位指针中的4位存储GC元数据（Marked0/Marked1/Remapped/Finalizable）
-  - **读屏障（Load Barrier）**：在对象引用加载时检查指针状态，触发自愈
-  - **多重映射（Multi-Mapping）**：同一物理内存映射到多个虚拟地址
-- **工作阶段**：
-  1. **并发标记**：遍历对象图，标记存活对象
-  2. **并发预备重分配**：选择需要清理的Region
-  3. **并发重分配**：移动存活对象到新Region，建立转发表
-  4. **并发重映射**：修复指向旧地址的引用（可延迟到下次GC标记阶段）
-- **关键参数**：
-  - `-XX:+UseZGC`
-  - `-XX:+ZGenerational`（JDK21 分代ZGC）
-  - `-XX:ZAllocationSpikeTolerance=2`
-  - `-XX:ZCollectionInterval=0`（0=只在必要时GC）
-  - `-XX:SoftMaxHeapSize=4g`（软上限）
-
-#### 6. Shenandoah GC
-
-- **引入版本**：JDK 12实验性，**JDK 15正式发布**
-- **作用区域**：整堆
-- **算法**：标记-整理（并发压缩）
-- **线程模型**：几乎全并发
-- **核心技术**：
-  - **Brooks转发指针**：每个对象头前增加一个间接指针，指向对象当前实际位置
-  - **写屏障（Write Barrier）**：在引用更新时维护转发指针一致性
-  - **连接矩阵（Connection Matrix）**：替代G1的记忆集，记录Region间引用关系
-- **工作阶段**：
-  1. **初始标记**（STW）：标记GC Roots
-  2. **并发标记**：遍历对象图
-  3. **最终标记**（STW）：处理剩余SATB、选择回收集
-  4. **并发清理**：回收无存活对象的Region
-  5. **并发疏散**：将回收集中存活对象复制到其他Region（与用户线程并发！）
-  6. **初始引用更新**（STW）：确保所有GC线程完成疏散
-  7. **并发引用更新**：修复堆中所有旧引用
-  8. **最终引用更新**（STW）：修复GC Roots引用
-- **参数**：`-XX:+UseShenandoahGC`
-
-#### 7. Epsilon GC
-
-- **引入版本**：JDK 11
-- **作用区域**：不进行任何回收
-- **算法**：无（No-Op）
-- **特点**：只分配不回收，堆满即OOM
-- **用途**：性能基准测试、极短生命周期程序、内存压力测试
-- **参数**：`-XX:+UseEpsilonGC`
-
-### ZGC vs Shenandoah 对比
-
-| 维度 | ZGC | Shenandoah |
-|------|-----|-----------|
-| 开发者 | Oracle | Red Hat |
-| 核心技术 | 着色指针 + 读屏障 | Brooks转发指针 + 写屏障 |
-| 指针开销 | 无额外空间（复用指针位） | 每对象+1指针字（8字节） |
-| 屏障类型 | 读屏障（Load Barrier） | 写屏障（Write Barrier） |
-| 并发压缩 | 并发重定位 + 转发表 | 并发疏散 + Brooks指针 |
-| 分代支持 | JDK 21引入分代ZGC | 不分代 |
-| 堆大小 | 8MB ~ 16TB | 无明确上限 |
-| 停顿时间 | < 1ms（与堆大小无关） | < 10ms（与堆大小无关） |
-| 内存占用 | 较高（多重映射） | 较高（转发指针） |
-| 平台支持 | Linux/macOS/Windows | Linux/macOS/Windows |
-| JDK发行版 | Oracle JDK / OpenJDK | OpenJDK（非Oracle JDK） |
-
-### GC组合关系（JDK 8时代）
-
-```
-年轻代收集器          老年代收集器
-┌────────────┐      ┌────────────────┐
-│  Serial    │─────→│  Serial Old    │
-├────────────┤      ├────────────────┤
-│  ParNew    │─────→│  CMS           │
-├────────────┤      │  (并发标记清除)  │
-│  Parallel  │─────→├────────────────┤
-│  Scavenge  │─────→│  Parallel Old  │
-└────────────┘      └────────────────┘
-
-可搭配组合：
-Serial     + Serial Old    （客户端默认）
-Serial     + CMS
-ParNew     + Serial Old
-ParNew     + CMS           （JDK8常用低延迟方案）
-Parallel   + Serial Old    （已废弃）
-Parallel   + Parallel Old  （JDK8 Server默认，吞吐量优先）
-
-注：JDK 9+ G1/ZGC/Shenandoah 为整堆收集器，不存在搭配问题
-```
-
-### GC选择决策树
-
-```
-你的应用需要什么？
-│
-├─ 吞吐量最大化（批处理/科学计算）
-│  └─→ Parallel GC
-│
-├─ 延迟敏感（Web服务/API）
-│  ├─ 堆 < 4GB
-│  │  └─→ G1 GC
-│  ├─ 堆 4GB ~ 32GB
-│  │  └─→ G1 GC 或 Shenandoah
-│  └─ 堆 > 32GB 或 要求 <1ms 停顿
-│     └─→ ZGC
-│
-├─ 资源受限（嵌入式/容器小内存）
-│  └─→ Serial GC
-│
-└─ 性能测试/短命程序
-   └─→ Epsilon GC
 ```
