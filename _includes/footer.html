@@ -149,13 +149,24 @@
         // clean
         $(selector).html('')
 
+        // find the minimum heading level in the article
+        var minLevel = 6;
+        a.each(function () {
+            var level = parseInt($(this).prop('tagName').substring(1));
+            if (level < minLevel) minLevel = level;
+        });
+
+        var indentStep = 12; // px per level
+
         // appending
         a.each(function () {
             n = $(this).prop('tagName').toLowerCase();
+            var level = parseInt(n.substring(1));
+            var indent = (level - minLevel) * indentStep;
             i = "#"+$(this).prop('id');
             t = $(this).text();
             c = $('<a href="'+i+'" rel="nofollow">'+t+'</a>');
-            l = $('<li class="'+n+'_nav"></li>').append(c);
+            l = $('<li class="'+n+'_nav"></li>').css('margin-left', indent + 'px').append(c);
             $(selector).append(l);
         });
         return true;
