@@ -1,0 +1,1825 @@
+---
+layout:      post
+title:       "JDK版本特性总览"
+subtitle:    "JDK 5 ~ JDK 21 各版本新特性详解"
+author:      "Ekko"
+header-img:  "img/bg/bg-jdk-version.png"
+catalog:     true
+tags:
+  - 学习笔记
+  - Java
+---
+
+[TOC]
+
+---
+
+## 版本发布时间线总览
+
+| 版本 | 发布时间 | 类型 | 核心特性 |
+|------|----------|------|----------|
+| JDK 5 | 2004-09 | - | 泛型、枚举、注解、自动装箱、并发包 |
+| JDK 6 | 2006-12 | - | 脚本引擎、JDBC 4.0、JVM锁优化 |
+| JDK 7 | 2011-07 | - | try-with-resources、NIO 2、Fork/Join、G1（实验） |
+| JDK 8 | 2014-03 | **LTS** | Lambda、Stream、Optional、新日期API、元空间 |
+| JDK 9 | 2017-09 | - | 模块化、JShell、集合工厂方法、G1默认GC |
+| JDK 10 | 2018-03 | - | var局部变量类型推断、AppCDS |
+| JDK 11 | 2018-09 | **LTS** | HTTP Client、ZGC（实验）、String增强、JFR开源 |
+| JDK 12 | 2019-03 | - | Switch表达式（预览）、Shenandoah GC |
+| JDK 13 | 2019-09 | - | 文本块（预览）、yield、动态CDS |
+| JDK 14 | 2020-03 | - | instanceof模式匹配（预览）、Record（预览）、NPE增强、移除CMS |
+| JDK 15 | 2020-09 | - | 文本块（正式）、封闭类（预览）、ZGC/Shenandoah正式 |
+| JDK 16 | 2021-03 | - | Record（正式）、instanceof模式匹配（正式）、Stream.toList() |
+| JDK 17 | 2021-09 | **LTS** | 封闭类（正式）、switch模式匹配（预览）、强封装内部API |
+| JDK 18 | 2022-03 | - | 默认UTF-8、简易Web服务器、废弃Finalization |
+| JDK 19 | 2022-09 | - | 虚拟线程（预览）、结构化并发（孵化）、Record模式（预览） |
+| JDK 20 | 2023-03 | - | 作用域值（孵化）、各特性持续迭代 |
+| JDK 21 | 2023-09 | **LTS** | 虚拟线程（正式）、Record模式（正式）、序列化集合、分代ZGC |
+| JDK 22 | 2024-03 | - | FFM API（正式）、未命名变量和模式（正式）、Stream Gatherers（预览） |
+| JDK 23 | 2024-09 | - | 分代ZGC默认、Markdown文档注释、模块导入声明（预览） |
+| JDK 24 | 2025-03 | - | Stream Gatherers（正式）、Class-File API（正式）、虚拟线程不再pin |
+| JDK 25 | 2025-09 | **LTS** | Structured Concurrency（正式）、Scoped Values（正式）、紧凑对象头 |
+
+---
+
+## GC选择指南总结
+
+| GC | 适用场景 | 特点 | 启用参数 |
+|------|----------|------|----------|
+| Serial GC | 单核/小内存/客户端 | 单线程收集，简单高效 | `-XX:+UseSerialGC` |
+| Parallel GC | 吞吐量优先/批处理 | 多线程收集，JDK8默认 | `-XX:+UseParallelGC` |
+| G1 GC | 大堆/平衡延迟与吞吐 | Region化，可预测停顿，JDK9+默认 | `-XX:+UseG1GC` |
+| ZGC | 超低延迟/大堆(TB级) | <1ms停顿，并发收集，JDK23默认分代 | `-XX:+UseZGC` |
+| Shenandoah | 低延迟/中大堆 | 并发压缩，转发指针 | `-XX:+UseShenandoahGC` |
+| Epsilon | 性能测试/无GC需求 | 不回收内存 | `-XX:+UseEpsilonGC` |
+
+---
+
+## GC全维度对比表
+
+| 维度 | Serial | Parallel | CMS | G1 | ZGC | Shenandoah | Epsilon |
+|------|--------|----------|-----|----|----|-----------|--------|
+| 引入版本 | JDK1.3 | JDK1.4 | JDK1.4 | JDK7 | JDK11 | JDK12 | JDK11 |
+| 正式版本 | - | - | - | JDK9 | JDK15 | JDK15 | JDK11 |
+| 默认版本 | - | JDK5~8 | - | JDK9~22 | JDK23+(分代) | - | - |
+| 线程模型 | 单线程 | 多线程并行 | 并发+并行 | 并发+并行 | 几乎全并发 | 几乎全并发 | 无GC线程 |
+| 算法 | 复制+标记整理 | 复制+标记整理 | 标记清除 | 复制+标记整理 | 标记整理 | 标记整理 | 无 |
+| 分代 | 是 | 是 | 是(仅老年代) | 是(逻辑分代) | JDK21起(JDK23默认) | 否 | 无 |
+| 压缩 | 是 | 是 | 否 | 是 | 是 | 是 | 无 |
+| 最大停顿 | 高(秒级) | 中(百ms) | 低(几十ms) | 可控(百ms内) | 极低(<1ms) | 极低(<10ms) | 无停顿 |
+| 吞吐量 | 低 | 高 | 中 | 中高 | 中 | 中 | 最高(无GC开销) |
+| 堆大小建议 | <几百MB | 几百MB~几GB | <32GB | 几GB~几十GB | 8MB~16TB | 无限制 | 任意 |
+| 内存碎片 | 无 | 无 | 有 | 无 | 无 | 无 | 无(不回收) |
+| 核心技术 | - | 自适应策略 | 增量更新 | SATB+Region | 着色指针+读屏障 | Brooks指针+写屏障 | - |
+| 状态 | 可用 | 可用 | JDK14移除 | 推荐 | 推荐 | 可用 | 可用 |
+
+---
+
+## JVM内存模型演进一览
+
+```
+JDK 7以前：
+┌─────────────────────────────────────────┐
+│             JVM Heap                     │
+│  ┌──────────┐  ┌──────────┐  ┌────────┐│
+│  │ Young Gen │  │ Old Gen  │  │PermGen ││
+│  │(Eden+S0+S1)│  │          │  │(固定大小)││
+│  └──────────┘  └──────────┘  └────────┘│
+└─────────────────────────────────────────┘
+
+JDK 8+：
+┌──────────────────────────────┐  ┌─────────────┐
+│          JVM Heap            │  │ Native Memory│
+│  ┌──────────┐  ┌──────────┐ │  │ ┌─────────┐ │
+│  │ Young Gen │  │ Old Gen  │ │  │ │Metaspace│ │
+│  │(Eden+S0+S1)│  │          │ │  │ │(动态扩展) │ │
+│  └──────────┘  └──────────┘ │  │ └─────────┘ │
+└──────────────────────────────┘  └─────────────┘
+
+JDK 9+ G1默认（Region化）：
+┌─────────────────────────────────────────┐
+│  ┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐ │
+│  │E ││E ││S ││O ││O ││H ││O ││E ││S │ │
+│  └──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘ │
+│  E=Eden  S=Survivor  O=Old  H=Humongous │
+└─────────────────────────────────────────┘
+
+JDK 21+ 分代ZGC：
+┌─────────────────────────────────────────┐
+│  ZPages (dynamically sized: 2MB/32MB/N*2MB)│
+│  ┌──────────────────┐  ┌──────────────┐│
+│  │ Young Generation  │  │ Old Generation││
+│  │ (高频收集、着色指针) │  │ (低频收集)    ││
+│  └──────────────────┘  └──────────────┘│
+│  特点：停顿<1ms、支持8MB~16TB、读屏障+多重映射  │
+└─────────────────────────────────────────┘
+```
+
+---
+
+## JDK 5（2004年9月）
+
+JDK 5 是Java发展史上里程碑式的版本，引入了大量语言层面的改进。
+
+### 1. 泛型（Generics）
+
+提供编译时类型安全检查，消除强制类型转换。
+
+```java
+// JDK5之前
+List list = new ArrayList();
+list.add("hello");
+String s = (String) list.get(0);
+
+// JDK5之后
+List<String> list = new ArrayList<String>();
+list.add("hello");
+String s = list.get(0); // 无需强制转换
+```
+
+### 2. 增强for循环（For-each）
+
+简化集合和数组的遍历操作。
+
+```java
+int[] numbers = {1, 2, 3, 4, 5};
+for (int num : numbers) {
+    System.out.println(num);
+}
+```
+
+### 3. 自动装箱与拆箱（Autoboxing/Unboxing）
+
+基本类型与其包装类之间的自动转换。
+
+```java
+Integer i = 10;       // 自动装箱 int -> Integer
+int n = i;            // 自动拆箱 Integer -> int
+```
+
+### 4. 枚举类型（Enum）
+
+类型安全的枚举，替代之前的常量接口模式。
+
+```java
+public enum Season {
+    SPRING, SUMMER, AUTUMN, WINTER;
+}
+```
+
+### 5. 可变参数（Varargs）
+
+允许方法接收可变数量的参数。
+
+```java
+public void print(String... args) {
+    for (String s : args) {
+        System.out.println(s);
+    }
+}
+```
+
+### 6. 注解（Annotations）
+
+引入元数据机制，支持 `@Override`、`@Deprecated`、`@SuppressWarnings` 等内置注解，并支持自定义注解。
+
+```java
+@Target(ElementType.METHOD)
+@Retention(RetentionPolicy.RUNTIME)
+public @interface MyAnnotation {
+    String value();
+}
+```
+
+### 7. 静态导入（Static Import）
+
+可以直接使用静态方法和字段，无需通过类名限定。
+
+```java
+import static java.lang.Math.*;
+
+double r = sqrt(pow(3, 2) + pow(4, 2));
+```
+
+### 8. 并发工具包（java.util.concurrent）
+
+JDK 5 引入了完整的并发编程框架：
+
+- **线程池**：`Executor`、`ExecutorService`、`ThreadPoolExecutor`、`ScheduledExecutorService`
+- **并发集合**：`ConcurrentHashMap`（分段锁实现）、`CopyOnWriteArrayList`、`ConcurrentLinkedQueue`
+- **同步工具**：`CountDownLatch`、`CyclicBarrier`、`Semaphore`、`Exchanger`
+- **锁机制**：`ReentrantLock`、`ReadWriteLock`、`Condition`
+- **原子类**：`AtomicInteger`、`AtomicLong`、`AtomicReference`（基于CAS）
+- **阻塞队列**：`ArrayBlockingQueue`、`LinkedBlockingQueue`、`PriorityBlockingQueue`
+- **Future模式**：`Callable`、`Future`、`FutureTask`
+
+### 9. 其他
+
+- 协变返回类型（Covariant Return Types）
+- `StringBuilder` 类（非线程安全的替代 `StringBuffer`）
+- `java.util.Scanner`
+- `ProcessBuilder`
+- `java.lang.instrument`：支持Java Agent字节码增强
+
+---
+
+## JDK 6（2006年12月）
+
+JDK 6 主要是性能和工具链方面的改进，语言层面变化较小。
+
+### 1. 脚本引擎支持（Scripting API - JSR 223）
+
+内置 JavaScript 引擎（Rhino），支持在Java中执行脚本语言。
+
+```java
+ScriptEngineManager manager = new ScriptEngineManager();
+ScriptEngine engine = manager.getEngineByName("JavaScript");
+engine.eval("print('Hello from JavaScript')");
+```
+
+### 2. JDBC 4.0
+
+自动加载数据库驱动，无需显式调用 `Class.forName()`。
+
+### 3. Java Compiler API（JSR 199）
+
+提供编程方式访问Java编译器的API。
+
+### 4. 可插拔注解处理（JSR 269）
+
+支持编译时注解处理器，为后来的 Lombok 等工具提供了基础。
+
+### 5. JVM改进
+
+- 同步优化（偏向锁、锁消除、锁粗化、自适应自旋锁）
+- 逃逸分析（Escape Analysis）：支持栈上分配和标量替换
+- 分层编译初步引入：结合C1快速编译和C2深度优化
+- 垃圾回收器改进：Parallel GC吞吐量提升，CMS稳定性增强
+- 类加载优化
+
+### 6. 其他
+
+- `@Override` 支持接口方法
+- `Desktop` 和 `SystemTray` 类（桌面集成）
+- `JAXB 2.0`、`JAX-WS 2.0` 集成
+- 轻量级 HTTP Server API
+- `Console` 类
+
+---
+
+## JDK 7（2011年7月）
+
+### 1. switch支持String
+
+```java
+String day = "Monday";
+switch (day) {
+    case "Monday":
+        System.out.println("周一");
+        break;
+    case "Tuesday":
+        System.out.println("周二");
+        break;
+}
+```
+
+### 2. try-with-resources
+
+自动关闭实现了 `AutoCloseable` 接口的资源。
+
+```java
+try (BufferedReader br = new BufferedReader(new FileReader("file.txt"))) {
+    String line = br.readLine();
+}
+```
+
+### 3. 钻石操作符（Diamond Operator）
+
+类型推断简化泛型实例化。
+
+```java
+List<String> list = new ArrayList<>(); // 无需重复指定泛型类型
+```
+
+### 4. 多异常捕获（Multi-catch）
+
+单个 `catch` 块可以捕获多种异常类型。
+
+```java
+try {
+    // ...
+} catch (IOException | SQLException e) {
+    e.printStackTrace();
+}
+```
+
+### 5. 数值字面量增强
+
+- 二进制字面量：`int binary = 0b1010;`
+- 数字下划线分隔：`int million = 1_000_000;`
+
+### 6. NIO 2.0（java.nio.file）
+
+引入 `Path`、`Files`、`FileSystem` 等新API，支持文件系统操作、文件变更监听（WatchService）。
+
+```java
+Path path = Paths.get("/tmp/test.txt");
+List<String> lines = Files.readAllLines(path);
+```
+
+### 7. Fork/Join框架
+
+支持并行任务分解执行的框架。
+
+```java
+ForkJoinPool pool = new ForkJoinPool();
+pool.invoke(new RecursiveTask());
+```
+
+### 8. 其他
+
+- `invokedynamic` 字节码指令（为JDK8 Lambda做铺垫）
+- G1垃圾收集器（实验性）：Region化内存布局，可预测停顿时间
+- 压缩对象指针（Compressed Oops）默认开启
+- 分层编译默认开启
+- `Objects` 工具类
+- **HashMap并发问题**：JDK7的头插法在并发扩容时可能导致链表成环（死循环）
+- `ConcurrentLinkedDeque` 无锁并发双端队列
+
+---
+
+## JDK 8（2014年3月）⭐ LTS
+
+JDK 8 是现代Java的分水岭，引入了函数式编程范式。
+
+### 1. Lambda表达式
+
+简化匿名内部类的写法，支持函数式编程。
+
+```java
+List<String> list = Arrays.asList("a", "b", "c");
+list.forEach(item -> System.out.println(item));
+
+Collections.sort(list, (s1, s2) -> s1.compareTo(s2));
+```
+
+### 2. 函数式接口（Functional Interface）
+
+只有一个抽象方法的接口，配合 Lambda 使用。核心接口：
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `Consumer<T>` | `void accept(T t)` | 消费型：有参数无返回值 |
+| `Supplier<T>` | `T get()` | 供给型：无参数有返回值 |
+| `Function<T,R>` | `R apply(T t)` | 函数型：有参数有返回值 |
+| `Predicate<T>` | `boolean test(T t)` | 断言型：判断真假 |
+
+### 3. 方法引用（Method Reference）
+
+Lambda 表达式的简写形式。
+
+```java
+list.forEach(System.out::println);       // 对象方法引用
+Arrays.sort(arr, Integer::compareTo);    // 实例方法引用
+Supplier<List> s = ArrayList::new;       // 构造器引用
+```
+
+### 4. Stream API
+
+集合的函数式操作流，支持链式调用和并行处理。
+
+```java
+List<String> result = list.stream()
+    .filter(s -> s.startsWith("a"))
+    .map(String::toUpperCase)
+    .sorted()
+    .collect(Collectors.toList());
+```
+
+### 5. Optional类
+
+解决空指针问题的容器类。
+
+```java
+Optional<String> opt = Optional.ofNullable(getName());
+String name = opt.orElse("default");
+opt.ifPresent(System.out::println);
+```
+
+### 6. 新的日期时间API（java.time）
+
+替代旧的 `Date`/`Calendar`，线程安全且不可变。
+
+```java
+LocalDate date = LocalDate.now();
+LocalDateTime dateTime = LocalDateTime.of(2024, 1, 1, 12, 0);
+DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+```
+
+### 7. 接口默认方法和静态方法
+
+```java
+public interface MyInterface {
+    default void defaultMethod() {
+        System.out.println("默认方法实现");
+    }
+    static void staticMethod() {
+        System.out.println("静态方法");
+    }
+}
+```
+
+### 8. 集合框架重大改进
+
+#### HashMap 引入红黑树
+
+JDK 8 对 `HashMap` 的底层实现做了重大优化：
+
+- **数据结构**：数组 + 链表 + 红黑树（JDK7只有数组+链表）
+- **树化阈值**：当链表长度 ≥ 8 且数组长度 ≥ 64 时，链表转为红黑树
+- **退化阈值**：红黑树节点数 ≤ 6 时退化为链表
+- **哈希冲突性能**：最坏情况从 O(n) 优化到 O(log n)
+- **插入方式**：从头插法改为尾插法（解决并发扩容时的死循环问题）
+- **扩容优化**：采用高低位拆分，无需重新计算hash
+
+```java
+// JDK8 HashMap关键常量
+static final int TREEIFY_THRESHOLD = 8;    // 链表转红黑树阈值
+static final int UNTREEIFY_THRESHOLD = 6;  // 红黑树退化链表阈值
+static final int MIN_TREEIFY_CAPACITY = 64;// 树化最小表容量
+static final float DEFAULT_LOAD_FACTOR = 0.75f; // 默认负载因子
+```
+
+#### ConcurrentHashMap 全面重写
+
+- **JDK7**：分段锁（Segment + ReentrantLock），默认16个Segment，并发度固定
+- **JDK8**：抛弃Segment，采用 **CAS + synchronized + 红黑树**
+  - 锁粒度细化到每个桶（Node）
+  - 空桶插入使用CAS操作
+  - 非空桶插入使用synchronized锁住头节点
+  - 同样支持链表转红黑树（阈值8）
+  - `size()` 用 `baseCount` + `CounterCell[]` 实现无锁计数（类似LongAdder）
+  - 并发性能大幅提升
+
+```java
+// JDK8 ConcurrentHashMap 插入简化逻辑
+if (tab[i] == null)
+    casTabAt(tab, i, null, new Node(hash, key, value)); // CAS插入
+else
+    synchronized (f) { // 锁头节点
+        // 链表或红黑树插入操作
+    }
+```
+
+#### 其他集合改进
+
+- `LinkedHashMap` 新增 `removeEldestEntry()` 配合实现LRU缓存
+- 所有集合类新增 `forEach()`、`removeIf()`、`replaceAll()`、`sort()` 等默认方法
+- `Map` 新增 `getOrDefault()`、`putIfAbsent()`、`compute()`、`merge()` 等方法
+- `Spliterator`：并行遍历器，为 Stream 并行操作提供基础
+
+### 9. 永久代移除，使用元空间（Metaspace）
+
+元空间使用本地内存，不再受限于JVM堆大小，解决了 `PermGen OutOfMemoryError` 问题。
+
+- 类元数据从JVM堆迁移到本地内存
+- `-XX:MetaspaceSize`：设置初始阈值（超过触发Full GC）
+- `-XX:MaxMetaspaceSize`：设置最大值（默认无限制）
+- Lambda通过 `invokedynamic` + `LambdaMetafactory` 实现，避免生成大量匿名内部类
+
+### 10. 并发编程增强
+
+- **`CompletableFuture`**：异步编程框架，支持链式调用、组合多个异步任务
+- **`StampedLock`**：乐观读锁，比ReadWriteLock性能更高
+- **`LongAdder`/`DoubleAdder`**：高并发计数器，比AtomicLong性能更好（分段累加）
+- **`LongAccumulator`**：通用累加器
+
+```java
+// CompletableFuture 组合异步操作
+CompletableFuture<String> future = CompletableFuture
+    .supplyAsync(() -> queryDB())
+    .thenApplyAsync(result -> process(result))
+    .thenCombine(anotherFuture, (r1, r2) -> merge(r1, r2))
+    .exceptionally(ex -> handleError(ex));
+```
+
+### 11. 其他
+
+- 重复注解 `@Repeatable`
+- 类型注解
+- `Nashorn` JavaScript引擎（替代Rhino）
+- Base64 编码API
+- 并行数组操作 `Arrays.parallelSort()`
+- `StringJoiner` 字符串拼接工具
+
+---
+
+## JDK 9（2017年9月）
+
+### 1. 模块化系统（Project Jigsaw - JPMS）
+
+将JDK拆分为多个模块，实现更强的封装性和更小的运行时镜像。
+
+```java
+// module-info.java
+module com.example.app {
+    requires java.base;
+    requires java.sql;
+    exports com.example.api;
+}
+```
+
+### 2. JShell（交互式编程工具）
+
+Java的REPL工具，支持即时执行Java代码片段。
+
+```shell
+jshell> int x = 10;
+jshell> System.out.println(x * 2);
+20
+```
+
+### 3. 接口私有方法
+
+接口中可以定义私有方法，用于默认方法的代码复用。
+
+```java
+public interface MyInterface {
+    private void helper() {
+        // 私有辅助方法
+    }
+    default void doSomething() {
+        helper();
+    }
+}
+```
+
+### 4. 集合工厂方法
+
+使用 `of()` 方法快速创建不可变集合。
+
+```java
+List<String> list = List.of("a", "b", "c");
+Set<Integer> set = Set.of(1, 2, 3);
+Map<String, Integer> map = Map.of("key1", 1, "key2", 2);
+// 超过10个KV对用 Map.ofEntries()
+Map<String, Integer> bigMap = Map.ofEntries(
+    Map.entry("a", 1),
+    Map.entry("b", 2)
+);
+```
+
+重要特性：
+- 返回的集合是真正不可变的（add/remove/set 抛 `UnsupportedOperationException`）
+- 不允许null元素（与 `Collections.unmodifiableList()` 不同）
+- Set/Map不允许重复元素/key
+
+### 5. 改进的Stream API
+
+新增方法：`takeWhile()`、`dropWhile()`、`ofNullable()`、`iterate()` 重载。
+
+```java
+Stream.of(1, 2, 3, 4, 5)
+    .takeWhile(n -> n < 4)  // [1, 2, 3]
+    .forEach(System.out::println);
+```
+
+### 6. 改进的try-with-resources
+
+允许在 `try` 中使用 able-final 变量。
+
+```java
+BufferedReader br = new BufferedReader(new FileReader("file.txt"));
+try (br) { // 无需重新声明
+    String line = br.readLine();
+}
+```
+
+### 7. 改进的Optional
+
+新增 `ifPresentOrElse()`、`or()`、`stream()` 方法。
+
+### 8. 改进的Process API
+
+```java
+ProcessHandle current = ProcessHandle.current();
+System.out.println("PID: " + current.pid());
+```
+
+### 9. 响应式流（Reactive Streams）
+
+引入 `Flow` API，支持发布-订阅模式。
+
+### 10. 其他
+
+- HTTP/2 Client（孵化中）
+- 多版本JAR文件
+- 钻石操作符支持匿名内部类
+- `@SafeVarargs` 可用于私有方法
+- **G1成为默认GC**：替代Parallel GC，面向低延迟场景
+- **统一JVM日志**：`-Xlog:gc*` 替代旧的 `-XX:+PrintGCDetails`
+- **Compact Strings**：String内部从`char[]`改为`byte[]`，纯Latin-1字符串内存减半
+- **Indify String Concatenation**：字符串拼接使用`invokedynamic`优化
+- `CompletableFuture` 增强
+
+---
+
+## JDK 10（2018年3月）
+
+### 1. 局部变量类型推断（var）
+
+使用 `var` 关键字代替显式类型声明（仅限局部变量）。
+
+```java
+var list = new ArrayList<String>();
+var stream = list.stream();
+var map = Map.of("key", "value");
+
+// 不能用于：成员变量、方法参数、返回值类型
+```
+
+### 2. 不可变集合增强
+
+`List.copyOf()`、`Set.copyOf()`、`Map.copyOf()`；`Collectors.toUnmodifiableList()` 等。
+
+```java
+List<String> copy = List.copyOf(originalList);
+var unmodifiable = list.stream().collect(Collectors.toUnmodifiableList());
+```
+
+### 3. G1垃圾收集器并行Full GC
+
+改善G1在Full GC时的停顿时间。
+
+### 4. 应用程序类数据共享（AppCDS）
+
+扩展类数据共享（CDS）功能到应用类，加速启动时间。
+
+### 5. 线程局部管控
+
+允许在不执行全局VM安全点的情况下对线程执行回调。
+
+### 6. 其他
+
+- 基于Java的实验性JIT编译器（Graal）
+- 根证书（CA）
+- 堆分配在备用内存设备上
+- `Optional.orElseThrow()` 无参方法
+
+---
+
+## JDK 11（2018年9月）⭐ LTS
+
+### 1. HTTP Client API（正式版）
+
+支持 HTTP/1.1 和 HTTP/2，同步和异步请求。
+
+```java
+HttpClient client = HttpClient.newHttpClient();
+HttpRequest request = HttpRequest.newBuilder()
+    .uri(URI.create("https://example.com"))
+    .build();
+HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+```
+
+### 2. String新增方法
+
+```java
+"  hello  ".strip();        // "hello" (支持Unicode空白)
+"  hello  ".stripLeading(); // "hello  "
+"  hello  ".stripTrailing();// "  hello"
+"".isBlank();               // true
+"line1\nline2".lines();     // Stream<String>
+"ha".repeat(3);             // "hahaha"
+```
+
+### 3. 文件读写增强
+
+```java
+Path path = Path.of("test.txt");
+String content = Files.readString(path);
+Files.writeString(path, "Hello JDK 11");
+```
+
+### 4. Lambda参数的局部变量语法
+
+Lambda表达式参数可以使用 `var`，主要是为了支持注解。
+
+```java
+(@NonNull var x, @Nullable var y) -> x + y
+```
+
+### 5. 新的垃圾收集器
+
+- **ZGC**（实验性）：
+  - 可伸缩低延迟GC，停顿时间不超过10ms且不随堆大小增长
+  - 支持8MB~16TB堆内存
+  - 使用着色指针（Colored Pointers）和读屏障（Load Barriers）
+  - 所有昂贵操作均与应用线程并发执行
+- **Epsilon GC**：不执行任何垃圾回收的GC（用于性能测试、极短生命周期应用）
+- **JFR开源**：飞行记录器低开销（<2%）性能采集框架，记录GC事件、线程活动等
+
+### 6. 直接运行Java文件
+
+```shell
+java HelloWorld.java  # 无需先javac编译
+```
+
+### 7. 其他
+
+- Flight Recorder（开源）
+- 嵌套类访问控制（Nest-Based Access Control）
+- 动态类文件常量（`CONSTANT_Dynamic`）
+- 移除 Java EE 和 CORBA 模块
+- 废弃 Nashorn JavaScript 引擎
+
+---
+
+## JDK 12（2019年3月）
+
+### 1. Switch表达式（预览）
+
+支持箭头语法和返回值。
+
+```java
+int numLetters = switch (day) {
+    case MONDAY, FRIDAY, SUNDAY -> 6;
+    case TUESDAY               -> 7;
+    case THURSDAY, SATURDAY    -> 8;
+    case WEDNESDAY             -> 9;
+};
+```
+
+### 2. Shenandoah GC（实验性）
+
+由Red Hat开发的低暂停时间垃圾收集器，与应用线程并发执行压缩。
+
+- 停顿时间与堆大小无关
+- 使用Brooks转发指针 + 写屏障实现并发移动
+- 与ZGC的区别：Shenandoah用转发指针+写屏障，ZGC用着色指针+读屏障
+
+### 3. JVM常量API
+
+`java.lang.constant` 包，描述class文件和运行时的关键类信息。
+
+### 4. 微基准测试套件
+
+集成JMH（Java Microbenchmark Harness）。
+
+### 5. 其他
+
+- G1收集器优化：可中止的混合收集、及时归还未使用的内存
+- 默认CDS归档
+- String新增 `indent()`、`transform()` 方法
+- `Files.mismatch()` 方法
+- `Collectors.teeing()` 方法
+- `CompactNumberFormat`
+
+---
+
+## JDK 13（2019年9月）
+
+### 1. 文本块（预览）
+
+多行字符串字面量，使用三引号 `"""` 定义。
+
+```java
+String json = """
+        {
+            "name": "Java",
+            "version": 13
+        }
+        """;
+```
+
+### 2. Switch表达式增强（第二次预览）
+
+引入 `yield` 关键字用于在代码块中返回值。
+
+```java
+int result = switch (mode) {
+    case "a" -> 1;
+    case "b" -> 2;
+    default -> {
+        int temp = compute();
+        yield temp;
+    }
+};
+```
+
+### 3. ZGC改进
+
+归还未使用的内存给操作系统。
+
+### 4. 重新实现旧版Socket API
+
+使用更现代的实现替换 `java.net.Socket` 和 `java.net.ServerSocket` 的底层实现。
+
+### 5. 动态CDS归档
+
+在应用退出时自动生成CDS归档文件。
+
+---
+
+## JDK 14（2020年3月）
+
+### 1. instanceof模式匹配（预览）
+
+消除显式类型转换。
+
+```java
+// JDK14之前
+if (obj instanceof String) {
+    String s = (String) obj;
+    System.out.println(s.length());
+}
+
+// JDK14之后
+if (obj instanceof String s) {
+    System.out.println(s.length());
+}
+```
+
+### 2. Record类（预览）
+
+简化不可变数据载体类的创建。
+
+```java
+public record Point(int x, int y) {}
+
+// 自动生成：构造器、getter、equals()、hashCode()、toString()
+Point p = new Point(1, 2);
+System.out.println(p.x()); // 1
+```
+
+### 3. Switch表达式（正式）
+
+JDK 12/13 预览的switch表达式正式发布。
+
+### 4. 更有帮助的NullPointerException
+
+精确指出哪个变量为null。
+
+```
+// 之前：NullPointerException
+// 之后：Cannot invoke "String.length()" because "a.b.name" is null
+```
+
+### 5. 文本块（第二次预览）
+
+新增转义序列：`\`（行尾续行）、`\s`（显式空格）。
+
+### 6. 其他
+
+- **移除CMS垃圾收集器**：JDK9废弃、JDK14正式移除，推荐迁移到G1或ZGC
+- 废弃 ParallelScavenge + SerialOld GC 组合
+- **ZGC支持macOS和Windows**（之前仅Linux）
+- **外部内存访问API（孵化）**：安全高效地访问堆外内存，替代Unsafe
+- **JFR事件流**：支持实时消费JFR事件，无需落盘
+- `jpackage` 打包工具（孵化）
+
+---
+
+## JDK 15（2020年9月）
+
+### 1. 文本块（正式）
+
+经过两轮预览后正式发布。
+
+### 2. 封闭类（Sealed Classes，预览）
+
+限制哪些类可以继承或实现。
+
+```java
+public sealed class Shape permits Circle, Rectangle, Triangle {}
+
+public final class Circle extends Shape {}
+public non-sealed class Rectangle extends Shape {}
+public sealed class Triangle extends Shape permits RightTriangle {}
+```
+
+### 3. 隐藏类（Hidden Classes）
+
+供框架使用的不可发现的类，用于替代 `Unsafe.defineAnonymousClass()`。
+
+### 4. ZGC（正式）
+
+从实验性功能变为正式生产可用。
+
+### 5. Shenandoah GC（正式）
+
+从实验性功能变为正式生产可用。
+
+### 6. Edwards-Curve数字签名算法
+
+新增 EdDSA 签名算法。
+
+### 7. 其他
+
+- Record类（第二次预览）
+- instanceof模式匹配（第二次预览）
+- 外部内存访问API（第二次孵化）
+- 废弃并禁用偏向锁
+- 移除Nashorn JavaScript引擎
+- 重新实现DatagramSocket API
+
+---
+
+## JDK 16（2021年3月）
+
+### 1. Record类（正式）
+
+经过两轮预览后正式发布。
+
+```java
+public record User(String name, int age) {
+    // 可以自定义紧凑构造器
+    public User {
+        if (age < 0) throw new IllegalArgumentException();
+    }
+}
+```
+
+### 2. instanceof模式匹配（正式）
+
+正式发布。
+
+### 3. 封闭类（第二次预览）
+
+### 4. Stream.toList()
+
+直接收集为不可变List，无需 `Collectors.toList()`。
+
+```java
+List<String> result = stream.toList();
+```
+
+### 5. Vector API（孵化）
+
+SIMD向量计算API，充分利用CPU向量指令。
+
+### 6. 外部链接器API（孵化）
+
+替代JNI，提供纯Java方式访问本地代码。
+
+### 7. 其他
+
+- jpackage打包工具（正式）
+- Unix域套接字
+- 弹性元空间
+- ZGC并发线程栈处理
+- 默认强封装JDK内部API
+- Alpine Linux / musl支持
+
+---
+
+## JDK 17（2021年9月）⭐ LTS
+
+### 1. 封闭类（Sealed Classes，正式）
+
+正式发布，配合模式匹配实现类型安全的多态。
+
+```java
+public sealed interface Shape permits Circle, Rectangle {}
+public record Circle(double radius) implements Shape {}
+public record Rectangle(double w, double h) implements Shape {}
+```
+
+### 2. switch模式匹配（预览）
+
+switch支持类型模式匹配。
+
+```java
+static String describe(Object obj) {
+    return switch (obj) {
+        case Integer i -> "整数: " + i;
+        case String s  -> "字符串: " + s;
+        case null      -> "空值";
+        default        -> "其他: " + obj;
+    };
+}
+```
+
+### 3. 增强版伪随机数生成器
+
+新增 `RandomGenerator` 接口，提供多种算法实现。
+
+```java
+RandomGenerator generator = RandomGeneratorFactory.of("L64X128MixRandom").create();
+int random = generator.nextInt(100);
+```
+
+### 4. 移除实验性AOT和JIT编译器
+
+移除了基于Graal的实验性提前编译和JIT编译器。
+
+### 5. 废弃Applet API
+
+标记为废弃，准备后续移除。
+
+### 6. 外部函数和内存API（孵化）
+
+合并了外部内存访问API和外部链接器API。
+
+### 7. 其他
+
+- 恢复始终严格的浮点语义
+- 增强的伪随机数生成器
+- macOS/AArch64 端口
+- 废弃Security Manager
+- 强封装JDK内部API（默认不允许 `--illegal-access`）
+- 上下文特定的反序列化过滤器
+- Vector API（第二次孵化）
+
+---
+
+## JDK 18（2022年3月）
+
+### 1. 默认UTF-8字符集
+
+`Charset.defaultCharset()` 在所有平台默认返回UTF-8。
+
+### 2. 简易Web服务器
+
+命令行工具快速启动静态文件服务器。
+
+```shell
+jwebserver -p 8080 -d /path/to/dir
+```
+
+### 3. 代码片段API（JavaDoc）
+
+`@snippet` 标签，支持在JavaDoc中嵌入可验证的代码片段。
+
+```java
+/**
+ * {@snippet :
+ * var list = List.of("a", "b", "c");
+ * list.forEach(System.out::println);
+ * }
+ */
+```
+
+### 4. 使用方法句柄重新实现反射核心
+
+使用 `MethodHandle` 重写 `java.lang.reflect` 的核心代码。
+
+### 5. 其他
+
+- Vector API（第三次孵化）
+- 互联网地址解析SPI
+- 外部函数和内存API（第二次孵化）
+- switch模式匹配（第二次预览）
+- 废弃Finalization
+
+---
+
+## JDK 19（2022年9月）
+
+### 1. 虚拟线程（预览 - Project Loom）
+
+轻量级线程，极大提升并发能力。
+
+```java
+try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    IntStream.range(0, 10000).forEach(i -> {
+        executor.submit(() -> {
+            Thread.sleep(Duration.ofSeconds(1));
+            return i;
+        });
+    });
+}
+```
+
+### 2. 结构化并发（孵化）
+
+将相关的并发任务作为一个单元来管理。
+
+```java
+try (var scope = new StructuredTaskScope.ShutdownOnFailure()) {
+    Future<String> user = scope.fork(() -> findUser());
+    Future<Integer> order = scope.fork(() -> fetchOrder());
+    scope.join();
+    scope.throwIfFailed();
+    return new Response(user.resultNow(), order.resultNow());
+}
+```
+
+### 3. Record模式（预览）
+
+解构Record类的模式匹配。
+
+```java
+record Point(int x, int y) {}
+
+if (obj instanceof Point(int x, int y)) {
+    System.out.println(x + y);
+}
+```
+
+### 4. 其他
+
+- switch模式匹配（第三次预览）
+- 外部函数和内存API（预览）
+- Vector API（第四次孵化）
+
+---
+
+## JDK 20（2023年3月）
+
+### 1. 作用域值（Scoped Values，孵化）
+
+替代 `ThreadLocal` 的更安全、高效的线程间数据共享方式。
+
+```java
+final static ScopedValue<String> USER = ScopedValue.newInstance();
+
+ScopedValue.where(USER, "admin").run(() -> {
+    System.out.println(USER.get()); // "admin"
+});
+```
+
+### 2. Record模式（第二次预览）
+
+### 3. switch模式匹配（第四次预览）
+
+### 4. 虚拟线程（第二次预览）
+
+### 5. 结构化并发（第二次孵化）
+
+### 6. 外部函数和内存API（第二次预览）
+
+### 7. Vector API（第五次孵化）
+
+---
+
+## JDK 21（2023年9月）⭐ LTS
+
+JDK 21 是继8、11、17后的又一个长期支持版本，多个重要特性正式发布。
+
+### 1. 虚拟线程（正式）
+
+轻量级线程正式发布，每个虚拟线程仅占用几KB内存，可以轻松创建百万级线程。
+
+```java
+// 创建虚拟线程
+Thread.startVirtualThread(() -> {
+    System.out.println("Hello from virtual thread!");
+});
+
+// 使用虚拟线程执行器
+try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    for (int i = 0; i < 100_000; i++) {
+        executor.submit(() -> {
+            // 每个任务在独立的虚拟线程中执行
+            Thread.sleep(Duration.ofMillis(100));
+            return "done";
+        });
+    }
+}
+```
+
+### 2. Record模式（正式）
+
+解构Record类实例，支持嵌套模式。
+
+```java
+record Point(int x, int y) {}
+record Line(Point start, Point end) {}
+
+// 嵌套解构
+if (obj instanceof Line(Point(var x1, var y1), Point(var x2, var y2))) {
+    double length = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+}
+```
+
+### 3. switch模式匹配（正式）
+
+完整的模式匹配switch表达式正式发布。
+
+```java
+static double getArea(Shape shape) {
+    return switch (shape) {
+        case Circle c    -> Math.PI * c.radius() * c.radius();
+        case Rectangle r -> r.width() * r.height();
+        case null        -> 0;
+    };
+}
+
+// 带守卫条件
+static String classify(Object obj) {
+    return switch (obj) {
+        case Integer i when i > 0 -> "正整数";
+        case Integer i when i < 0 -> "负整数";
+        case Integer i            -> "零";
+        case String s             -> "字符串: " + s;
+        default                   -> "其他";
+    };
+}
+```
+
+### 4. 序列化集合（Sequenced Collections）
+
+新增有序集合接口，统一首尾元素访问和反转视图。
+
+```java
+// 新接口：SequencedCollection, SequencedSet, SequencedMap
+SequencedCollection<String> seq = new LinkedHashSet<>();
+seq.addFirst("first");
+seq.addLast("last");
+String first = seq.getFirst();
+String last = seq.getLast();
+SequencedCollection<String> reversed = seq.reversed();
+```
+
+### 5. 字符串模板（预览）
+
+在字符串中嵌入表达式，类型安全的字符串插值。
+
+```java
+String name = "Java";
+int version = 21;
+String msg = STR."Hello \{name}, version \{version}!";
+// "Hello Java, version 21!"
+
+// 多行
+String json = STR."""
+    {
+        "name": "\{name}",
+        "version": \{version}
+    }
+    """;
+```
+
+### 6. 匿名类和实例主方法（预览）
+
+简化Java入门程序的编写。
+
+```java
+// 传统写法
+public class HelloWorld {
+    public static void main(String[] args) {
+        System.out.println("Hello!");
+    }
+}
+
+// JDK 21 预览写法
+void main() {
+    System.out.println("Hello!");
+}
+```
+
+### 7. 未命名模式和变量（预览）
+
+使用 `_` 表示不需要的变量。
+
+```java
+if (obj instanceof Point(int x, _)) {
+    // 只关心x坐标
+}
+
+try {
+    // ...
+} catch (Exception _) {
+    // 不需要异常变量
+}
+```
+
+### 8. 结构化并发（预览）
+
+管理并发子任务的生命周期。
+
+### 9. 作用域值（预览）
+
+线程间安全共享不可变数据。
+
+### 10. 其他
+
+- 外部函数和内存API（第三次预览）
+- Vector API（第六次孵化）
+- **分代ZGC**：引入年轻代/老年代分离收集，降低GC CPU和内存开销，`-XX:+UseZGC -XX:+ZGenerational`
+- 密钥封装机制API
+- 弃用 Windows 32位 x86 端口
+- **准备禁止动态加载代理**：影响APM工具和热部署工具，动态attach时发出警告
+
+---
+
+## JVM/GC 演进专题
+
+以下按版本梳理 JVM 和垃圾收集器方面的重要演进，方便对比各版本在性能、内存管理上的变化。
+
+### JDK 5 JVM改进
+
+- **类数据共享（CDS）**：将核心类的元数据存储为共享归档文件，多个JVM实例共享，减少启动时间和内存占用
+- **Ergonomics（自适应调优）**：JVM根据运行环境自动选择GC策略、堆大小等参数
+- **Server VM 默认化**：在服务端环境下默认使用 Server VM（C2编译器），优化长时间运行的应用性能
+- **并行GC成为默认收集器**（Server模式）：`-XX:+UseParallelGC`
+- **64位 JVM 支持增强**
+
+### JDK 6 JVM改进
+
+- **锁优化三件套**：
+  - **偏向锁（Biased Locking）**：无竞争时消除同步原语开销，对象头记录偏向线程ID
+  - **锁消除（Lock Elimination）**：JIT通过逃逸分析，消除不可能存在竞争的锁
+  - **锁粗化（Lock Coarsening）**：合并相邻的同步块，减少加锁/解锁次数
+  - **自适应自旋锁（Adaptive Spinning）**：根据历史自旋成功率动态调整自旋次数
+- **逃逸分析（Escape Analysis）**：分析对象是否逃出方法/线程，支持栈上分配、标量替换
+- **分层编译（Tiered Compilation，初步引入）**：结合C1（快速编译）和C2（深度优化）
+- **GC优化**：Parallel GC吞吐量提升，CMS收集器稳定性增强
+- **JMX/JConsole增强**：更好的运行时监控能力
+- **Native Memory Tracking 基础**
+
+### JDK 7 JVM改进
+
+- **G1垃圾收集器（实验性引入）**：
+  - 面向大堆内存设计（>4GB），替代CMS的候选方案
+  - Region化内存布局：将堆划分为大小相等的Region（1MB~32MB）
+  - 混合收集（Mixed GC）：同时回收年轻代和部分老年代Region
+  - 可预测的停顿时间目标：`-XX:MaxGCPauseMillis`
+  - 增量式并发标记
+- **invokedynamic 字节码指令**：
+  - 新增第五种方法调用指令，支持动态语言高效运行在JVM上
+  - 为JDK8 Lambda表达式的实现提供基础
+  - 通过 `MethodHandle` 和 `CallSite` 实现动态方法分派
+- **压缩对象指针（Compressed Oops）默认开启**：64位JVM中使用32位引用表示堆中对象，节省内存
+- **分层编译默认开启**：`-XX:+TieredCompilation`
+- **Fork/Join框架的work-stealing算法**：充分利用多核CPU
+
+### JDK 8 JVM改进
+
+- **永久代（PermGen）移除，引入元空间（Metaspace）**：
+  - 类元数据存储从JVM堆迁移到本地内存（Native Memory）
+  - 不再有 `java.lang.OutOfMemoryError: PermGen space`
+  - 默认元空间大小仅受本地内存限制，可通过 `-XX:MaxMetaspaceSize` 设置上限
+  - `-XX:MetaspaceSize` 设置初始阈值，超过后触发Full GC并自动调整
+  - 字符串常量池从永久代移到堆中（实际在JDK7已移动）
+- **Lambda 的 JVM 实现**：
+  - 使用 `invokedynamic` + `LambdaMetafactory` 在运行时生成实现类
+  - 避免为每个Lambda生成匿名内部类文件，减少类加载开销
+- **Nashorn引擎**：基于 `invokedynamic` 实现高性能JavaScript执行
+- **PermGen相关参数移除**：`-XX:PermSize`、`-XX:MaxPermSize` 不再生效
+- **默认GC**：Parallel GC（吞吐量优先）
+
+```
+// JDK8 元空间相关JVM参数
+-XX:MetaspaceSize=256m          // 元空间初始阈值
+-XX:MaxMetaspaceSize=512m       // 元空间最大值
+-XX:MinMetaspaceFreeRatio=40    // GC后最小空闲比例
+-XX:MaxMetaspaceFreeRatio=70    // GC后最大空闲比例
+```
+
+### JDK 9 JVM改进
+
+- **G1成为默认垃圾收集器**：
+  - 替代Parallel GC成为默认GC：`-XX:+UseG1GC`
+  - String去重（String Deduplication）：自动检测并去重堆中相同内容的String
+  - 并发标记周期优化
+- **统一JVM日志框架（JEP 158）**：
+  - 所有GC日志、编译日志、类加载日志统一格式
+  - `-Xlog:gc*` 替代旧的 `-XX:+PrintGCDetails` 等参数
+  - 支持日志轮转、标签过滤、多输出目标
+- **AOT编译（实验性，JEP 295）**：
+  - `jaotc` 工具将字节码预编译为本地代码
+  - 减少JIT编译的预热时间
+- **Compact Strings（紧凑字符串）**：
+  - String内部从 `char[]` 改为 `byte[]` + encoding flag
+  - 纯Latin-1字符串内存占用减半
+- **模块化对JVM的影响**：
+  - 强封装JDK内部API
+  - `--add-opens`、`--add-exports` 参数控制模块可见性
+- **Indify String Concatenation**：字符串拼接使用 `invokedynamic` 优化
+
+```shell
+# JDK9+ 统一日志格式
+java -Xlog:gc*:file=gc.log:time,uptime,level,tags:filecount=5,filesize=10m MyApp
+
+# 旧参数（JDK9前）
+java -XX:+PrintGCDetails -XX:+PrintGCDateStamps -Xloggc:gc.log MyApp
+```
+
+### JDK 10 JVM改进
+
+- **G1并行Full GC（JEP 307）**：
+  - 之前G1的Full GC使用单线程的Mark-Sweep-Compact算法
+  - 现在使用并行化的Full GC，显著降低Full GC停顿时间
+- **应用程序类数据共享（AppCDS，JEP 310）**：
+  - 将CDS扩展到应用类路径上的类
+  - 多个JVM进程可共享应用类的元数据
+  - 加速启动时间10%~30%
+- **实验性Java-Based JIT编译器（Graal，JEP 317）**：
+  - 用Java编写的JIT编译器
+  - 可替换C2编译器：`-XX:+UnlockExperimentalVMOptions -XX:+UseJVMCICompiler`
+  - 为GraalVM和Native Image做基础
+- **线程局部管控（Thread-Local Handshakes，JEP 312）**：
+  - 无需全局VM安全点即可对单个线程执行操作
+  - 减少不必要的全局停顿
+- **堆分配在备用内存设备上（JEP 316）**：支持将堆放在NV-DIMM等非易失内存上
+
+```shell
+# AppCDS 使用步骤
+# 1. 导出类列表
+java -Xshare:off -XX:DumpLoadedClassList=classes.lst -jar app.jar
+# 2. 创建共享归档
+java -Xshare:dump -XX:SharedClassListFile=classes.lst -XX:SharedArchiveFile=app.jsa -jar app.jar
+# 3. 使用共享归档启动
+java -Xshare:on -XX:SharedArchiveFile=app.jsa -jar app.jar
+```
+
+### JDK 11 JVM改进
+
+- **ZGC（实验性，JEP 333）**：
+  - 可伸缩的低延迟垃圾收集器
+  - 停顿时间不超过10ms，且不随堆大小增长
+  - 支持TB级别堆内存（8MB ~ 16TB）
+  - 并发执行所有昂贵操作（标记、重定位、引用处理）
+  - 使用着色指针（Colored Pointers）和读屏障（Load Barriers）
+  - 启用：`-XX:+UnlockExperimentalVMOptions -XX:+UseZGC`
+- **Epsilon GC（JEP 318）**：
+  - No-Op垃圾收集器，不回收任何内存
+  - 适用于性能测试、极短生命周期应用、内存压力测试
+  - 堆耗尽时直接OOM
+  - 启用：`-XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC`
+- **飞行记录器（JFR，JEP 328）开源**：
+  - 之前是商业特性，JDK11开源
+  - 低开销（<2%）的性能数据采集框架
+  - 记录GC事件、线程活动、IO操作、锁竞争等
+  - 启用：`-XX:StartFlightRecording=duration=60s,filename=recording.jfr`
+- **嵌套类访问控制（Nest-Based Access Control，JEP 181）**：
+  - 内部类和外部类之间的私有成员访问不再需要编译器生成桥接方法
+  - 减少类文件大小，简化访问逻辑
+- **动态类文件常量（JEP 309）**：新增 `CONSTANT_Dynamic` 常量池条目
+- **低开销堆分析（JEP 331）**：通过JVMTI采样分析堆分配
+
+```shell
+# ZGC 常用参数
+-XX:+UseZGC
+-XX:ZCollectionInterval=5       # GC触发间隔（秒）
+-XX:ZAllocationSpikeTolerance=2 # 分配速率容忍度
+-Xmx16g                         # 堆最大值
+
+# JFR 使用
+java -XX:StartFlightRecording=settings=profile,duration=60s,filename=app.jfr -jar app.jar
+jfr print --events jdk.GCHeapSummary app.jfr
+```
+
+### JDK 12 JVM改进
+
+- **Shenandoah GC（实验性，JEP 189）**：
+  - 由Red Hat开发的低暂停时间GC
+  - 通过与应用线程并发执行压缩来减少停顿时间
+  - 停顿时间与堆大小无关
+  - 使用Brooks指针实现并发对象移动
+  - 与ZGC的区别：Shenandoah使用转发指针+写屏障，ZGC使用着色指针+读屏障
+- **G1优化**：
+  - **可中止的混合收集（JEP 344）**：将Mixed GC拆分为可选和必须两部分，超时可中止
+  - **及时归还未使用内存（JEP 346）**：G1在空闲时自动将Java堆内存归还操作系统
+- **默认CDS归档（JEP 341）**：JDK安装时自动生成默认的类数据共享归档
+- **微基准测试套件（JEP 230）**：集成JMH，方便JDK开发者编写性能测试
+
+### JDK 13 JVM改进
+
+- **ZGC归还未使用内存（JEP 351）**：
+  - ZGC将不再使用的堆内存归还给操作系统
+  - 类似G1在JDK12中的改进
+  - 对容器化环境特别有意义（减少内存计费）
+- **动态CDS归档（JEP 350）**：
+  - 在应用退出时自动创建CDS归档
+  - 简化AppCDS的使用流程：`-XX:ArchiveClassesAtExit=app.jsa`
+  - 无需手动执行三步操作
+- **重新实现旧版Socket API（JEP 353）**：
+  - 使用更现代的 NIO 实现替换老的 PlainSocketImpl
+  - 便于支持虚拟线程（Project Loom准备工作）
+
+### JDK 14 JVM改进
+
+- **有帮助的NullPointerException（JEP 358）**：
+  - JVM精确描述哪个变量为null
+  - 需要 `-XX:+ShowCodeDetailsInExceptionMessages` 启用（JDK15默认开启）
+  - 通过分析字节码确定null位置
+- **移除CMS垃圾收集器（JEP 363）**：
+  - CMS（Concurrent Mark Sweep）在JDK9标记为废弃，JDK14正式移除
+  - 使用 `-XX:+UseConcMarkSweepGC` 将报错
+  - 推荐迁移到G1或ZGC
+- **ZGC支持macOS和Windows（JEP 364/365）**：之前仅Linux
+- **废弃 ParallelScavenge + SerialOld GC组合（JEP 366）**
+- **外部内存访问API（孵化，JEP 370）**：安全高效地访问堆外内存
+- **JFR事件流（JEP 349）**：支持实时消费JFR事件，无需落盘
+
+### JDK 15 JVM改进
+
+- **ZGC正式发布（JEP 377）**：
+  - 从实验性变为生产可用
+  - 启用参数简化为：`-XX:+UseZGC`（无需UnlockExperimentalVMOptions）
+  - 支持类卸载、NUMA感知、并发根处理
+- **Shenandoah GC正式发布（JEP 379）**：
+  - 启用：`-XX:+UseShenandoahGC`
+- **废弃并禁用偏向锁（JEP 374）**：
+  - 偏向锁在现代多核处理器和高并发场景下带来的收益减少
+  - 偏向锁撤销的性能开销高昂
+  - 默认禁用：`-XX:-UseBiasedLocking`
+  - 准备后续版本移除
+- **隐藏类（JEP 371）**：
+  - 供框架在运行时生成的类，不可被发现（不能通过名称引用）
+  - 替代 `Unsafe.defineAnonymousClass()`
+  - 支持GC回收，减少元空间压力
+- **重新实现DatagramSocket API（JEP 373）**
+
+### JDK 16 JVM改进
+
+- **ZGC并发线程栈处理（JEP 376）**：
+  - 将线程栈处理从安全点移到并发阶段
+  - 进一步降低GC停顿时间（从几ms降到<1ms）
+  - 消除ZGC停顿时间与线程数量的正比关系
+- **弹性元空间（JEP 387）**：
+  - 更及时地将未使用的类元数据内存归还操作系统
+  - 减少元空间内存碎片
+  - 减少类加载器内存占用
+- **默认强封装JDK内部API（JEP 396）**：
+  - `--illegal-access=deny` 成为默认值
+  - 非法反射访问内部API将抛出异常
+  - 需要显式使用 `--add-opens` 放开
+- **Unix域套接字（JEP 380）**：同一主机进程间高效通信
+- **Vector API（孵化，JEP 338）**：利用SIMD指令加速向量计算
+
+### JDK 17 JVM改进
+
+- **移除实验性AOT和JIT编译器（JEP 410）**：
+  - 移除 `jaotc` AOT编译工具
+  - 移除基于Graal的JIT编译器（但Graal仍可作为独立项目使用）
+  - 保留JVMCI接口，第三方JIT仍可接入
+- **强封装JDK内部API（JEP 403）**：
+  - 移除 `--illegal-access` 命令行选项
+  - 除少数关键内部API外（如 `sun.misc.Unsafe`），全部不可访问
+- **废弃Security Manager（JEP 411）**：准备后续移除
+- **恢复始终严格的浮点语义（JEP 306）**：
+  - 所有浮点运算始终使用strict模式
+  - `strictfp` 关键字变为默认行为（不再需要显式声明）
+- **上下文特定的反序列化过滤器（JEP 415）**：增强安全性
+- **macOS/AArch64端口（JEP 391）**：原生支持Apple M1芯片
+
+### JDK 18 JVM改进
+
+- **废弃Finalization（JEP 421）**：
+  - `Object.finalize()` 标记为废弃
+  - Finalizer线程带来不确定性和性能问题
+  - 推荐使用 `Cleaner` 和 `try-with-resources` 替代
+  - 可通过 `--finalization=disabled` 提前禁用
+- **方法句柄重新实现反射核心（JEP 416）**：
+  - 减少维护成本，统一底层实现
+  - 反射调用性能提升
+
+### JDK 19 JVM改进
+
+- **虚拟线程（预览，JEP 425）对JVM的影响**：
+  - 虚拟线程不绑定OS线程，由JVM调度
+  - 栈帧存储在堆中，可以暂停和恢复
+  - 载体线程（Carrier Thread）池管理物理线程
+  - 针对阻塞操作的优化：阻塞时自动切换虚拟线程
+  - 与现有同步API完全兼容
+- **结构化并发（孵化）**：配合虚拟线程管理任务生命周期
+- **外部函数和内存API（预览，JEP 424）**：替代JNI和Unsafe的安全API
+
+### JDK 20 JVM改进
+
+- **作用域值（Scoped Values，孵化，JEP 429）**：
+  - 替代 `ThreadLocal` 的更高效方案
+  - 不可变，自动清理，虚拟线程友好
+  - 无内存泄漏风险（vs ThreadLocal需要手动remove）
+- **虚拟线程持续改进**：减少pin（固定）场景
+- **Vector API持续孵化**
+
+### JDK 21 JVM改进
+
+- **分代ZGC（JEP 439）**：
+  - ZGC引入分代架构：年轻代和老年代分开收集
+  - 年轻对象收集频率更高，利用「大多数对象朝生夕死」的特性
+  - 降低GC所需的CPU和内存开销
+  - 进一步降低分配停顿风险
+  - 启用：`-XX:+UseZGC -XX:+ZGenerational`
+- **虚拟线程正式发布（JEP 444）对JVM的意义**：
+  - JVM线程模型重大变革：M:N线程模型
+  - 一个OS线程可承载数十万虚拟线程
+  - `synchronized` 块内的虚拟线程会被pin到载体线程（建议使用ReentrantLock）
+  - JFR/JMX完全支持虚拟线程监控
+  - 线程dump支持虚拟线程（JSON格式）：`jcmd <pid> Thread.dump_to_file -format=json file.json`
+- **准备禁止动态加载代理（JEP 451）**：
+  - 动态attach Agent时发出警告
+  - 后续版本将默认禁止（需要显式允许）
+  - 影响部分APM工具和热部署工具
+- **密钥封装机制API（JEP 452）**：标准化KEM加密操作
+
+```shell
+# JDK21 分代ZGC
+java -XX:+UseZGC -XX:+ZGenerational -Xmx4g -jar app.jar
+
+# 虚拟线程线程dump
+jcmd <pid> Thread.dump_to_file -format=json threads.json
+```
+
+### 垃圾收集算法基础
+
+#### 对象存活判定 —— GC Roots可达性分析
+
+JVM通过 **GC Roots可达性分析** 判定对象是否存活：从GC Roots出发，沿引用链遍历，不可达的对象即为可回收对象。
+
+**GC Roots 包括：**
+- 虚拟机栈中引用的对象（局部变量表）
+- 方法区中类静态属性引用的对象
+- 方法区中常量引用的对象
+- 本地方法栈中 JNI 引用的对象
+- JVM内部引用（如基本类型的Class对象、系统类加载器等）
+- 所有被 `synchronized` 持有的对象
+- JMXBean、JVMTI中注册的回调等
+
+#### 四种基本GC算法
+
+| 算法 | 原理 | 优点 | 缺点 | 适用区域 |
+|------|------|------|------|----------|
+| **标记-清除** | 标记存活对象，清除未标记对象 | 简单，不需移动对象 | 内存碎片、效率不稳定 | 老年代 |
+| **复制算法** | 将存活对象复制到另一半空间 | 无碎片、效率高 | 空间利用率50% | 年轻代(Eden→Survivor) |
+| **标记-整理** | 标记存活对象，向一端移动并清理边界 | 无碎片 | 移动开销大 | 老年代 |
+| **分代收集** | 按对象年龄分区，不同区域用不同算法 | 综合最优 | 实现复杂 | 整堆 |
+
+#### 分代收集理论
+
+- **弱分代假说**：绝大多数对象都是朝生夕死的
+- **强分代假说**：熬过越多次GC的对象越难被回收
+- **跨代引用假说**：跨代引用相对同代引用占极少数（使用记忆集/卡表优化）
+
+### 七种主流垃圾收集器详解
+
+#### 1. Serial GC（串行收集器）
+
+- **引入版本**：JDK 1.3
+- **作用区域**：年轻代（Serial）+ 老年代（Serial Old）
+- **算法**：年轻代复制算法，老年代标记-整理
+- **线程模型**：单线程，STW（Stop The World）
+- **特点**：简单高效，无线程交互开销，适合单核/小堆/客户端
+- **参数**：`-XX:+UseSerialGC`
+
+#### 2. Parallel GC（并行收集器/吞吐量收集器）
+
+- **引入版本**：JDK 1.4（Parallel Scavenge），JDK 5默认（Server模式）
+- **作用区域**：年轻代（Parallel Scavenge）+ 老年代（Parallel Old）
+- **算法**：年轻代复制算法，老年代标记-整理
+- **线程模型**：多线程并行收集，STW
+- **特点**：以吞吐量为目标，支持自适应调节策略
+- **关键参数**：
+  - `-XX:+UseParallelGC`：启用
+  - `-XX:ParallelGCThreads=N`：GC线程数
+  - `-XX:MaxGCPauseMillis=ms`：最大停顿时间目标
+  - `-XX:GCTimeRatio=N`：吞吐量目标（1/(1+N)的时间用于GC）
+  - `-XX:+UseAdaptiveSizePolicy`：自适应策略
+
+#### 3. CMS（Concurrent Mark Sweep）
+
+- **引入版本**：JDK 1.4，**JDK 9废弃，JDK 14移除**
+- **作用区域**：老年代
+- **算法**：标记-清除（不压缩）
+- **线程模型**：并发收集，大部分阶段与用户线程并发执行
+- **工作阶段**：
+  1. **初始标记**（STW）：标记GC Roots直接关联的对象，极快
+  2. **并发标记**：从GC Roots遍历整个对象图，与用户线程并发
+  3. **重新标记**（STW）：修正并发标记期间变化的引用，使用增量更新
+  4. **并发清除**：清除不可达对象，与用户线程并发
+- **缺点**：内存碎片、浮动垃圾、CPU敏感、并发失败退化Serial Old
+- **参数**：`-XX:+UseConcMarkSweepGC`（JDK14+报错）
+
+#### 4. G1（Garbage-First）
+
+- **引入版本**：JDK 7实验性，**JDK 9正式成为默认GC**
+- **作用区域**：整堆（Region化，不再物理分代）
+- **算法**：整体标记-整理，局部复制算法
+- **线程模型**：并发+并行
+- **核心设计**：
+  - 堆划分为2048个等大Region（1MB~32MB）
+  - 逻辑分代：Eden/Survivor/Old/Humongous Region
+  - 优先回收垃圾最多的Region（Garbage-First）
+  - 可预测的停顿时间模型：`-XX:MaxGCPauseMillis=200`（默认200ms）
+- **工作阶段**：
+  1. **初始标记**（STW）：标记GC Roots，借用Minor GC
+  2. **并发标记**：对象图遍历，使用SATB（原始快照）算法
+  3. **最终标记**（STW）：处理SATB缓冲区
+  4. **筛选回收**（STW）：按回收价值排序Region，复制存活对象
+- **关键参数**：
+  - `-XX:+UseG1GC`
+  - `-XX:G1HeapRegionSize=n`：Region大小
+  - `-XX:MaxGCPauseMillis=200`：目标停顿时间
+  - `-XX:G1NewSizePercent=5`：年轻代最小比例
+  - `-XX:G1MaxNewSizePercent=60`：年轻代最大比例
+  - `-XX:InitiatingHeapOccupancyPercent=45`：触发并发标记的堆占用率
+
+#### 5. ZGC
+
+- **引入版本**：JDK 11实验性，**JDK 15正式发布**，JDK 21引入分代
+- **作用区域**：整堆
+- **算法**：标记-整理（并发重定位）
+- **线程模型**：几乎全并发，STW < 1ms
+- **核心技术**：
+  - **着色指针（Colored Pointers）**：利用64位指针中的4位存储GC元数据（Marked0/Marked1/Remapped/Finalizable）
+  - **读屏障（Load Barrier）**：在对象引用加载时检查指针状态，触发自愈
+  - **多重映射（Multi-Mapping）**：同一物理内存映射到多个虚拟地址
+- **工作阶段**：
+  1. **并发标记**：遍历对象图，标记存活对象
+  2. **并发预备重分配**：选择需要清理的Region
+  3. **并发重分配**：移动存活对象到新Region，建立转发表
+  4. **并发重映射**：修复指向旧地址的引用（可延迟到下次GC标记阶段）
+- **关键参数**：
+  - `-XX:+UseZGC`
+  - `-XX:+ZGenerational`（JDK21 分代ZGC）
+  - `-XX:ZAllocationSpikeTolerance=2`
+  - `-XX:ZCollectionInterval=0`（0=只在必要时GC）
+  - `-XX:SoftMaxHeapSize=4g`（软上限）
+
+#### 6. Shenandoah GC
+
+- **引入版本**：JDK 12实验性，**JDK 15正式发布**
+- **作用区域**：整堆
+- **算法**：标记-整理（并发压缩）
+- **线程模型**：几乎全并发
+- **核心技术**：
+  - **Brooks转发指针**：每个对象头前增加一个间接指针，指向对象当前实际位置
+  - **写屏障（Write Barrier）**：在引用更新时维护转发指针一致性
+  - **连接矩阵（Connection Matrix）**：替代G1的记忆集，记录Region间引用关系
+- **工作阶段**：
+  1. **初始标记**（STW）：标记GC Roots
+  2. **并发标记**：遍历对象图
+  3. **最终标记**（STW）：处理剩余SATB、选择回收集
+  4. **并发清理**：回收无存活对象的Region
+  5. **并发疏散**：将回收集中存活对象复制到其他Region（与用户线程并发！）
+  6. **初始引用更新**（STW）：确保所有GC线程完成疏散
+  7. **并发引用更新**：修复堆中所有旧引用
+  8. **最终引用更新**（STW）：修复GC Roots引用
+- **参数**：`-XX:+UseShenandoahGC`
+
+#### 7. Epsilon GC
+
+- **引入版本**：JDK 11
+- **作用区域**：不进行任何回收
+- **算法**：无（No-Op）
+- **特点**：只分配不回收，堆满即OOM
+- **用途**：性能基准测试、极短生命周期程序、内存压力测试
+- **参数**：`-XX:+UseEpsilonGC`
+
+### ZGC vs Shenandoah 对比
+
+| 维度 | ZGC | Shenandoah |
+|------|-----|-----------|
+| 开发者 | Oracle | Red Hat |
+| 核心技术 | 着色指针 + 读屏障 | Brooks转发指针 + 写屏障 |
+| 指针开销 | 无额外空间（复用指针位） | 每对象+1指针字（8字节） |
+| 屏障类型 | 读屏障（Load Barrier） | 写屏障（Write Barrier） |
+| 并发压缩 | 并发重定位 + 转发表 | 并发疏散 + Brooks指针 |
+| 分代支持 | JDK 21引入分代ZGC | 不分代 |
+| 堆大小 | 8MB ~ 16TB | 无明确上限 |
+| 停顿时间 | < 1ms（与堆大小无关） | < 10ms（与堆大小无关） |
+| 内存占用 | 较高（多重映射） | 较高（转发指针） |
+| 平台支持 | Linux/macOS/Windows | Linux/macOS/Windows |
+| JDK发行版 | Oracle JDK / OpenJDK | OpenJDK（非Oracle JDK） |
+
+### GC组合关系（JDK 8时代）
+
+```
+年轻代收集器          老年代收集器
+┌────────────┐      ┌────────────────┐
+│  Serial    │─────→│  Serial Old    │
+├────────────┤      ├────────────────┤
+│  ParNew    │─────→│  CMS           │
+├────────────┤      │  (并发标记清除)  │
+│  Parallel  │─────→├────────────────┤
+│  Scavenge  │─────→│  Parallel Old  │
+└────────────┘      └────────────────┘
+
+可搭配组合：
+Serial     + Serial Old    （客户端默认）
+Serial     + CMS
+ParNew     + Serial Old
+ParNew     + CMS           （JDK8常用低延迟方案）
+Parallel   + Serial Old    （已废弃）
+Parallel   + Parallel Old  （JDK8 Server默认，吞吐量优先）
+
+注：JDK 9+ G1/ZGC/Shenandoah 为整堆收集器，不存在搭配问题
+```
+
+### GC选择决策树
+
+```
+你的应用需要什么？
+│
+├─ 吞吐量最大化（批处理/科学计算）
+│  └─→ Parallel GC
+│
+├─ 延迟敏感（Web服务/API）
+│  ├─ 堆 < 4GB
+│  │  └─→ G1 GC
+│  ├─ 堆 4GB ~ 32GB
+│  │  └─→ G1 GC 或 Shenandoah
+│  └─ 堆 > 32GB 或 要求 <1ms 停顿
+│     └─→ ZGC
+│
+├─ 资源受限（嵌入式/容器小内存）
+│  └─→ Serial GC
+│
+└─ 性能测试/短命程序
+   └─→ Epsilon GC
+```
