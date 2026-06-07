@@ -64,9 +64,102 @@ Setter注入，有一些场景下注入失败，运行的时候才会NPE异常
 
 ## 主线程等待子线程完成
 
-CountDownLatch
+### 1. CountDownLatch
 
-Future
+基于 AQS 实现的计数器，主线程调用 `await()` 阻塞，子线程完成后调用 `countDown()` 将计数减1，计数归零时主线程被唤醒。
+
+```java
+CountDownLatch latch = new CountDownLatch(3);
+
+for (int i = 0; i < 3; i++) {
+    new Thread(() -> {
+        try {
+            // 业务逻辑
+        } finally {
+            latch.countDown();
+        }
+    }).start();
+}
+
+latch.await(); // 主线程阻塞，直到计数为0
+```
+
+特点：一次性使用，计数不可重置
+
+### 2. CyclicBarrier
+
+循环屏障，所有线程到达屏障点后一起继续执行，可重复使用。
+
+```java
+CyclicBarrier barrier = new CyclicBarrier(3, () -> {
+    System.out.println("所有线程到达屏障，继续执行");
+});
+
+for (int i = 0; i < 3; i++) {
+    new Thread(() -> {
+        // 业务逻辑
+        barrier.await(); // 等待其他线程到达
+    }).start();
+}
+```
+
+特点：可重用（`reset()`），适合多轮同步场景
+
+### 3. Future / CompletableFuture
+
+通过 `Future.get()` 阻塞等待子线程返回结果。
+
+```java
+ExecutorService executor = Executors.newFixedThreadPool(3);
+List<Future<String>> futures = new ArrayList<>();
+
+for (int i = 0; i < 3; i++) {
+    futures.add(executor.submit(() -> {
+        // 业务逻辑
+        return "result";
+    }));
+}
+
+for (Future<String> future : futures) {
+    future.get(); // 阻塞等待每个子线程完成
+}
+```
+
+CompletableFuture 更灵活：
+
+```java
+CompletableFuture<Void> all = CompletableFuture.allOf(
+    CompletableFuture.runAsync(() -> { /* task1 */ }),
+    CompletableFuture.runAsync(() -> { /* task2 */ }),
+    CompletableFuture.runAsync(() -> { /* task3 */ })
+);
+all.join(); // 等待所有任务完成
+```
+
+### 4. Thread.join()
+
+最简单的方式，主线程调用子线程的 `join()` 方法阻塞等待。
+
+```java
+Thread t1 = new Thread(() -> { /* 业务逻辑 */ });
+Thread t2 = new Thread(() -> { /* 业务逻辑 */ });
+t1.start();
+t2.start();
+
+t1.join(); // 等待t1完成
+t2.join(); // 等待t2完成
+```
+
+底层原理：基于 `wait/notifyAll`，线程结束时 JVM 会调用 `notifyAll()` 唤醒等待的线程
+
+### 对比总结
+
+| 方式 | 是否可重用 | 是否有返回值 | 适用场景 |
+| --- | --- | --- | --- |
+| CountDownLatch | 否 | 否 | 主线程等待N个子线程完成 |
+| CyclicBarrier | 是 | 否 | 多线程互相等待到达同一点 |
+| Future/CompletableFuture | 否 | 是 | 需要获取子线程执行结果 |
+| Thread.join() | 否 | 否 | 简单场景，线程数少 |
 
 ---
 
@@ -89,9 +182,34 @@ Future
 
 ## Http Referer
 
-Referer 是HTTP请求头中的一个字段，表示当前请求是从哪个页面链接过来的
+Referer 是 HTTP 请求头中的一个字段，表示当前请求是从哪个页面链接过来的（即来源页面的 URL）。
 
-Referer 可以被伪造
+### 作用
+
+1. **防盗链**：服务器检查 Referer 判断请求是否来自合法域名，阻止外部站点直接引用资源（图片、视频等）
+2. **统计分析**：追踪用户从哪个页面跳转过来，用于流量来源分析
+3. **CSRF 防御辅助**：校验请求来源是否为本站，作为 CSRF 防护的一层手段
+
+### 局限性
+
+1. **可以被伪造**：客户端可以任意修改 Referer 头，不能作为唯一安全凭据
+2. **可能为空**：
+   - 用户直接在地址栏输入 URL
+   - 从 HTTPS 页面跳转到 HTTP 页面（默认不发送）
+   - 浏览器隐私设置/插件阻止发送
+   - 使用 `<meta name="referrer" content="no-referrer">` 控制
+3. **隐私问题**：暴露用户浏览路径，Referrer-Policy 头可控制发送策略
+
+### Referrer-Policy 策略
+
+```
+Referrer-Policy: no-referrer              // 不发送
+Referrer-Policy: origin                   // 只发送域名部分
+Referrer-Policy: same-origin              // 同源才发送
+Referrer-Policy: strict-origin-when-cross-origin  // 默认策略
+```
+
+> 注：Referer 是 HTTP 标准中 Referrer 的拼写错误，但已被广泛使用无法修改
 
 ---
 

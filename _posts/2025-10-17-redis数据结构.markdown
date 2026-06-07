@@ -14,7 +14,7 @@ tags:
 
 ---
 
-## RedisObject
+## 1.RedisObject
 
 所有 Redis 键值对的统一封装，用于管理数据的类型、编码、引用计数等元信息
 
@@ -49,7 +49,7 @@ typedef struct redisObject {
 ```
 ---
 
-## SDS 简单动态字符串
+## 2.SDS 简单动态字符串
 
 ```c
 struct __attribute__ ((__packed__)) sdshdrXX {
@@ -83,7 +83,7 @@ struct __attribute__ ((__packed__)) sdshdrXX {
 
 ---
 
-## ZipList 压缩列表
+## 3.ZipList 压缩列表
 
 误区：名字叫列表，但其实物理结构和数组没区别。只是逻辑功能上模拟了链表的核心特性
 比如：
@@ -212,7 +212,7 @@ ziplist 只是物理上是连续内存
 
 ---
 
-## Dict 哈希表
+## 4.Dict 哈希表
 
 哈希表节点（dictEntry）：存储单个键值对
 
@@ -279,7 +279,7 @@ typedef struct dict {
 
 ---
 
-## QuickList 快速列表
+## 5.QuickList 快速列表
 
 总结：zipList压缩列表，上面再套一层普通链表
 
@@ -351,7 +351,7 @@ quickList的每个节点大小可配置，list-max-ziplist-size 限制每个 zip
 
 ---
 
-## SkipList 跳表
+## 6.SkipList 跳表
 
 **通用的有序数据结构**
 

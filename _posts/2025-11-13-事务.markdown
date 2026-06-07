@@ -14,7 +14,7 @@ tags:
 
 ---
 
-## 分布式事务
+## 1.分布式事务
 
 ### 2PC（两阶段提交）
 
@@ -125,7 +125,7 @@ public void handleOrderCreated(OrderCreatedEvent event) {
 
 ---
 
-## Spring事务 - 核心接口
+## 2.Spring事务 - 核心接口
 
 ```java
 // 事务管理的核心入口
@@ -156,7 +156,7 @@ public interface TransactionStatus {
 
 ---
 
-## Spring事务 - 管理器
+## 3.Spring事务 - 管理器
 
 ```java
 // JDBC 事务（最常用）
@@ -171,7 +171,7 @@ public class JtaTransactionManager implements PlatformTransactionManager
 
 ---
 
-## Spring事务 - 传播行为
+## 4.Spring事务 - 传播行为
 
 传播行为定义了当一个事务方法被另一个事务方法调用时，事务如何传播。
 
@@ -209,7 +209,7 @@ public void methodB() {
 
 ---
 
-## Spring事务 - 隔离级别
+## 5.Spring事务 - 隔离级别
 
 | 隔离级别 | 脏读 | 不可重复读 | 幻读 | 说明 |
 |----------|------|----------|------|------|
@@ -222,7 +222,7 @@ public void methodB() {
 
 ---
 
-## @Transactional 工作原理
+## 6.@Transactional 工作原理
 
 代理机制：Spring AOP 创建代理对象拦截方法调用
 
@@ -277,7 +277,7 @@ public void methodB() {
 
 ---
 
-## @Transactional 失效场景（面试高频）
+## 7.@Transactional 失效场景（面试高频）
 
 | 失效场景 | 原因 | 解决方案 |
 |----------|------|----------|
@@ -319,7 +319,7 @@ public class OrderService {
 
 ---
 
-## Spring事务 - rollbackFor 配置
+## 8.Spring事务 - rollbackFor 配置
 
 ```java
 // 默认：只回滚 RuntimeException 和 Error
@@ -335,7 +335,7 @@ public void method() { ... }
 public void method() { ... }
 ```
 
-## 本地事务表
+## 9.本地事务表
 
 **核心思想**：将分布式事务拆解为本地事务 + 异步消息，通过本地消息表记录事务状态，配合定时任务补偿，达到最终一致性。
 
@@ -381,7 +381,7 @@ CREATE TABLE local_message (
 ![本地事务表.png](/asserts/images/2025-11-13-事务/本地事务表.png)
 
 
-## RocketMQ 事务消息
+## 10.RocketMQ 事务消息
 
 **核心思想**：RocketMQ 事务消息通过**半消息（Half Message）+ 事务回查**机制，确保本地事务执行与消息发送的原子性。本质上是一种二阶段提交的变体。
 
@@ -452,6 +452,5 @@ producer.sendMessageInTransaction(msg, orderParam);
 **优缺点**：
 - 优点：解耦了业务与消息发送的强一致要求，无需本地消息表，性能好
 - 缺点：依赖 RocketMQ 中间件，回查逻辑需要业务方实现，仅保证生产端原子性
-
 
 
