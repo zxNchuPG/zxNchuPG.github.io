@@ -1,0 +1,802 @@
+---
+layout:      post
+title:       "Grafana 深度学习笔记"
+subtitle:    "从数据源、Panel、Variables、Explore、Alerting 到 Provisioning，系统理解 Grafana"
+author:      "Ekko"
+header-img:  "img/bg/bg-scattered.png"
+catalog:     true
+tags:
+  - 学习笔记
+  - Grafana
+  - 可观测性
+  - Prometheus
+  - Dashboard
+---
+
+> 这篇笔记以 Grafana 官方文档为主线整理，目标不是只会“连上 Prometheus 画个图”，而是系统理解 Grafana 的定位、数据源模型、面板系统、变量体系、Explore、告警和 as-code 管理。
+
+> Grafana Data Sources: `https://grafana.com/docs/grafana/latest/datasources/`
+
+> Grafana Panels and Visualizations: `https://grafana.com/docs/grafana/latest/panels-visualizations/`
+
+> Grafana Variables: `https://grafana.com/docs/grafana/latest/visualizations/dashboards/variables/add-template-variables/`
+
+> Grafana Alerting: `https://grafana.com/docs/grafana/latest/alerting/`
+
+> Grafana Provisioning: `https://grafana.com/docs/grafana/latest/administration/provisioning/`
+
+[TOC]
+
+---
+
+## 1. Grafana 是什么
+
+一句最准确也最实用的话：
+
+- `Grafana` 是一个面向观测数据的查询、可视化、探索与协作平台
+
+它自己通常不负责成为“指标原始存储后端”，而是：
+
+- 连接数据源
+- 发起查询
+- 把结果可视化
+- 让人更高效地观察系统
+
+Grafana 官方文档对 data source 的定义非常清楚：
+
+- data source 是一个连接到后端存储的入口
+- Grafana 会查询这些后端拿到 metrics、logs、traces、profiles，再进行展示
+
+所以最核心的一点是：
+
+- Grafana 不是“存数据的地方”
+- Grafana 是“把不同数据源组织成可观测界面的地方”
+
+---
+
+## 2. Grafana 不是什么
+
+### 2.1 它不是 Prometheus
+
+Prometheus 更偏：
+
+- 指标采集
+- 时序存储
+- PromQL 查询
+- 规则评估
+
+Grafana 更偏：
+
+- 展示
+- 交互式查询
+- 仪表盘组织
+- 多数据源观察
+
+### 2.2 它不是数据库
+
+Grafana 官方文档明确说：
+
+- data source 才是数据真正所在的 backend
+
+Grafana 只是：
+
+- 把查询发过去
+- 接结果回来
+- 在 UI 中呈现
+
+### 2.3 它也不是“只能看 metrics”
+
+很多人第一次接触 Grafana 是配 Prometheus，所以误以为：
+
+- Grafana = Metrics Dashboard
+
+其实它能连很多类型的数据源，例如：
+
+- Prometheus
+- Loki
+- Tempo
+- Elasticsearch
+- PostgreSQL
+- MySQL
+- 云监控服务
+
+这意味着 Grafana 的价值并不局限在：
+
+- 指标画图
+
+而是：
+
+- 统一观测入口
+
+---
+
+## 3. 为什么 Grafana 很重要
+
+如果说 Prometheus 解决的是：
+
+- 数据怎么采、怎么存、怎么算
+
+Grafana 解决的就是：
+
+- 人怎么高效理解这些数据
+
+### 3.1 把“会查”变成“能看懂”
+
+很多系统其实不是没数据，而是：
+
+- 数据存在，但大家看不懂
+- 数据很多，但切换成本高
+- 查询很强，但无法形成共享视图
+
+Grafana 的价值就在这里：
+
+- 把零散查询变成持续可用的观察界面
+
+### 3.2 多数据源是它的关键优势
+
+Grafana 官方文档强调：
+
+- 一个 data source 就是一个后端连接
+
+而 Grafana 可以同时挂多个 data source。
+
+这带来的工程价值很大：
+
+- 一张 dashboard 里同时看 metrics 和 logs
+- 一个排障流程里同时看 Prometheus 和 SQL
+- 同一个团队统一在一个入口观察不同系统
+
+### 3.3 它是“团队协作层”
+
+Prometheus 很强，但原生表达式浏览器更像：
+
+- 专业工程师临时调试工具
+
+Grafana 更像：
+
+- 团队可共享的可观测界面
+
+它更适合承载：
+
+- 日常看板
+- 值班大盘
+- 业务监控盘
+- 管理层总览
+
+---
+
+## 4. Grafana 的核心对象
+
+理解 Grafana 最好先理解 5 个核心对象：
+
+- Data source
+- Dashboard
+- Panel
+- Variable
+- Explore
+
+### 4.1 Data source
+
+Grafana 官方文档定义得很直接：
+
+- data source 是连接数据存储后端的入口
+
+每个 data source 会提供：
+
+- 自己的 query editor
+- 自己的数据查询能力
+
+所以 Grafana 查询 Prometheus 用的是：
+
+- PromQL
+
+查询 SQL 数据库用的是：
+
+- SQL
+
+Grafana 不会把这些语言统一成一个语言，它更像：
+
+- 给不同后端提供统一的观察界面
+
+### 4.2 Dashboard
+
+Dashboard 可以理解成：
+
+- 一组围绕某个主题组织起来的 panel 集合
+
+例如：
+
+- 服务总览 dashboard
+- JVM dashboard
+- Redis dashboard
+- 业务订单 dashboard
+
+### 4.3 Panel
+
+Grafana 官方文档明确说：
+
+- panel 是 dashboard 的基本构建块
+- 每个 panel 由 query 和 visualization 组成
+
+这是一个很重要的认知：
+
+- 一个 panel 不等于一个图
+- 它是“查询结果 + 展示方式”的组合
+
+### 4.4 Variable
+
+Variable 的作用是：
+
+- 让 dashboard 变成可切换、可复用、可参数化的界面
+
+例如：
+
+- 切环境
+- 切集群
+- 切实例
+- 切命名空间
+
+### 4.5 Explore
+
+Explore 是 Grafana 非常有价值、但很多初学者忽略的能力。
+
+它更像：
+
+- 临时分析台
+
+适合：
+
+- 现场排障
+- 快速试查询
+- 顺着标签钻取数据
+
+它不是固定 dashboard，而是：
+
+- 即席探索空间
+
+---
+
+## 5. Data Source 是 Grafana 的入口
+
+### 5.1 为什么 data source 不是小概念
+
+Grafana 官方文档把 data source 定义为：
+
+- 查询、面板、Explore、Alerting 的输入来源
+
+这说明它不是“顺手配置一下的连接”，而是整个 Grafana 的基础能力入口。
+
+一个 data source 配好后，Grafana 可以基于它：
+
+- 写 panel query
+- 在 Explore 中临时查
+- 建 alert rule
+
+### 5.2 每个 data source 都有自己的 query editor
+
+这一点非常关键。
+
+Grafana 不会把 Prometheus、Loki、SQL 的语法硬统一。
+
+它的设计更偏：
+
+- 用统一 UI 包裹不同后端的原生查询能力
+
+所以用 Grafana，不等于你不用学后端查询语言。
+
+相反更准确的理解是：
+
+- Grafana 帮你统一入口
+- 但真正的查询语义仍然属于对应后端
+
+### 5.3 默认数据源和权限
+
+Grafana 官方文档提到：
+
+- 可以设默认 data source
+- 组织管理员才能添加或删除 data source
+
+这也说明 data source 管理是一个：
+
+- 平台级配置行为
+
+不是随便哪个用户都应该能改的。
+
+---
+
+## 6. Panel 和 Visualization 怎么理解
+
+Grafana 官方文档明确说明：
+
+- panel 是 query + visualization
+
+### 6.1 一个 panel 的本质
+
+一个 panel 至少做了三件事：
+
+1. 发查询
+2. 可选地对结果做 transform
+3. 选择可视化方式呈现
+
+所以真正的思考顺序最好是：
+
+- 我想回答什么问题
+- 需要什么查询结果
+- 什么图最适合表达这个结果
+
+而不是：
+
+- 先随手选个漂亮图表再硬凑数据
+
+### 6.2 图表类型不是越花越高级
+
+Grafana 的可视化很多，但选择标准不是“炫”，而是“信息表达最清楚”。
+
+一个简单经验：
+
+- 趋势变化：Time series
+- 单值概览：Stat
+- 占比或阈值：Gauge / Bar gauge
+- 排名与 TopN：Bar chart / Table
+- 明细与原始值：Table
+- 分布：Heatmap
+
+### 6.3 标准化配置很重要
+
+Grafana panel 提供很多标准配置，例如：
+
+- unit
+- display name
+- color
+- thresholds
+- field overrides
+
+真正成熟的 dashboard，价值很大一部分不在 query 本身，而在：
+
+- 单位统一
+- 阈值明确
+- 图例可读
+- 展示一致
+
+---
+
+## 7. Variable 是 Dashboard 复用能力的关键
+
+Grafana 官方文档列出了多种 variable 类型，例如：
+
+- Query
+- Custom
+- Text box
+- Constant
+- Data source
+- Interval
+- Ad hoc filters
+
+### 7.1 Variable 解决什么问题
+
+如果没有 variable，你通常需要：
+
+- 每个环境复制一份 dashboard
+- 每个集群复制一份 dashboard
+- 每个实例复制一份 dashboard
+
+这样很快就会：
+
+- 仪表盘爆炸
+- 版本失控
+- 修改成本高
+
+有了 variable 后，你就能让一个 dashboard 支持：
+
+- 环境切换
+- 集群切换
+- 实例切换
+
+### 7.2 最常用的几类 variable
+
+#### Query variable
+
+最常用。
+
+它会从 data source 动态查出可选值。
+
+例如在 Prometheus 里：
+
+```promql
+label_values(up, job)
+```
+
+#### Data source variable
+
+适合：
+
+- 在多个 Prometheus 或多个环境数据源之间切换
+
+#### Interval variable
+
+适合：
+
+- 控制查询窗口和聚合粒度
+
+### 7.3 Variable 不是越多越好
+
+过多 variable 会让 dashboard 变得：
+
+- 操作复杂
+- 初学者不敢用
+- 查询链路过重
+
+更好的原则通常是：
+
+- 只保留最核心的切换维度
+
+---
+
+## 8. Explore 是排障效率提升器
+
+很多团队只会做 dashboard，却没把 Explore 用起来。
+
+### 8.1 Explore 的定位
+
+Grafana 官方文档提到：
+
+- data source 可以被 Explore 使用
+
+它更像：
+
+- 实时试验查询的工作台
+
+### 8.2 它和 Dashboard 的区别
+
+Dashboard 偏：
+
+- 固定视角
+- 长期复用
+- 团队共享
+
+Explore 偏：
+
+- 临时查询
+- 快速下钻
+- 排障过程中的动态探索
+
+### 8.3 什么场景最适合 Explore
+
+- 线上异常刚发生
+- 某个 panel 看起来不对，想调 PromQL
+- 想先验证查询再决定是否做成正式 dashboard
+
+所以一个成熟团队的工作流常常是：
+
+- 先在 Explore 里试出来
+- 再把稳定结论固化进 Dashboard
+
+---
+
+## 9. Transformations 是 Grafana 的中层能力
+
+很多人以为 Grafana 只是“后端怎么返回，它就怎么画”。其实不完全是。
+
+Grafana 官方文档在 panel 体系里明确提到：
+
+- 可以 query and transform data
+
+### 9.1 Transformation 的作用
+
+它适合：
+
+- 合并多个查询结果
+- 排序
+- 重命名字段
+- 过滤字段
+- 做表格拼装
+
+### 9.2 它不应该替代后端逻辑
+
+这是很关键的边界。
+
+Transformation 很有用，但不要把它用成：
+
+- 复杂业务计算引擎
+
+更好的原则通常是：
+
+- 业务语义和重计算尽量放后端或 recording rules
+- Grafana transformation 负责最后一层展示整理
+
+否则你的 dashboard 会变成：
+
+- 只有创建者自己看得懂
+
+---
+
+## 10. Grafana Alerting 怎么看
+
+Grafana 官方文档说明：
+
+- Grafana Alerting 可以基于多个数据源建立查询和表达式，并统一管理告警
+
+### 10.1 它和 Prometheus Alerting 的关系
+
+这点非常容易混淆。
+
+Prometheus 的 alerting 是：
+
+- Prometheus server 周期执行 PromQL
+
+Grafana Alerting 是：
+
+- Grafana 在统一告警框架里管理来自不同数据源的规则、通知和状态
+
+### 10.2 Grafana Alerting 的优势
+
+- 多数据源
+- 统一 UI
+- 统一通知管理
+- 能和面板使用体验更接近
+
+### 10.3 但它不等于 Prometheus 规则系统
+
+你仍然要分清：
+
+- 谁在存数据
+- 谁在算表达式
+- 谁在发通知
+
+Grafana 能统一视图，但不意味着后端系统边界消失。
+
+### 10.4 工程上怎么选
+
+一个很实用的经验是：
+
+- 如果你已经高度依赖 Prometheus rule files 和 Alertmanager，Grafana 告警不一定要全盘替代
+- 如果你本身是多数据源体系，希望统一告警入口，Grafana Alerting 很有价值
+
+---
+
+## 11. Provisioning 和 As Code 是 Grafana 走向成熟的关键
+
+Grafana 官方文档明确指出：
+
+- 可以通过文件 provisioning 定义 data sources 和 dashboards
+- 这使 GitOps 更自然
+
+### 11.1 为什么不能全靠 UI 手工点
+
+小项目手工点没问题，但规模一上来会出现：
+
+- 环境间配置不一致
+- 人工修改难审计
+- dashboard 漂移
+- 迁移困难
+
+### 11.2 Provisioning 适合什么
+
+- data source
+- dashboard
+- alerting 资源
+
+### 11.3 它的真正价值
+
+- 配置可版本控制
+- 环境可复制
+- 发布可自动化
+- 平台治理更清晰
+
+### 11.4 一个工程化建议
+
+如果 Grafana 已经是团队正式平台，最好逐步走向：
+
+- data source as code
+- dashboard as code
+- alerting as code
+
+否则后期你会遇到一个经典问题：
+
+- “图是有，但没人知道是谁什么时候在 UI 里改过的”
+
+---
+
+## 12. Dashboard 设计不是拼图，而是叙事
+
+很多人用 Grafana 最大的问题不是不会点，而是：
+
+- 不会设计 dashboard
+
+### 12.1 一个好 dashboard 回答的是一组连续问题
+
+例如服务总览盘，通常应该从上到下回答：
+
+1. 流量有没有变化
+2. 错误有没有上升
+3. 时延有没有劣化
+4. 哪个实例或接口最异常
+5. 资源层是不是打满
+
+如果你的 dashboard 是一堆无关图表堆在一起，那通常说明：
+
+- 它不是观察工具，只是图表仓库
+
+### 12.2 一个常见结构
+
+服务总览类 dashboard 常见可以分 4 层：
+
+- 概览指标
+- RED 指标
+- 资源与饱和度
+- TopN / 明细下钻
+
+### 12.3 “图多”不等于“信息全”
+
+图太多通常会导致：
+
+- 扫描成本上升
+- 重点不突出
+- 值班时读图变慢
+
+更好的做法通常是：
+
+- 一页回答最核心问题
+- 细节另开 drill-down dashboard
+
+### 12.4 单位、颜色、阈值要统一
+
+例如：
+
+- 时间统一用 `ms` 或 `s`
+- 容量统一用 `bytes` 或 `MiB`
+- 绿色/黄色/红色的阈值保持一致
+
+这类细节往往比“query 会不会写”更影响 dashboard 质量。
+
+---
+
+## 13. Grafana 和 Prometheus 最容易混淆的地方
+
+### 13.1 查询写在 Grafana，不代表计算属于 Grafana
+
+比如你在 panel 里写：
+
+```promql
+rate(http_requests_total[5m])
+```
+
+看起来是 Grafana 发起的查询，但真正解释和执行这个表达式的其实是：
+
+- Prometheus
+
+Grafana 更像：
+
+- 查询发起者和结果展示者
+
+### 13.2 看到图在 Grafana，不代表数据在 Grafana
+
+数据通常在：
+
+- Prometheus
+- Loki
+- SQL
+- 其他 data source
+
+Grafana 不等于数据仓库。
+
+### 13.3 Grafana 可以建告警，不代表 Prometheus 规则就没意义了
+
+两者是不同层面的能力。
+
+选哪种，要看：
+
+- 你的后端数据源类型
+- 团队使用习惯
+- 平台治理模式
+
+---
+
+## 14. 常见误区
+
+### 14.1 把 Grafana 当数据库
+
+这是最根本的误解。
+
+### 14.2 只会导入社区 dashboard
+
+社区 dashboard 可以拿来参考，但不能替代：
+
+- 你自己的业务语义设计
+
+否则常见结果是：
+
+- 图很多
+- 关键问题一个也回答不好
+
+### 14.3 每个环境复制一套 dashboard
+
+这通常说明：
+
+- 你还没用好 variables
+
+### 14.4 把 transformation 用成业务计算引擎
+
+后期可维护性会很差。
+
+### 14.5 panel 样式五花八门、单位不统一
+
+这会导致：
+
+- 图表看起来很丰富
+- 实际读起来很累
+
+### 14.6 只会做 dashboard，不会用 Explore
+
+排障效率会明显受限。
+
+### 14.7 完全手工管理 data source 和 dashboard
+
+一旦环境增多、团队变大，就会暴露出：
+
+- 配置漂移
+- 不可审计
+- 难复制
+
+---
+
+## 15. 一个更工程化的 Grafana 使用方式
+
+我比较推荐的心智模型是：
+
+### 15.1 把 Grafana 当成观测界面层
+
+它负责：
+
+- 查询入口
+- 图表承载
+- 团队共享
+- 现场排障
+
+### 15.2 把后端系统当成语义来源
+
+- Metrics 语义来自 Prometheus / Micrometer
+- 日志语义来自 Loki / ES
+- Trace 语义来自 Tempo / Jaeger
+
+Grafana 不替代它们，而是把它们组织起来。
+
+### 15.3 把 Dashboard 当产品，而不是临时截图
+
+好的 dashboard 应该：
+
+- 可复用
+- 可维护
+- 可版本化
+- 能支撑真实值班和排障
+
+---
+
+## 16. 这篇笔记最该带走的结论
+
+1. Grafana 的核心定位是查询、可视化、探索和协作，不是存储后端。
+2. Data source 是 Grafana 的基础对象，它决定查询能力来源。
+3. Panel 的本质是 query + visualization，不只是“一个图”。
+4. Variables 决定 dashboard 能否复用、参数化和规模化。
+5. Explore 是排障工具，不要只会做固定 dashboard。
+6. Transformation 适合做展示整理，不适合承载重业务逻辑。
+7. Grafana Alerting 是统一告警入口，但不等于 Prometheus 规则系统。
+8. 真正成熟的 Grafana 应该走 provisioning / as-code。
+9. 好 dashboard 的核心是回答问题和讲清状态，不是堆很多图。
+10. Grafana 和 Prometheus 是协作关系，不是替代关系。
+
+---
+
+## 17. 适合继续阅读的下一篇
+
+读完这篇，下一篇最适合接的是：
+
+- `Metrics、Prometheus、Grafana 三者关系笔记`
+
+因为到这一步，最值得彻底讲清楚的就是：
+
+- Metrics 是什么抽象
+- Prometheus 是哪个层
+- Grafana 又是哪个层
+- 为什么三者经常一起出现，但绝不能混成一个概念
+

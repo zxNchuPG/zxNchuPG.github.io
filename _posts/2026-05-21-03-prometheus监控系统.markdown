@@ -1,0 +1,1075 @@
+---
+layout:      post
+title:       "Prometheus 深度学习笔记"
+subtitle:    "从数据模型、拉取架构、PromQL、规则系统到 Pushgateway / Remote Write，系统理解 Prometheus"
+author:      "Ekko"
+header-img:  "img/bg/bg-scattered.png"
+catalog:     true
+tags:
+  - 学习笔记
+  - Prometheus
+  - Metrics
+  - PromQL
+  - 可观测性
+---
+
+> 这篇笔记以 Prometheus 官方文档为主线整理，目标不是只会“把 `/metrics` 抓起来”，而是把 Prometheus 的数据模型、抓取架构、规则系统、查询语义和常见误区连成一个完整脑图。
+
+> Prometheus Data Model: `https://prometheus.io/docs/concepts/data_model/`
+
+> Prometheus Jobs and Instances: `https://prometheus.io/docs/concepts/jobs_instances/`
+
+> PromQL Basics: `https://prometheus.io/docs/prometheus/latest/querying/basics/`
+
+> Prometheus Configuration: `https://prometheus.io/docs/prometheus/latest/configuration/configuration/`
+
+> Recording Rules: `https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/`
+
+> Alerting Rules: `https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/`
+
+> When to use the Pushgateway: `https://prometheus.io/docs/practices/pushing/`
+
+[TOC]
+
+---
+
+## 1. Prometheus 是什么
+
+最简洁但不失真的定义是：
+
+- `Prometheus` 是一个面向数值型时序数据的监控与告警系统
+
+它至少同时承担了 4 个角色：
+
+- 指标采集器
+- 本地时序数据库
+- 查询引擎
+- 规则评估器
+
+很多人第一次接触时，只记住了：
+
+- 它会抓 `/metrics`
+
+但这只是入口。真正要理解的是：
+
+- 它不是单纯 exporter 集合
+- 也不是单纯图表后端
+- 更不是“Grafana 的数据源而已”
+
+它本身就是：
+
+- 监控系统的核心计算与存储中枢
+
+---
+
+## 2. Prometheus 不是什么
+
+理解边界比理解功能更重要。
+
+### 2.1 它不是日志系统
+
+Prometheus 处理的是：
+
+- 数值型、可聚合、可采样的时序数据
+
+它不适合存：
+
+- 文本日志
+- 请求明细
+- 原始事件详情
+
+日志要交给：
+
+- ELK / OpenSearch
+- Loki
+- 其他日志系统
+
+### 2.2 它不是 Trace 系统
+
+Prometheus 能告诉你：
+
+- 整体错误率升没升
+- p99 抖没抖
+- 哪个实例的请求量异常
+
+但它不能像 Trace 那样回答：
+
+- 某个请求具体经过了哪些服务
+- 哪一段 span 慢了
+
+### 2.3 它也不是可视化平台
+
+Prometheus 自带表达式浏览器和简单图表，但它的定位不是高级可视化。
+
+真正复杂的面板、变量、多数据源联动、丰富图形展示，通常交给：
+
+- `Grafana`
+
+所以后面你会发现：
+
+- Prometheus 负责“采、存、算、告”
+- Grafana 更偏“查、看、呈现、协作”
+
+---
+
+## 3. 为什么 Prometheus 会成为事实标准
+
+它流行不是因为“最万能”，而是因为它在云原生场景里做了几件特别对的事。
+
+### 3.1 数据模型简单但足够强
+
+Prometheus 官方文档强调：
+
+- 它所有数据本质上都是 time series
+- 一条时序由指标名和一组标签唯一标识
+
+这种模型的好处是：
+
+- 足够统一
+- 足够适合聚合
+- 足够适合服务化系统
+
+### 3.2 默认拉取模型很适合动态环境
+
+Prometheus 的核心是：
+
+- server 主动去 scrape targets
+
+这种 pull 模型对容器化、服务发现、弹性扩缩容很友好，因为中心节点始终掌握：
+
+- 当前有哪些目标
+- 哪些目标正在健康暴露指标
+
+### 3.3 PromQL 很强
+
+Prometheus 能成为核心，不只是因为能采集，还因为：
+
+- 它能把查询、聚合、规则、告警全部统一在 PromQL 上
+
+也就是说：
+
+- 你看图用 PromQL
+- 录规则用 PromQL
+- 报警也用 PromQL
+
+这让整个监控栈的认知成本下降很多。
+
+### 3.4 单机模型简单可靠
+
+Prometheus 核心 server 是单二进制、单节点本地 TSDB。
+
+这不是缺点，而是它的重要设计哲学：
+
+- 先把单点系统做得简单、可靠、可运维
+
+后续再通过：
+
+- federation
+- remote write
+- 外部长存储
+
+去扩展，而不是一开始就做成极重的分布式数据库。
+
+---
+
+## 4. Prometheus 的核心数据模型
+
+这一节是最底层认知。
+
+### 4.1 一切都是 time series
+
+Prometheus 官方原话可以概括成：
+
+- 它存储的所有数据，都是带时间戳的 time series
+
+一条时间序列由下面两部分唯一确定：
+
+- 指标名
+- 标签集合
+
+例如：
+
+```text
+http_requests_total{job="api", instance="10.0.0.1:8080", method="GET", code="200"}
+```
+
+一旦标签变了，就已经不是同一条序列了。
+
+### 4.2 标签不是描述信息，而是维度
+
+这个观念非常重要。
+
+标签的意义是：
+
+- 用一组有限维度去切分同一个指标
+
+例如：
+
+- `method`
+- `code`
+- `job`
+- `instance`
+
+都非常适合作为维度，因为它们通常是：
+
+- 有限集合
+- 需要聚合分析
+
+### 4.3 高基数是 Prometheus 最常见的敌人
+
+Prometheus 官方文档虽然讲的是数据模型，但它背后最关键的工程含义是：
+
+- label 值变化会创建新 time series
+
+因此如果你把这些东西放进标签：
+
+- `userId`
+- `traceId`
+- `orderId`
+- 原始 URL
+
+就会造成：
+
+- 序列数爆炸
+- 内存压力上升
+- 查询性能下降
+- 写入成本暴涨
+
+所以 Prometheus 学习到后面，你会发现很多问题其实都不是 PromQL 不会写，而是：
+
+- 序列设计一开始就错了
+
+### 4.4 指标名和标签名也有规范
+
+Prometheus 官方文档建议：
+
+- 指标名推荐匹配 `[a-zA-Z_:][a-zA-Z0-9_:]*`
+- 标签名推荐匹配 `[a-zA-Z_][a-zA-Z0-9_]*`
+
+此外一个容易被忽视的点是：
+
+- 冒号 `:` 保留给 recording rules 生成的指标名
+
+所以业务直接埋点时，不要乱用冒号。
+
+---
+
+## 5. Jobs、Instances、Target 到底是什么
+
+这几个词在 Prometheus 里有明确语义。
+
+### 5.1 Instance
+
+Prometheus 官方定义里：
+
+- 一个可被 scrape 的 endpoint 叫做 instance
+
+通常它对应：
+
+- 一个进程实例
+- 一个 exporter 实例
+- 一个暴露 `/metrics` 的服务地址
+
+### 5.2 Job
+
+- 一组有相同职责的 instances 组成一个 job
+
+例如：
+
+- `api-server`
+- `order-service`
+- `node-exporter`
+
+### 5.3 自动附加的标签
+
+Prometheus 在抓取时会自动附加至少两个重要标签：
+
+- `job`
+- `instance`
+
+这两个标签对后续查询非常关键。
+
+### 5.4 自动生成的 scrape 元指标
+
+Prometheus 官方文档还提到，每次抓取会自动产生一些非常重要的时间序列：
+
+- `up`
+- `scrape_duration_seconds`
+- `scrape_samples_scraped`
+- `scrape_samples_post_metric_relabeling`
+- `scrape_series_added`
+
+其中最常用的是：
+
+- `up`
+
+它的意义非常朴素但非常关键：
+
+- `1` 表示这次 scrape 成功
+- `0` 表示 scrape 失败
+
+这就是为什么 Prometheus 的 pull 模型天然就能附带：
+
+- “目标活着没”
+
+这种基础健康语义。
+
+---
+
+## 6. Prometheus 的工作流程
+
+可以把它理解成下面这条链路：
+
+```text
+服务 / exporter 暴露 /metrics
+    -> Prometheus 通过 service discovery 找到 targets
+    -> 定期 scrape
+    -> 写入本地 TSDB
+    -> PromQL 查询
+    -> recording rules / alerting rules 评估
+    -> Alertmanager 路由通知
+```
+
+### 6.1 暴露指标
+
+被监控对象要么自己暴露：
+
+- `/metrics`
+
+要么通过 exporter 暴露。
+
+例如：
+
+- `node_exporter`
+- `mysqld_exporter`
+- `blackbox_exporter`
+
+### 6.2 发现目标
+
+Prometheus 会根据配置和服务发现机制，决定：
+
+- 当前有哪些 target
+
+这可以来自：
+
+- static configs
+- Kubernetes
+- Consul
+- file_sd
+- 其他 SD 机制
+
+### 6.3 定期抓取
+
+Prometheus 按固定 interval 发 HTTP 请求去抓指标。
+
+注意这不是被动接收，而是：
+
+- 主动拉取
+
+### 6.4 写入本地 TSDB
+
+抓到的数据被解析成样本并写入本地时序数据库。
+
+### 6.5 规则评估
+
+Prometheus 会按 `evaluation_interval` 周期执行 recording rules 和 alerting rules。
+
+### 6.6 对外查询和报警
+
+- Grafana 通过 PromQL 查询 Prometheus
+- Alertmanager 接收 Prometheus 发送的告警事件并负责路由
+
+---
+
+## 7. 拉取模型为什么重要
+
+Prometheus 的很多设计都围绕 pull model。
+
+### 7.1 Pull 模型的优点
+
+- 中心端统一掌握抓取节奏
+- 目标是否可达天然可见
+- 对短生命周期实例更容易做统一发现
+- 更容易结合服务发现和 relabeling
+
+### 7.2 Pull 模型不是绝对真理
+
+它也有边界：
+
+- 目标必须能被 Prometheus 访问
+- NAT / 防火墙 / 跨网段场景可能不方便
+- 纯批处理短任务天生不适合长期暴露 endpoint
+
+### 7.3 为什么官方不鼓励到处用 Pushgateway
+
+Prometheus 官方文档对 Pushgateway 的态度其实很明确：
+
+- 只推荐在有限场景使用
+
+原因包括：
+
+- Pushgateway 会变成额外单点
+- 会丢掉 `up` 这种自动健康语义
+- 它不会自动忘记旧 series，容易残留脏数据
+
+官方认为它最合理的使用场景通常是：
+
+- service-level batch job
+
+也就是：
+
+- 面向整个服务的短时批任务结果上报
+
+而不是：
+
+- 普通在线服务也统统改成 push
+
+### 7.4 替代思路
+
+官方文档还提到：
+
+- 如果是机器级批任务，更适合 `node_exporter` 的 textfile collector
+- 如果是网络边界导致拉不到，优先考虑让 Prometheus 部署到目标网络内
+
+这说明一个原则：
+
+- 遇到 pull 不方便，不要第一反应就是全面改 push
+
+---
+
+## 8. TSDB 怎么理解
+
+### 8.1 Prometheus 自带本地 TSDB
+
+Prometheus 不是“只采不存”，它有自己的本地时序数据库。
+
+这个 TSDB 的特点是：
+
+- 针对最近时间窗口的时序数据做了高效优化
+- 适合高频写入、按时间范围查询
+
+### 8.2 Prometheus 更偏近期热数据
+
+工程上通常把它理解成：
+
+- 最近一段时间的核心观测库
+
+而不是：
+
+- 无限期长期归档仓库
+
+这也是为什么实际生产里经常会结合：
+
+- `remote_write`
+- 长期存储后端
+
+### 8.3 Prometheus 是单机 TSDB，不是无限水平扩展数据库
+
+这里非常容易产生误解。
+
+Prometheus 非常强，但它的核心 server 设计并不是：
+
+- 一个天然无限水平扩展的分布式写入集群
+
+它更像：
+
+- 每个 Prometheus server 负责自己的一块监控职责
+
+当规模变大时，再通过：
+
+- federation
+- remote write
+- 外部兼容后端
+
+来做聚合或长存储。
+
+---
+
+## 9. 配置文件怎么读
+
+Prometheus 官方文档强调：
+
+- flags 配置不可热更新的系统参数
+- YAML 配置定义抓取 jobs、rule files 等可热更新内容
+
+### 9.1 两类配置来源
+
+- 启动参数：例如数据目录、存储相关参数
+- 配置文件：例如 `scrape_configs`、`rule_files`
+
+### 9.2 配置支持热加载
+
+官方文档明确提到：
+
+- 可以通过 `SIGHUP`
+- 或 `POST /-/reload`
+
+触发配置重载。
+
+这个能力很实用，因为它意味着：
+
+- 目标发现和规则文件可以在不停服务的情况下更新
+
+### 9.3 最核心的配置块
+
+一个典型配置大致包含：
+
+```yaml
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "rules/*.yml"
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+```
+
+重点是理解每一块职责：
+
+- `global`：全局抓取和评估默认值
+- `rule_files`：录制规则和报警规则文件
+- `scrape_configs`：采集目标定义
+
+### 9.4 `scrape_interval` 和 `evaluation_interval`
+
+这两个参数经常被混淆：
+
+- `scrape_interval`：多久抓一次指标
+- `evaluation_interval`：多久评估一次规则
+
+它们可以相同，也可以不同。
+
+工程上更重要的是：
+
+- 你要明确规则评估依赖于采集数据是否已经到位
+
+否则会出现：
+
+- 报警窗口设置看起来正确，但数据还没到
+
+---
+
+## 10. Service Discovery 和 Relabeling 是生产环境关键
+
+很多入门文章只停在 `static_configs`，但真实生产里 Prometheus 很大一部分威力来自：
+
+- service discovery
+- relabeling
+
+### 10.1 为什么需要服务发现
+
+在容器化和云环境里，实例不是静态的。
+
+实例可能：
+
+- 频繁扩缩容
+- 重建
+- 改 IP
+- 重新调度
+
+如果你完全手写静态 target，很快就会失控。
+
+### 10.2 relabeling 的本质
+
+relabeling 可以理解成：
+
+- 对目标标签和指标标签做加工、过滤、改写
+
+它是 Prometheus 非常强但也最容易写复杂的能力之一。
+
+### 10.3 工程上它解决什么
+
+- 过滤不需要采集的 target
+- 重写 `job` / `instance`
+- 从服务发现元数据里提取业务标签
+- 丢弃高风险标签
+
+所以生产里经常真正决定“这个监控体系是否能规模化”的，不只是 PromQL，而是：
+
+- 你的 relabel 设计是否干净
+
+---
+
+## 11. PromQL 是 Prometheus 的灵魂
+
+如果说 exporter 是 Prometheus 的入口，PromQL 就是它的大脑。
+
+Prometheus 官方文档强调：
+
+- PromQL 支持实时选择和聚合 time series
+
+### 11.1 Instant Query 和 Range Query
+
+PromQL 有两个基本查询方式：
+
+- instant query：某个时间点的值
+- range query：一段时间范围内按步长多次求值
+
+这也是为什么同一个表达式：
+
+- 在表格里看是一个点
+- 在图表里看是一条线
+
+### 11.2 选择器语义
+
+最基础的选择器是：
+
+```promql
+http_requests_total
+```
+
+带标签筛选：
+
+```promql
+http_requests_total{job="api", method="GET"}
+```
+
+### 11.3 PromQL 不是 SQL
+
+它更像：
+
+- 面向时间序列的函数式查询语言
+
+你最常见的不是 `join table`，而是：
+
+- 选择
+- 聚合
+- 速率计算
+- 时间窗口函数
+
+### 11.4 Counter 一定要会 `rate`
+
+例如：
+
+```promql
+rate(http_requests_total[5m])
+```
+
+这是因为 Counter 通常看的不是绝对值，而是：
+
+- 增长速率
+
+### 11.5 聚合的常见形式
+
+例如：
+
+```promql
+sum by (job) (rate(http_requests_total[5m]))
+avg by (instance) (process_cpu_seconds_total)
+max without (instance) (jvm_memory_used_bytes)
+```
+
+PromQL 的日常工作，大量都在做：
+
+- label 维度上的聚合和收敛
+
+### 11.6 Histogram 查询是进阶分水岭
+
+例如看 p95：
+
+```promql
+histogram_quantile(
+  0.95,
+  sum by (le) (rate(http_request_duration_seconds_bucket[5m]))
+)
+```
+
+这类查询的关键不只是会背，而是理解：
+
+- 先对 bucket 做聚合
+- 再算 quantile
+
+这也是为什么 Prometheus 生态里 Histogram 很重要。
+
+---
+
+## 12. Recording Rules 是性能和可读性的拐点
+
+Prometheus 官方文档对 recording rules 的定义很清楚：
+
+- 预先计算常用或昂贵表达式，并把结果存成新的 time series
+
+### 12.1 为什么需要 recording rules
+
+因为很多表达式会被反复查询：
+
+- 仪表盘反复刷
+- 多个图反复用
+- 告警规则也依赖
+
+如果每次都临时算，会带来：
+
+- 查询成本高
+- 仪表盘慢
+- 告警表达式难读
+
+### 12.2 recording rule 的价值
+
+- 预聚合
+- 提升查询性能
+- 统一口径
+- 让 dashboard 和 alert 直接复用
+
+### 12.3 一个简单例子
+
+```yaml
+groups:
+  - name: api.rules
+    rules:
+      - record: job:http_requests:rate5m
+        expr: sum by (job) (rate(http_requests_total[5m]))
+```
+
+这样后面无论 dashboard 还是 alert 都可以直接用：
+
+- `job:http_requests:rate5m`
+
+### 12.4 recording rules 不是越多越好
+
+它是非常有价值的能力，但也要节制。
+
+如果滥用，会出现：
+
+- 规则过多
+- 额外 series 增长
+- 口径难维护
+
+所以更好的原则是：
+
+- 对高频复用、计算重、口径稳定的表达式录制
+
+---
+
+## 13. Alerting Rules 怎么理解
+
+Prometheus 的 alerting rules 其实就是：
+
+- 定期用 PromQL 判断某条件是否成立
+
+### 13.1 一个基本结构
+
+官方格式大致如下：
+
+```yaml
+groups:
+  - name: alert.rules
+    rules:
+      - alert: HighErrorRate
+        expr: sum(rate(http_requests_total{code=~"5.."}[5m])) > 10
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "5xx 错误率过高"
+```
+
+### 13.2 `for` 非常重要
+
+`for` 的语义是：
+
+- 条件持续满足多久后，告警才真正 firing
+
+它的作用是：
+
+- 避免瞬时抖动
+
+### 13.3 `keep_firing_for`
+
+官方文档还支持：
+
+- `keep_firing_for`
+
+它控制：
+
+- 条件恢复后告警还维持 firing 多久
+
+这个参数有时对抖动场景很有帮助，但大多数团队更常用的仍是先把：
+
+- 条件表达式
+- 时间窗口
+- `for`
+
+设计好。
+
+### 13.4 Alertmanager 不是同一个组件
+
+Prometheus 负责：
+
+- 计算是否触发告警
+
+Alertmanager 负责：
+
+- 去重
+- 分组
+- 静默
+- 路由
+- 通知
+
+这两个经常被混成一个东西，但职责其实不同。
+
+---
+
+## 14. 规则执行也有成本和坑
+
+Prometheus 官方文档在 recording rules 里专门提到几个容易忽视的点。
+
+### 14.1 规则组按间隔评估
+
+规则是按 group 周期执行的，同组规则共享评估时间。
+
+### 14.2 规则过慢会跳过后续评估
+
+官方文档明确说：
+
+- 如果一个 rule group 还没执行完，下次该执行时会被跳过
+
+这会带来：
+
+- 规则结果缺口
+- 告警延迟
+
+这说明一件事：
+
+- PromQL 不只是写对，还要写得足够高效
+
+### 14.3 rule group 的设计要有层次
+
+工程上通常应该：
+
+- 把基础预聚合放在 recording rules
+- 告警尽量依赖已经录好的指标
+
+不要把特别重的表达式直接层层套进告警。
+
+---
+
+## 15. Pushgateway 要非常克制地用
+
+这个单独拎出来再强调一次，是因为太多人把它用成反模式。
+
+### 15.1 为什么它危险
+
+Prometheus 官方文档明确指出几个核心问题：
+
+- 会成为单点故障或瓶颈
+- 失去 `up` 这类自动健康检查能力
+- 不会自动清理失效实例的历史 pushed metrics
+
+### 15.2 真正合理的使用场景
+
+通常只有：
+
+- 服务级短任务
+
+例如：
+
+- 每天一次的全局结算任务
+- 每小时一次的全服务数据清理任务
+
+这类任务结束就没进程了，但你又想保留：
+
+- 本次任务是否成功
+- 处理了多少数据
+- 耗时多少
+
+### 15.3 不合理的用法
+
+- 在线服务也走 push
+- 每台机器 cron 都往 Pushgateway 推
+- 用 Pushgateway 代替正常 target scrape
+
+这类设计后面一般都会带来：
+
+- stale metrics
+- lifecycle 混乱
+- 监控语义失真
+
+---
+
+## 16. Remote Write、Federation、长存储怎么区分
+
+这是 Prometheus 中高级阶段常见混淆点。
+
+### 16.1 Federation
+
+federation 更像：
+
+- 一个 Prometheus 从另一个 Prometheus 拉一部分聚合结果
+
+它适合：
+
+- 分层汇总
+- 上层只关心一部分指标
+
+### 16.2 Remote Write
+
+`remote_write` 更像：
+
+- 把采集到的数据副本持续推送到外部兼容后端
+
+它通常用于：
+
+- 长期存储
+- 全局统一查询
+- 多集群汇聚
+
+### 16.3 不要把 Prometheus 本地 TSDB 当无限长期仓库
+
+工程上更稳妥的理解是：
+
+- Prometheus 本地库负责近期高价值观测
+- 长期保留和大规模集中查询通常交给远端后端
+
+### 16.4 Agent Mode 要知道，但别乱套
+
+Prometheus 新一些的文档里也强调了 agent mode。
+
+它的思路是：
+
+- 更轻量地采集并 remote write
+- 不以本地完整 TSDB 查询为目标
+
+所以它适合某些集中式架构，但并不意味着：
+
+- 所有场景都该放弃标准 Prometheus server
+
+---
+
+## 17. 实战里最常看的内置页面
+
+Prometheus 本身就有几个非常有用的页面。
+
+### 17.1 `/targets`
+
+看：
+
+- 哪些 target 正在被抓
+- 哪些 target down 了
+- 抓取错误是什么
+
+### 17.2 `/graph`
+
+看：
+
+- 临时 PromQL 查询
+- 表达式调试
+
+### 17.3 `/alerts`
+
+看：
+
+- 当前有哪些 alert 在 pending / firing
+
+### 17.4 `/config`
+
+看：
+
+- 当前生效配置
+
+这几个页面在日常排障时很有价值，不要只盯着 Grafana。
+
+---
+
+## 18. 常见误区
+
+### 18.1 把 Prometheus 当成“会抓指标的数据库”
+
+这理解太窄了。
+
+它还是：
+
+- 查询引擎
+- 规则引擎
+- 告警触发器
+
+### 18.2 把所有字段都做成 label
+
+这是 Prometheus 最常见的生产事故来源之一。
+
+### 18.3 把 Pushgateway 当通用采集入口
+
+官方并不推荐这么做。
+
+### 18.4 告警直接写超级复杂 PromQL
+
+这样会导致：
+
+- 查询难维护
+- 性能差
+- 难调试
+
+更好的方式通常是：
+
+- 先 recording rule
+- 再 alerting rule
+
+### 18.5 只会看平均值
+
+Prometheus 的价值之一就是：
+
+- 可以非常方便地看速率、分位数、长尾
+
+如果最后只看平均值，其实浪费了它很多能力。
+
+### 18.6 觉得有了 Prometheus 就等于有了完整可观测性
+
+没有。
+
+你还需要：
+
+- Grafana 做可视化
+- Alertmanager 做告警路由
+- 日志系统
+- Trace 系统
+
+---
+
+## 19. 我对 Prometheus 的一个实用理解
+
+如果要用一句更偏工程的话总结：
+
+- Prometheus 是“围绕 time series 构建的采集、存储、查询、规则与告警系统”
+
+它最强的地方不是某一个点，而是：
+
+- 数据模型统一
+- PromQL 统一
+- 规则和告警统一
+- 生态统一
+
+所以它真正厉害的不是“能抓很多指标”，而是：
+
+- 它把监控这件事抽象成了一套非常一致的语言
+
+---
+
+## 20. 这篇笔记最该带走的结论
+
+1. Prometheus 本质上是时序监控与告警系统，不只是采集器。
+2. 一条 time series 由指标名和标签集合唯一确定。
+3. label 设计失控，最终会演化成高基数灾难。
+4. `job` 和 `instance` 是 Prometheus 里非常基础的定位标签。
+5. `up` 是 pull 模型天然附带的健康信号，非常重要。
+6. PromQL 是 Prometheus 的核心能力，不只是一个附属查询语言。
+7. recording rules 用来预聚合和统一口径，alerting rules 用来触发告警。
+8. Pushgateway 只能有限使用，绝不是通用 push 入口。
+9. Prometheus 本地 TSDB 更偏近期观测，不是无限长存储。
+10. Prometheus 要和 Grafana、Alertmanager、日志、Trace 一起看，才是完整体系。
+
+---
+
+## 21. 适合继续阅读的下一篇
+
+读完这篇，最自然的下一篇是：
+
+- `Grafana 深度学习笔记`
+
+因为当你理解了 Prometheus 的“采、存、算、告”之后，下一步就应该理解：
+
+- Grafana 为什么不是 Prometheus 的替代品
+- 它在展示、探索、变量、看板设计上到底做了什么
+

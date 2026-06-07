@@ -1,0 +1,1691 @@
+---
+layout:      post
+title:       "Metrics 深度学习笔记"
+subtitle:    "从指标语义、标签基数、直方图到 Micrometer / Prometheus / Spring Boot，系统理解 Metrics"
+author:      "Ekko"
+header-img:  "img/bg/bg-scattered.png"
+catalog:     true
+tags:
+  - 学习笔记
+  - Java
+  - Spring Boot
+  - Metrics
+  - Prometheus
+  - 可观测性
+---
+
+> 这篇笔记以 Metrics / Micrometer / Prometheus / Spring Boot 官方文档为主线整理，目标不是只会“接个 `/actuator/prometheus`”，而是把指标语义、数据模型、标签设计、直方图、百分位数、查询思路和工程误区真正串起来。
+
+> Micrometer Concepts: `https://micrometer.io/docs/concepts`
+
+> Micrometer Distribution Summaries: `https://docs.micrometer.io/micrometer/reference/1.12/concepts/distribution-summaries.html`
+
+> Prometheus Metric Types: `https://prometheus.io/docs/concepts/metric_types/`
+
+> Prometheus Histograms and Summaries: `https://prometheus.io/docs/practices/histograms/`
+
+> Spring Boot Metrics: `https://docs.spring.io/spring-boot/reference/actuator/metrics.html`
+
+> OpenTelemetry Metrics API: `https://opentelemetry.io/docs/specs/otel/metrics/api/`
+
+[TOC]
+
+---
+
+## 1. Metrics 是什么
+
+先说一个最实用的理解：
+
+- 日志回答“发生了什么”
+- Trace 回答“请求经过了哪里”
+- Metrics 回答“系统现在整体怎么样”
+
+Metrics 的价值，不在于还原某一次具体请求，而在于：
+
+- 快速感知趋势
+- 快速发现异常
+- 快速做聚合比较
+- 快速触发告警
+
+例如下面这些问题，Metrics 非常擅长回答：
+
+- QPS 是否突然下降
+- 错误率是否上升
+- p95 / p99 延迟是否抖动
+- 某个实例是不是明显更慢
+- 某个线程池是不是长期打满
+- 某个队列是不是持续堆积
+
+它不擅长单点还原，但非常擅长：
+
+- 低成本、持续、聚合地看系统状态
+
+这也是为什么现代可观测性里，Metrics 几乎是最先接入的一层。
+
+---
+
+## 2. Metrics 的核心数据模型
+
+这一节非常关键。很多人会用指标，但脑子里没有数据模型，后面就容易在标签、聚合、告警上一路踩坑。
+
+### 2.1 指标不是一个数，而是一组时间序列
+
+一个 Metric 通常由两部分组成：
+
+- 指标名
+- 一组标签
+
+例如：
+
+```text
+http_server_requests_seconds_count{method="GET", status="200", uri="/users/{id}"}
+```
+
+真正落到监控系统里时，通常是：
+
+- 一个指标名
+- 多组 label value 组合
+- 每组组合对应一条 time series
+
+所以更精确地说：
+
+- `metric name + label set = 一条时间序列`
+
+这句话一定要记住，因为后面所有“高基数爆炸”问题，本质上都发生在这里。
+
+### 2.2 标签不是附属品，而是维度
+
+标签的意义是把同一个指标拆成多个观察维度。
+
+例如：
+
+- `http_requests_total{method="GET"}`
+- `http_requests_total{method="POST"}`
+
+这仍然是同一个指标族，但已经是两条不同序列。
+
+所以标签不是“多写点描述信息”而已，而是会直接影响：
+
+- 序列数
+- 存储成本
+- 查询性能
+- 聚合能力
+- 告警可用性
+
+### 2.3 什么是基数
+
+基数可以粗略理解成：
+
+- 某个指标最终会展开出多少种 label 组合
+
+例如：
+
+- `status` 只有 `200/400/500`，基数低
+- `method` 只有 `GET/POST/PUT/DELETE`，基数低
+- `userId` 几百万个，基数极高
+
+如果你写了：
+
+```text
+order_pay_total{userId="123456789"}
+```
+
+那么每个用户都会生成自己的序列。
+
+这通常不是“更精细”，而是：
+
+- 直接把你的时序系统打爆
+
+所以 Metrics 设计里最重要的一个纪律就是：
+
+- 标签必须尽量是有限集合
+
+---
+
+## 3. Metrics 和日志、Trace 的边界
+
+很多混乱都来自于把三者互相替代。
+
+### 3.1 Metrics 适合聚合，不适合追单条
+
+Metrics 很擅长：
+
+- 每秒请求数
+- 错误率
+- 平均延迟
+- p99 延迟
+- 当前线程数
+- 队列长度
+
+但它不适合回答：
+
+- 某个具体订单为什么失败
+- 某个具体用户请求参数是什么
+- 某一次调用链具体卡在哪个 span
+
+因为 Metrics 追求的是：
+
+- 可聚合
+- 可低成本长期存储
+- 可快速查询
+
+不是保存海量明细。
+
+### 3.2 不要把 TraceId、UserId 当 Metrics 标签
+
+这是最典型的边界错误。
+
+像这些字段：
+
+- `traceId`
+- `requestId`
+- `userId`
+- `orderId`
+- 原始搜索词
+
+更适合：
+
+- 日志
+- Trace
+
+而不适合当标签。
+
+因为它们天然高基数，几乎等于：
+
+- 一次请求一条新序列
+
+### 3.3 一个简单判断原则
+
+如果你想把某个字段放进 Metrics 标签，先问自己：
+
+1. 这个值的候选集合是不是有限的？
+2. 我真的需要按这个维度长期聚合观察吗？
+3. 它是不是更适合进日志或 Trace？
+
+只要前两个问题答不上来，通常就不该放进标签。
+
+---
+
+## 4. 常见指标类型到底怎么选
+
+不同监控系统术语略有不同，但主干思想非常稳定。
+
+Prometheus 官方文档给出的核心类型有：
+
+- Counter
+- Gauge
+- Histogram
+- Summary
+
+Micrometer 则从 JVM/Java 使用习惯出发，常见的是：
+
+- Counter
+- Gauge
+- Timer
+- DistributionSummary
+- LongTaskTimer
+
+其中 `Timer` 可以理解成：
+
+- 对“时间分布”做了封装的专用度量
+
+`DistributionSummary` 则是：
+
+- 对“非时间数值分布”做统计
+
+### 4.1 Counter
+
+Counter 表示单调递增值。
+
+Prometheus 官方定义也很明确：
+
+- Counter 只能增加，或者在进程重启后归零
+
+适合：
+
+- 请求总数
+- 错误总数
+- 成功任务数
+- 消费消息总数
+
+例如：
+
+```text
+http_requests_total
+payment_failed_total
+mq_consume_total
+```
+
+#### Counter 的正确理解方式
+
+你真正关心的通常不是它的绝对值，而是：
+
+- 增长速率
+
+因为绝对值会受到两个因素影响：
+
+- 当前使用强度
+- 应用运行时长
+
+所以看 Counter，通常应该看：
+
+- `rate(...)`
+- `increase(...)`
+
+而不是盯着一个越来越大的总数。
+
+#### 一个常见误区
+
+不要把会下降的值放进 Counter。
+
+例如：
+
+- 当前在线人数
+- 当前队列长度
+- 当前活跃请求数
+
+这些都可能上上下下，应该用 `Gauge`，不是 `Counter`。
+
+### 4.2 Gauge
+
+Gauge 表示当前值，可以上升也可以下降。
+
+适合：
+
+- 当前线程池活跃线程数
+- 当前队列堆积长度
+- 当前连接数
+- 当前 JVM 内存使用量
+
+例如：
+
+```text
+queue_size
+active_requests
+jvm_memory_used_bytes
+```
+
+Gauge 的核心语义不是“累计发生了多少”，而是：
+
+- 这一刻的状态是多少
+
+#### Gauge 最容易踩的坑
+
+Micrometer 官方文档专门提到过：
+
+- Gauge 绑定对象如果被 GC，可能会出现 `NaN` 或指标消失
+
+所以很多 Gauge 问题不是“系统没有数据”，而是：
+
+- 你观察的那个对象生命周期不对
+
+一个工程上更稳的做法是：
+
+- 让 Gauge 绑定到一个真正长期存在的对象
+- 不要临时 new 一个对象再让它被回收
+
+### 4.3 Timer
+
+Micrometer 里 `Timer` 是最实用的类型之一。
+
+它用于统计：
+
+- 某段操作执行了多少次
+- 总耗时多少
+- 延迟分布如何
+
+Micrometer 官方文档强调：
+
+- `Timer` 至少会发布事件数和总时间
+
+这意味着如果你已经对一段代码用了 `Timer`：
+
+- 通常不需要再额外加一个 Counter 去数“执行次数”
+
+因为计数已经包含在 `Timer` 里了。
+
+#### Timer 适合什么
+
+适合：
+
+- HTTP 请求耗时
+- 数据库调用耗时
+- RPC 调用耗时
+- 方法执行耗时
+
+#### Timer 不适合什么
+
+Micrometer 官方文档明确说它更适合：
+
+- short-duration latencies
+
+也就是：
+
+- 短耗时操作
+
+如果你的任务可能持续几分钟、几十分钟、几小时，那更合适的往往是：
+
+- `LongTaskTimer`
+
+### 4.4 DistributionSummary
+
+`DistributionSummary` 和 `Timer` 很像，但记录的不是时间，而是任意数值分布。
+
+Micrometer 官方定义非常直接：
+
+- 它用于记录非时间单位的事件分布
+
+适合：
+
+- 响应体大小
+- 批处理条数
+- 消息体大小
+- 订单金额
+- 单次写入字节数
+
+例如：
+
+```text
+http_response_size_bytes
+batch_item_count
+mq_payload_size_bytes
+```
+
+#### 一个很重要的区分
+
+- 记录“耗时”用 `Timer`
+- 记录“大小/数量/金额”这种分布，用 `DistributionSummary`
+
+不要图省事把一切都塞进 Counter 或 Gauge。
+
+### 4.5 LongTaskTimer
+
+这是 Micrometer 里很有工程价值、但很多文章不展开的一类指标。
+
+它适合：
+
+- 长任务
+- 后台作业
+- 数据迁移
+- 定时任务执行中时长
+
+它回答的问题不是：
+
+- 某次操作耗时分布如何
+
+而更像：
+
+- 现在有几个任务正在执行
+- 它们已经跑了多久
+
+这和普通 `Timer` 的关注点不一样。
+
+### 4.6 Histogram
+
+Histogram 记录的是分布。
+
+Prometheus 官方文档说得很清楚：
+
+- Histogram 会用 bucket 的方式表示观测值分布
+- 同时还会有 `count` 和 `sum`
+
+例如一个耗时直方图，最终通常会暴露：
+
+- `http_request_duration_seconds_bucket{le="0.1"}`
+- `http_request_duration_seconds_bucket{le="0.3"}`
+- `http_request_duration_seconds_bucket{le="1"}`
+- `http_request_duration_seconds_sum`
+- `http_request_duration_seconds_count`
+
+它最大的工程价值是：
+
+- 可以聚合
+- 可以在服务端重新计算分位数
+
+### 4.7 Summary
+
+Summary 是另一类分布指标。
+
+Prometheus 官方文档指出：
+
+- Summary 会在客户端侧预先计算 quantile
+- 但 quantile 不能再跨实例聚合
+
+这就是它最大的局限。
+
+你可以把它理解成：
+
+- 它直接给你分位数答案
+- 但代价是后面不太好再重新组合计算
+
+所以 Prometheus 官方实践文档强调：
+
+- 如果你要做跨实例聚合百分位，Histogram 更合适
+
+---
+
+## 5. Histogram 和 Summary 到底怎么选
+
+这是 Metrics 学习里最重要的分水岭之一。
+
+### 5.1 Summary 的优点
+
+- 客户端直接算 quantile
+- 对局部实例的分位数观察很直接
+
+### 5.2 Summary 的问题
+
+Prometheus 官方文档明确指出：
+
+- Summary 的 quantile 通常不能聚合
+
+什么意思？
+
+如果你有 10 个实例，每个实例都算了自己的 p99：
+
+- 你不能简单把这 10 个 p99 再合成整个服务的 p99
+
+这在多副本系统里是个很大的限制。
+
+### 5.3 Histogram 的优点
+
+- 可以聚合 bucket
+- 可以跨实例计算分位数
+- 可以换时间窗口重新计算
+
+这意味着 Histogram 更适合：
+
+- 现代分布式服务
+- Prometheus 生态
+- 多实例统一看 p95 / p99
+
+### 5.4 Histogram 的代价
+
+- bucket 需要设计
+- bucket 越多，序列和存储成本越高
+- bucket 不合理会影响观测精度
+
+所以 Histogram 不是“无脑开”。
+
+### 5.5 一个工程化结论
+
+如果你是：
+
+- Prometheus + 多实例服务
+
+那么经验上通常优先考虑：
+
+- Histogram
+
+如果你根本不需要跨实例聚合 quantile，Summary 也不是不能用，但现代主流实践里 Histogram 更常见。
+
+### 5.6 关于 Native Histogram
+
+Prometheus 官方最新文档已经明确把注意力放到：
+
+- Native Histogram
+
+并且给出倾向性建议：
+
+- 如果能用，优先考虑 native histogram
+
+但工程上要注意两点：
+
+1. 你的 client library / exporter / Prometheus 版本是否完整支持
+2. 你的现有监控链路是不是仍然以 classic histogram 为主
+
+所以实际项目里更稳妥的理解是：
+
+- 原理上要知道 native histogram 是未来方向
+- 落地上仍要看你的生态支持程度
+
+不要在文档里直接把所有 Histogram 都等同为 native histogram。
+
+---
+
+## 6. Timer、Histogram、Summary、DistributionSummary 的关系
+
+这一节是很多人脑子里最乱的一块。
+
+### 6.1 Timer 不是另一个“新类型”，而是“时间语义更强的封装”
+
+在 Micrometer 里：
+
+- `Timer` 关注时间
+- 它天然带 count / total time
+- 可以进一步配置 histogram / percentiles
+
+所以它可以理解成：
+
+- JVM 应用里统计时延的常用入口
+
+### 6.2 DistributionSummary 是“非时间版的 Timer”
+
+这个类比非常有帮助：
+
+- `Timer` 统计耗时分布
+- `DistributionSummary` 统计数值分布
+
+二者在“分布统计”层面很像，但单位不同。
+
+### 6.3 Counter 和 Timer 别重复打点
+
+Micrometer 官方文档给了一个很重要的提醒：
+
+- `Timer` 和 `DistributionSummary` 都会带 count
+
+所以如果你已经有：
+
+```java
+timer.record(...)
+```
+
+通常不需要再写：
+
+```java
+counter.increment()
+```
+
+去统计同一件事发生了多少次。
+
+否则你会得到：
+
+- 冗余指标
+- 冗余序列
+- 更高认知成本
+
+### 6.4 一个简单选择表
+
+- 事件总数，只增不减：`Counter`
+- 当前状态，可升可降：`Gauge`
+- 短时延：`Timer`
+- 非时间数值分布：`DistributionSummary`
+- 长任务执行中时长：`LongTaskTimer`
+- 需要 Prometheus 端聚合百分位：`Histogram`
+
+---
+
+## 7. Metrics 命名和单位怎么设计
+
+Metrics 写得烂，后期比没有 Metrics 还痛苦。
+
+### 7.1 一个好指标名至少要做到三点
+
+- 看名字就知道在量什么
+- 看单位就知道数值怎么解释
+- 看维度就知道怎么聚合
+
+例如：
+
+- `http_server_requests_seconds`
+- `mq_consume_total`
+- `cache_hit_total`
+- `queue_size`
+- `order_amount_cny`
+
+### 7.2 单位不要含糊
+
+Micrometer 官方文档强调：
+
+- base unit 对可移植性有帮助
+
+所以你最好明确单位：
+
+- 时间：`seconds`
+- 大小：`bytes`
+- 数量：`items`
+
+不要写成这种模糊名字：
+
+- `request_time`
+- `payload`
+- `queue_value`
+
+因为后面大家根本不知道：
+
+- 毫秒还是秒
+- 字节还是 KB
+- 数量还是比率
+
+### 7.3 名称表达“测量对象”，标签表达“切分维度”
+
+这是很重要的分工。
+
+例如：
+
+```text
+http_server_requests_seconds{method="GET", status="200"}
+```
+
+这里：
+
+- `http_server_requests_seconds` 是对象
+- `method` / `status` 是维度
+
+不要把过多业务语义硬塞进名字里。
+
+---
+
+## 8. 标签设计是 Metrics 成败分水岭
+
+### 8.1 好标签的特点
+
+- 候选值有限
+- 业务含义清晰
+- 真的需要聚合分析
+
+例如：
+
+- `method`
+- `status`
+- `outcome`
+- `region`
+- `instance`
+- `queue`
+
+### 8.2 坏标签的典型例子
+
+- `userId`
+- `orderId`
+- `traceId`
+- `sessionId`
+- 原始 URL
+- 搜索关键字
+- SQL 原文
+
+这些值的问题不是“太详细”，而是：
+
+- 几乎无限多
+
+这会导致：
+
+- 时序数爆炸
+- 采集成本上升
+- 存储成本上升
+- 查询速度下降
+- Dashboard 不可用
+- 告警规则复杂化
+
+### 8.3 原始 URL 是高频坑
+
+很多人会不小心把：
+
+- `/user/123`
+- `/user/456`
+- `/user/789`
+
+都暴露成不同标签。
+
+这样最终不是一个接口，而是：
+
+- 每个用户一个 URI 维度
+
+更合理的方式通常是：
+
+- 路由模板
+
+例如：
+
+- `/user/{id}`
+
+### 8.4 标签不是越多越好
+
+有些人觉得多加几个标签，后面更灵活。
+
+这往往是错觉。
+
+因为每加一个标签，都会让：
+
+- 组合数乘上去
+
+你应该加的不是“可能以后有用的标签”，而是：
+
+- 当前明确需要按它聚合观察的标签
+
+### 8.5 一个实用判断法
+
+给某个指标加标签前，先问：
+
+1. 我真的会经常按这个维度看图或告警吗？
+2. 这个字段的取值集合是可控的吗？
+3. 如果不加它，我会失去关键可观测性吗？
+
+三个问题里只要后两个答不上来，就先别加。
+
+---
+
+## 9. Metrics 体系应该监控什么
+
+会打点不等于有监控体系。
+
+### 9.1 先看 RED
+
+服务端接口监控里，最常见的是 RED：
+
+- Rate
+- Errors
+- Duration
+
+也就是：
+
+- 流量
+- 错误
+- 时延
+
+对 HTTP / RPC 服务来说，这基本就是第一层核心看板。
+
+### 9.2 再看 USE
+
+资源层常见的是 USE：
+
+- Utilization
+- Saturation
+- Errors
+
+也就是：
+
+- 利用率
+- 饱和度
+- 错误
+
+适合：
+
+- CPU
+- 内存
+- 磁盘
+- 网卡
+- 线程池
+- 连接池
+- 队列
+
+### 9.3 业务指标一定要补
+
+系统指标只能告诉你：
+
+- 机器忙不忙
+- JVM 抖不抖
+- 接口快不快
+
+但很多业务问题需要业务指标才能回答：
+
+- 下单成功率
+- 支付回调成功率
+- 风控拦截量
+- 缓存命中率
+- 消息重试次数
+
+所以一个完整的 Metrics 体系通常至少包含：
+
+- 基础设施指标
+- 应用运行指标
+- 接口性能指标
+- 业务指标
+
+---
+
+## 10. Spring Boot、Micrometer、Prometheus 三者是什么关系
+
+这三者经常被混成一个东西，其实不是。
+
+### 10.1 Micrometer 是指标埋点门面
+
+Micrometer 的定位很像：
+
+- Metrics 世界里的 SLF4J
+
+也就是：
+
+- 代码里用统一 API 打点
+- 底层可以接多个后端
+
+这也是 Micrometer 官方强调的一个核心价值：
+
+- 避免 vendor lock-in
+
+### 10.2 Spring Boot Actuator 负责自动集成和暴露
+
+Spring Boot 会：
+
+- 自动收集很多 JVM / Tomcat / HTTP / 线程池指标
+- 自动配置 `MeterRegistry`
+- 提供 `/actuator/metrics`
+- 在接 Prometheus registry 时提供 `/actuator/prometheus`
+
+### 10.3 Prometheus 是抓取和存储查询系统
+
+Prometheus 的职责是：
+
+- 定期抓取指标
+- 存储时序数据
+- 用 PromQL 查询
+- 做告警计算
+
+所以关系可以理解为：
+
+```text
+应用代码 / Spring Boot
+    -> Micrometer 记录指标
+    -> Actuator 暴露指标端点
+    -> Prometheus 抓取
+    -> Grafana 展示 / Alertmanager 告警
+```
+
+### 10.4 从代码到看板，这条链路到底怎么跑
+
+如果把整个过程展开，通常是这样：
+
+1. 业务代码或框架在进程内更新指标对象
+2. `MeterRegistry` 维护这些 meter 的当前状态或累计值
+3. `Actuator` 把它们暴露成 `/actuator/prometheus`
+4. `Prometheus` 按固定周期来抓取
+5. 抓到的样本按时间序列存储
+6. 查询和告警时再用 PromQL 做聚合计算
+
+例如：
+
+- `Counter` 记录累计发生了多少
+- `Gauge` 反映当前这一刻是多少
+- `Timer` 记录次数和耗时分布
+
+所以 Metrics 的工作方式，不是“像日志一样记下一条事件明细”，而是：
+
+- 在应用进程里持续维护一组可观测状态
+- 再由监控系统周期性采样、存储、聚合、告警
+
+这也是为什么 Metrics 很擅长：
+
+- 看趋势
+- 看聚合
+- 看异常波动
+
+但不擅长：
+
+- 还原某一次具体请求到底发生了什么
+
+那个问题更适合日志和 Trace。
+
+### 10.5 Metrics 是不是只看 JVM 内存？如果 JVM 重启了呢
+
+不是。
+
+`JVM Metrics` 只是整套 Metrics 体系的一部分，常见的还包括：
+
+- 系统资源指标
+- HTTP / RPC 指标
+- 线程池 / 连接池 / 队列指标
+- 业务指标
+
+例如：
+
+- `jvm_memory_used_bytes` 反映当前 JVM 内存使用量
+- `http_server_requests_seconds` 反映接口时延和次数
+- `executor_active_threads` 反映线程池活跃线程数
+- `order_created_total` 反映业务事件累计次数
+
+从实现位置上看，很多指标确实先存在于当前应用进程里：
+
+- JVM 指标来自 JVM 运行时状态
+- 自定义 `Counter` / `Timer` / `Gauge` 也通常由当前进程维护
+
+这就意味着：
+
+- 应用一旦重启，进程内累计值会重新开始
+
+其中最典型的是：
+
+- `Counter` 在进程重启后归零
+- `Timer` / `DistributionSummary` 的本地累计统计也会重新开始
+- `Gauge` 没有“累计归零”的概念，它只反映新进程当前这一刻的值
+
+但这不等于“历史全没了”。
+
+因为通常还有 Prometheus 在外部持续抓取和存储，所以：
+
+- 单个实例的进程内累计会重置
+- Prometheus 里已经抓到的历史样本仍然保留
+- 查询时应该看 `rate(...)`、`increase(...)` 这类时间窗口结果，而不是盯着裸的累计值
+
+所以一个很重要的工程认知是：
+
+- Metrics 很适合看趋势和时间窗口统计
+- 如果你要的是跨重启、跨实例、永久不丢失的业务总账，不能只依赖进程内 metrics
+
+---
+
+## 11. Java Spring Boot 如何接入 Metrics
+
+### 11.1 依赖
+
+最常见的是：
+
+```xml
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+
+    <dependency>
+        <groupId>io.micrometer</groupId>
+        <artifactId>micrometer-registry-prometheus</artifactId>
+    </dependency>
+</dependencies>
+```
+
+说明：
+
+- `actuator` 提供 Metrics 能力和端点
+- `micrometer-registry-prometheus` 让指标可以按 Prometheus 格式暴露
+
+### 11.2 配置端点暴露
+
+```yaml
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+```
+
+Spring Boot 官方文档明确提到：
+
+- `/actuator/prometheus` 默认不是自动对外暴露的
+- 需要显式开放
+
+### 11.3 常见访问路径
+
+- `/actuator/metrics`：按指标名查看
+- `/actuator/prometheus`：Prometheus scrape 格式
+
+### 11.4 Prometheus 抓取示例
+
+```yaml
+scrape_configs:
+  - job_name: "my-service"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["localhost:8080"]
+```
+
+---
+
+## 12. Micrometer 里怎么写自定义指标
+
+### 12.1 Counter
+
+```java
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.stereotype.Service;
+
+@Service
+public class OrderMetricsService {
+
+    private final Counter orderCreatedCounter;
+
+    public OrderMetricsService(MeterRegistry registry) {
+        this.orderCreatedCounter = Counter.builder("order_created_total")
+            .description("Total number of created orders")
+            .tag("biz", "order")
+            .register(registry);
+    }
+
+    public void onOrderCreated() {
+        orderCreatedCounter.increment();
+    }
+}
+```
+
+适合：
+
+- 累计事件数
+
+### 12.2 Gauge
+
+```java
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.stereotype.Component;
+
+import java.util.concurrent.atomic.AtomicInteger;
+
+@Component
+public class QueueMetrics {
+
+    private final AtomicInteger queueSize = new AtomicInteger(0);
+
+    public QueueMetrics(MeterRegistry registry) {
+        Gauge.builder("order_queue_size", queueSize, AtomicInteger::get)
+            .description("Current order queue size")
+            .register(registry);
+    }
+
+    public void setQueueSize(int size) {
+        queueSize.set(size);
+    }
+}
+```
+
+适合：
+
+- 当前状态
+
+### 12.3 Timer
+
+```java
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import org.springframework.stereotype.Service;
+
+@Service
+public class PaymentService {
+
+    private final Timer paymentTimer;
+
+    public PaymentService(MeterRegistry registry) {
+        this.paymentTimer = Timer.builder("payment_process_seconds")
+            .description("Payment processing latency")
+            .tag("biz", "payment")
+            .register(registry);
+    }
+
+    public void pay() {
+        paymentTimer.record(() -> {
+            doPay();
+        });
+    }
+
+    private void doPay() {
+        // ...
+    }
+}
+```
+
+适合：
+
+- 延迟统计
+
+### 12.4 DistributionSummary
+
+```java
+import io.micrometer.core.instrument.DistributionSummary;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.stereotype.Component;
+
+@Component
+public class PayloadMetrics {
+
+    private final DistributionSummary payloadSummary;
+
+    public PayloadMetrics(MeterRegistry registry) {
+        this.payloadSummary = DistributionSummary.builder("mq_payload_size_bytes")
+            .baseUnit("bytes")
+            .description("MQ payload size")
+            .register(registry);
+    }
+
+    public void recordPayloadSize(int bytes) {
+        payloadSummary.record(bytes);
+    }
+}
+```
+
+适合：
+
+- 大小分布
+- 条数分布
+- 金额分布
+
+---
+
+## 13. Spring Boot 自动指标要怎么理解
+
+别一接上 Actuator 就只盯着自定义指标。
+
+Spring Boot 官方文档已经列出很多现成指标类别，例如：
+
+- JVM Metrics
+- System Metrics
+- Logger Metrics
+- Task Execution Metrics
+- Spring MVC Metrics
+
+这意味着你一开始就已经有一批很重要的基础指标可用。
+
+### 13.1 自动指标解决什么
+
+- JVM 内存
+- GC
+- 线程
+- CPU
+- HTTP 请求
+- 连接池
+- 任务执行器
+
+这些是“系统是否健康”的基础层。
+
+### 13.2 自定义指标补什么
+
+自动指标通常不知道：
+
+- 下单成功率
+- 支付失败原因分布
+- 风控拦截量
+- 缓存命中率
+- 队列业务堆积
+
+所以正确姿势通常是：
+
+- 自动指标打底
+- 自定义指标补业务语义
+
+### 13.3 业务代码多种多样，怎么低侵入接入
+
+一个很实用的原则是：
+
+- 越靠近统一边界层埋点，越优雅
+- 越少让业务方法直接操作 `MeterRegistry`，越容易维护
+
+常见业务形态可以这样接：
+
+- HTTP / RPC 服务：优先吃框架自动指标，再在统一拦截器、过滤器、切面里补充公共标签或业务结果
+- MQ 消费：在 listener 容器、消费模板、统一消费包装层记录消费次数、失败次数、处理耗时、重试次数
+- 定时任务 / 批处理：在调度器或任务执行器外层记录执行次数、成功失败、执行耗时、运行中任务数
+- 数据库 / 缓存 / 三方调用：优先使用现成 instrumentation，或在统一 client 封装层做埋点
+- 纯业务事件：抽象成领域指标门面，由业务代码调用语义化方法，而不是直接拼指标名和标签
+
+例如，不建议到处写：
+
+```java
+registry.counter("order_created_total", "biz", "order").increment();
+```
+
+更建议收口成：
+
+```java
+orderMetrics.recordCreated();
+```
+
+这样做的好处是：
+
+- 指标名、标签、单位可以统一管理
+- 业务代码不会充满打点细节
+- 后面改指标口径时，不需要全仓库到处搜
+
+### 13.4 常见的工程化接入方案
+
+如果按“优雅且最小侵入”排序，通常可以这么选：
+
+1. 先用框架自动指标
+2. 再在统一边界层做公共埋点
+3. 对少量关键业务语义补自定义指标
+4. 最后才考虑让业务代码直接感知埋点 API
+
+常见方案包括：
+
+- 框架自动采集：最省事，适合 JVM、HTTP、线程池、连接池等技术指标
+- Filter / Interceptor / AOP：适合统一统计入口流量、错误、耗时
+- 模板方法 / 包装器：适合 MQ、批任务、三方调用、缓存访问等场景
+- 指标门面服务：适合订单、支付、风控这类业务指标
+- 注解式埋点：适合共性很强的耗时或次数统计，但复杂标签场景往往还得回到代码里补
+
+真正不优雅的方式通常是：
+
+- 每个 service 方法都手写一段 `Counter` / `Timer`
+- 指标命名规则散落在业务代码各处
+- 同一个动作重复打多套语义重叠的指标
+
+所以更像样的落地方式一般是：
+
+- 自动指标负责打底
+- 边界层负责统一埋点
+- 业务指标通过门面或领域服务收口
+- 指标名、标签、单位、SLO 规则集中治理
+
+---
+
+## 14. Common Tags 要慎用但要会用
+
+Micrometer 官方文档支持：
+
+- common tags
+
+Spring Boot 也支持统一加应用维度标签。
+
+### 14.1 适合做 common tags 的字段
+
+- `application`
+- `env`
+- `region`
+- `cluster`
+
+这些字段：
+
+- 稳定
+- 候选值有限
+- 几乎所有指标都需要按它切
+
+### 14.2 不适合做 common tags 的字段
+
+- `pod_uid`
+- `container_id`
+- `hostname` 如果实例非常多且 churn 很频繁
+- 任意高基数字段
+
+因为 common tags 的代价是：
+
+- 它会加到很多指标上
+
+一旦字段选错，放大的不是一个指标，而是整套指标体系。
+
+### 14.3 Spring Boot 自定义 common tags
+
+```java
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.boot.actuate.autoconfigure.metrics.MeterRegistryCustomizer;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class MetricsConfig {
+
+    @Bean
+    MeterRegistryCustomizer<MeterRegistry> metricsCommonTags() {
+        return registry -> registry.config()
+            .commonTags("application", "demo-service", "env", "prod");
+    }
+}
+```
+
+---
+
+## 15. Histogram 深入理解
+
+这一节值得单独讲透。
+
+### 15.1 Histogram 暴露出来的不只是一个值
+
+一个 Histogram 通常会暴露：
+
+- bucket
+- count
+- sum
+
+例如：
+
+- `xxx_bucket{le="0.1"}`
+- `xxx_bucket{le="0.3"}`
+- `xxx_bucket{le="1"}`
+- `xxx_count`
+- `xxx_sum`
+
+这代表：
+
+- 落在不同桶里的样本数
+- 样本总数
+- 样本总和
+
+### 15.2 bucket 是估算精度和成本的交换
+
+bucket 越细：
+
+- 分位数估算更细
+- 但序列更多
+
+bucket 越粗：
+
+- 成本更低
+- 但观测精度更差
+
+所以 bucket 设计本质上是：
+
+- 精度和成本的权衡
+
+### 15.3 bucket 应围绕 SLO 设计
+
+一个很实用的经验是：
+
+- bucket 边界要围绕你的 SLO / SLI 来设计
+
+例如 HTTP 延迟重点关心：
+
+- 50ms
+- 100ms
+- 200ms
+- 500ms
+- 1s
+
+那你的 bucket 不应完全无脑默认，而应该尽量覆盖这些拐点。
+
+### 15.4 为什么 Histogram 更适合服务端聚合
+
+因为它暴露的是更底层的分布信息：
+
+- bucket population
+
+因此 Prometheus 可以在查询时：
+
+- 先跨实例聚合 bucket
+- 再算 quantile
+
+这就是多副本系统里它比 Summary 更重要的根本原因。
+
+---
+
+## 16. Prometheus 里如何看 Histogram
+
+### 16.1 平均值
+
+平均耗时可以这样看：
+
+```promql
+rate(http_server_requests_seconds_sum[5m])
+/
+rate(http_server_requests_seconds_count[5m])
+```
+
+这有用，但也有局限：
+
+- 平均值会掩盖长尾
+
+所以它不是最重要的图。
+
+### 16.2 p95 / p99
+
+更常见的是：
+
+```promql
+histogram_quantile(
+  0.95,
+  sum by (le) (rate(http_server_requests_seconds_bucket[5m]))
+)
+```
+
+和：
+
+```promql
+histogram_quantile(
+  0.99,
+  sum by (le) (rate(http_server_requests_seconds_bucket[5m]))
+)
+```
+
+这正是 Histogram 在 Prometheus 生态里的典型用法。
+
+### 16.3 按实例或接口看
+
+如果你想按接口模板看：
+
+```promql
+histogram_quantile(
+  0.95,
+  sum by (le, uri) (rate(http_server_requests_seconds_bucket[5m]))
+)
+```
+
+如果你想按实例看：
+
+```promql
+histogram_quantile(
+  0.95,
+  sum by (le, instance) (rate(http_server_requests_seconds_bucket[5m]))
+)
+```
+
+这也是为什么前面一直强调：
+
+- 标签要可聚合
+
+否则查询阶段会非常难受。
+
+---
+
+## 17. Metrics 告警到底怎么做才像样
+
+### 17.1 Counter 告警看 rate，不看绝对值
+
+例如错误总数：
+
+```promql
+sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
+```
+
+或者错误率：
+
+```promql
+sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
+/
+sum(rate(http_server_requests_seconds_count[5m]))
+```
+
+### 17.2 时延告警看分位数，不只看平均值
+
+因为很多线上问题都是：
+
+- 平均值看起来正常
+- p99 已经炸了
+
+### 17.3 饱和度告警比利用率更重要
+
+例如：
+
+- 线程池队列长度
+- 数据库连接池等待
+- MQ backlog
+
+这些指标通常比“CPU 70%”更早暴露问题。
+
+### 17.4 告警要结合窗口和持续时间
+
+不要一个瞬时尖峰就报警。
+
+更稳妥的是：
+
+- 看 5m / 10m 窗口
+- 配合 `for`
+- 避免抖动告警
+
+---
+
+## 18. 常见误区
+
+### 18.1 看到一个值就想做成 Gauge
+
+Gauge 不是万能兜底类型。
+
+如果你要统计：
+
+- 累计事件
+
+那就是 Counter，不是 Gauge。
+
+### 18.2 已经有 Timer，还再单独加同语义 Counter
+
+这通常是重复打点。
+
+Micrometer 官方文档已经明确说了：
+
+- `Timer` 和 `DistributionSummary` 自带 count
+
+### 18.3 把高基数字段放进标签
+
+这是最危险也最常见的坑。
+
+例如：
+
+- 用户 ID
+- 订单 ID
+- Trace ID
+- 原始 URI
+
+### 18.4 bucket 开得过多
+
+直方图不是 bucket 越多越高级。
+
+过多 bucket 会导致：
+
+- 更多时序
+- 更多存储
+- 更重查询
+
+### 18.5 用平均值代替长尾指标
+
+平均值经常会掩盖真实体验。
+
+很多系统真正伤人的不是平均耗时，而是：
+
+- 尾延迟
+
+### 18.6 自定义指标很多，但没有统一命名规范
+
+结果通常是：
+
+- 仪表盘难拼
+- 查询难写
+- 新人看不懂
+- 不知道单位
+
+### 18.7 没有区分“业务指标”和“技术指标”
+
+技术指标告诉你：
+
+- JVM 是否有问题
+
+业务指标告诉你：
+
+- 用户是否真的受影响
+
+两者缺一不可。
+
+---
+
+## 19. OpenTelemetry Metrics 要知道到什么程度
+
+现在可观测性体系越来越常见：
+
+- Metrics + Logs + Traces 一体化
+
+所以知道一点 OpenTelemetry Metrics 很有必要。
+
+### 19.1 OTel 里的常见 instrument
+
+OpenTelemetry Metrics API 里常见的 instrument 包括：
+
+- Counter
+- UpDownCounter
+- Gauge
+- Histogram
+
+这个体系和 Prometheus / Micrometer 在概念上是能互相对照的。
+
+例如：
+
+- Counter：非负递增
+- Histogram：记录分布
+- Gauge：记录非加和的当前值
+- UpDownCounter：可增可减累计量
+
+### 19.2 为什么要知道它
+
+因为越来越多系统会走：
+
+- OTel SDK / Collector
+- OTLP
+- 再落到 Prometheus / Tempo / Loki / vendor backend
+
+即使你当前主栈是：
+
+- Spring Boot + Micrometer + Prometheus
+
+也最好知道：
+
+- OTel 是更通用的上层可观测性标准语言
+
+### 19.3 但当前 Java Spring Boot 场景里，Micrometer 仍然非常重要
+
+因为在 Spring Boot 生态里：
+
+- Micrometer 仍然是最主流、最自然的指标接入方式
+
+所以工程上通常不是“二选一”，而是：
+
+- 知道 OTel 方向
+- 用好 Micrometer 落地
+
+---
+
+## 20. 一个比较像样的 Metrics 看板应该长什么样
+
+### 20.1 服务总览
+
+- QPS
+- 错误率
+- p50 / p95 / p99
+- 实例数
+
+### 20.2 JVM / 进程层
+
+- 堆使用量
+- GC 次数和停顿
+- 线程数
+- CPU 使用率
+
+### 20.3 资源池层
+
+- 线程池活跃数
+- 队列长度
+- 数据库连接池使用数 / 等待数
+- MQ backlog
+
+### 20.4 业务层
+
+- 下单成功率
+- 支付失败率
+- 回调耗时
+- 缓存命中率
+
+### 20.5 一个很实用的经验
+
+不要上来就画 200 个图。
+
+先保证这 4 层是通的：
+
+- 流量
+- 错误
+- 时延
+- 饱和度
+
+然后再慢慢补业务图。
+
+---
+
+## 21. 这篇笔记最该带走的结论
+
+如果只记 12 句，我希望是下面这些：
+
+1. Metrics 最擅长看趋势和聚合，不擅长追单次请求。
+2. `metric name + label set = 一条 time series`。
+3. 标签必须控制基数，高基数字段不要进标签。
+4. Counter 看 rate，不看绝对值。
+5. Gauge 记录当前状态，适合会上下波动的值。
+6. `Timer` 已经自带 count，别重复加 Counter。
+7. `DistributionSummary` 用于非时间分布。
+8. 多实例场景下，Histogram 通常比 Summary 更适合算分位数。
+9. 指标命名要带语义和单位，标签只放真正需要聚合的维度。
+10. 自动指标负责打底，自定义指标负责表达业务语义。
+11. 大多数 metrics 先存在于当前进程里，进程重启会让本地累计重新开始。
+12. 技术指标尽量自动采集，业务指标尽量收口到边界层或门面。
+
+---
+
+## 22. 后续可继续深挖的方向
+
+如果后面你要把这一块继续往更工程化推进，建议下一步补这几篇：
+
+- `PromQL` 深度学习笔记
+- `Grafana` 看板设计笔记
+- `Micrometer Observation / Tracing` 笔记
+- `Spring Boot Actuator` 笔记
+- `OpenTelemetry Collector` 笔记
+
+这几篇和本文会形成一套比较完整的可观测性学习链路。

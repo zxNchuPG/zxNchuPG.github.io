@@ -1,0 +1,1725 @@
+---
+layout:      post
+title:       "Arthas 诊断工具深度学习笔记"
+subtitle:    "从 attach 原理、命令体系到线上排障剧本，系统理解 Arthas"
+author:      "Ekko"
+header-img:  "img/bg/bg-jvm.jpg"
+catalog:     true
+tags:
+  - 学习笔记
+  - Java
+  - JVM
+  - 排障
+---
+
+> 这篇笔记以 Arthas 官方仓库、官方文档、命令文档、进阶使用文档为主线整理，也补充了一些更偏工程实践的理解。
+
+> 目标不是把命令全背一遍，而是建立一套排障脑图: 什么时候看全局，什么时候看线程，什么时候看类加载，什么时候去观察方法入参/返回值，什么时候该停手，不要在线上乱增强。
+ 
+> Arthas 官方仓库: `https://github.com/alibaba/arthas`
+ 
+> Arthas 官方文档: `https://arthas.aliyun.com/doc/`
+ 
+> 快速入门: `https://arthas.aliyun.com/doc/quick-start.html`
+ 
+> 命令列表: `https://arthas.aliyun.com/doc/commands.html`
+ 
+> 鉴权说明: `https://arthas.aliyun.com/doc/auth.html`
+
+> 进阶使用: `https://arthas.aliyun.com/doc/advanced-use.html`
+ 
+> dashboard: `https://arthas.aliyun.com/doc/dashboard.html`
+ 
+> thread: `https://arthas.aliyun.com/doc/thread.html`
+ 
+> classloader: `https://arthas.aliyun.com/doc/classloader.html`
+ 
+> jad: `https://arthas.aliyun.com/doc/jad.html`
+ 
+> monitor: `https://arthas.aliyun.com/doc/monitor.html`
+ 
+> watch: `https://arthas.aliyun.com/doc/watch.html`
+ 
+> trace: `https://arthas.aliyun.com/doc/trace.html`
+ 
+> tt: `https://arthas.aliyun.com/doc/tt.html`
+ 
+> ognl: `https://arthas.aliyun.com/doc/ognl.html`
+ 
+> vmtool: `https://arthas.aliyun.com/doc/vmtool.html`
+ 
+> profiler: `https://arthas.aliyun.com/doc/profiler.html`
+ 
+> retransform: `https://arthas.aliyun.com/doc/retransform.html`
+ 
+> redefine: `https://arthas.aliyun.com/doc/redefine.html`
+
+[TOC]
+
+---
+
+## 1. Arthas 是什么
+
+Arthas 是阿里开源的 **Java 在线诊断工具**。
+
+它最有价值的地方，不是“命令很多”，而是它把线上 JVM 的几个关键诊断能力串起来了：
+
+- 看 JVM 全局状态
+- 看线程 CPU 和堆栈
+- 看类是谁加载的、代码到底从哪个 jar 来
+- 在线观察方法入参、返回值、异常、耗时
+- 在不重启进程的情况下做有限度的字节码增强
+- 采样生成火焰图，定位热点
+- 在必要时做临时热修复
+
+很多线上问题，用日志很难快速回答：
+
+- 为什么我改的代码没有生效
+- 这个类到底是不是我以为的那个类
+- 某个请求为什么慢
+- 某个用户的数据为什么异常
+- 线程为什么打满了 CPU
+- 某个对象到底在不在内存里
+
+Arthas 的价值，本质上是：
+
+> 把“只能猜”变成“可以在线验证”。
+
+---
+
+## 2. 为什么 Arthas 好用
+
+如果只看表面，Arthas 像一个命令行工具；但从能力结构上看，它实际上把 4 类能力统一到了一个入口里。
+
+### 2.1 JVM 观测
+
+典型命令：
+
+- `dashboard`
+- `thread`
+- `jvm`
+- `memory`
+- `sysprop`
+- `sysenv`
+- `vmoption`
+
+这类命令回答的是：
+
+- 现在 JVM 是否健康
+- CPU、内存、GC、线程整体有没有异常
+- 当前运行环境和启动参数到底是什么
+
+### 2.2 类和类加载排查
+
+典型命令：
+
+- `sc`
+- `sm`
+- `classloader`
+- `jad`
+- `dump`
+
+这类命令回答的是：
+
+- 某个类是否真的被加载了
+- 是哪个 `ClassLoader` 加载的
+- 实际运行字节码来自哪个 jar
+- 运行中的源码长什么样
+
+### 2.3 方法级在线观测
+
+典型命令：
+
+- `monitor`
+- `watch`
+- `trace`
+- `stack`
+- `tt`
+
+这类命令回答的是：
+
+- 这个方法有没有被调用
+- 调用耗时高不高
+- 入参、返回值、异常到底是什么
+- 方法内部哪个子调用最慢
+- 某次调用现场能不能“录下来”回看
+
+### 2.4 运行时操作与热修复
+
+典型命令：
+
+- `ognl`
+- `vmtool`
+- `retransform`
+- `redefine`
+- `mc`
+- `reset`
+
+这类命令已经不是“看”，而是进入“操作 JVM”的层次，所以风险也更高。
+
+一句话总结：
+
+- `dashboard/thread/jvm` 解决“系统怎么了”
+- `classloader/jad/sc` 解决“代码到底是不是这份”
+- `watch/trace/tt` 解决“调用现场发生了什么”
+- `profiler` 解决“热点到底在哪”
+- `retransform/redefine` 解决“能不能临时改一下”
+
+---
+
+## 3. Arthas 的工作方式
+
+很多人第一次用 Arthas，只记住了：
+
+```bash
+java -jar arthas-boot.jar
+```
+
+但真正要用稳，必须理解它在做什么。
+
+### 3.1 attach 到目标 JVM
+
+Arthas 常见使用方式是通过 `arthas-boot.jar` 或 `as.sh` attach 到一个已经运行的 Java 进程。
+
+这意味着它不是：
+
+- 重启应用后生效
+- 修改源码再部署
+
+而是：
+
+- 直接连到正在跑的 JVM
+- 借助 Instrumentation / JVMTI 等能力做观测和增强
+
+这也是它适合线上排障的核心原因。
+
+### 3.2 一部分命令只是读取，一部分命令会增强字节码
+
+这是必须明确区分的。
+
+相对“读”的命令：
+
+- `jvm`
+- `memory`
+- `thread`
+- `classloader`
+- `sc`
+- `sm`
+
+相对“动代码”的命令：
+
+- `watch`
+- `trace`
+- `monitor`
+- `tt`
+- `retransform`
+- `redefine`
+
+后者很多都依赖 **字节码增强**。官方文档也明确提醒，`watch/trace/monitor/tt` 这类命令是通过插桩实现的。
+
+这意味着：
+
+- 能力很强
+- 不是零成本
+- 不应该大面积、长时间、无约束地增强
+
+### 3.3 Arthas 的强项是“在线验证”，不是“长期监控平台”
+
+它适合：
+
+- 临时定位线上问题
+- 精准观察某个类、某个方法、某个线程
+- 在故障窗口里拿证据
+
+它不适合直接替代：
+
+- APM
+- 指标平台
+- 全链路 tracing
+- 长期火焰图采集系统
+
+更准确的定位是：
+
+> Arthas 是故障现场里的“诊断手术刀”，不是常驻全量观测平台。
+
+---
+
+## 4. 常见接入方式
+
+### 4.1 `arthas-boot.jar`
+
+最常用，也最适合临时排障。
+
+```bash
+curl -O https://alibaba.github.io/arthas/arthas-boot.jar
+java -jar arthas-boot.jar
+```
+
+特点：
+
+- 上手最快
+- 适合本机或跳板机临时 attach
+- 可以交互式选择目标进程
+
+### 4.2 `as.sh`
+
+适合 Linux / Unix / macOS 一键使用。
+
+```bash
+curl -L https://alibaba.github.io/arthas/install.sh | sh
+./as.sh
+```
+
+一个非常实用的点是可以用 `--select` 按进程名选择目标应用，避免每次先手工找 PID。
+
+### 4.3 java agent 方式
+
+适合希望应用启动时就具备 Arthas 能力的场景。
+
+但工程上要谨慎：
+
+- 它更适合受控环境
+- 要和发布流程、启动参数、权限管理一起设计
+
+### 4.4 Spring Boot Starter
+
+适合与应用一同启动，但这类方案通常更偏平台化、团队内规范化使用，不是日常临时排障的第一入口。
+
+---
+
+## 5. 先建立一张命令地图
+
+如果没有脑图，Arthas 会越学越乱。
+
+我更推荐按“排障顺序”记，而不是按文档目录记。
+
+### 5.1 第一层：先看全局
+
+先回答“系统是否整体异常”：
+
+- `dashboard`
+- `thread`
+- `jvm`
+- `memory`
+
+### 5.2 第二层：再看代码和类加载
+
+再回答“是不是代码版本 / 类加载问题”：
+
+- `sc`
+- `sm`
+- `classloader`
+- `jad`
+
+### 5.3 第三层：最后看方法现场
+
+再回答“某次调用里具体发生了什么”：
+
+- `monitor`
+- `watch`
+- `trace`
+- `stack`
+- `tt`
+
+### 5.4 第四层：必要时动手
+
+最后才进入高风险动作：
+
+- `ognl`
+- `vmtool`
+- `profiler`
+- `retransform`
+- `redefine`
+
+这个顺序很重要，因为大量线上误用 Arthas 的根源就是：
+
+- 还没确认是否真有必要
+- 就直接 `watch * *`
+- 或直接尝试热更新
+
+---
+
+## 6. 排障主线应该怎么走
+
+真正在线上排问题时，推荐按下面顺序推进。
+
+### 6.1 先看 `dashboard`
+
+```bash
+dashboard
+```
+
+它适合第一眼扫全局：
+
+- 哪些线程 CPU 高
+- heap / nonheap 是否异常
+- GC 情况大概怎样
+- JVM 内部线程是否活跃异常
+
+官方文档特别提到，Java 8 之后还能看到 JVM 内部线程的 CPU 时间，比如：
+
+- JIT 编译线程
+- GC 线程
+- VM Thread
+
+这个细节很有用，因为有时 CPU 高并不是业务线程高，而是：
+
+- GC 在忙
+- JIT 在忙
+
+### 6.2 再看 `thread`
+
+```bash
+thread -n 5
+thread -b
+thread 123
+```
+
+这是线上最应该熟练掌握的命令之一。
+
+它常用于：
+
+- 查看最忙的前 N 个线程
+- 查看指定线程栈
+- 找阻塞其他线程的线程
+
+重点理解两点：
+
+1. `thread -n 3` 是快速找 CPU 热点线程
+2. `thread -b` 是快速找锁竞争 / 阻塞源头
+
+官方文档还说明了它的 CPU 使用率计算是采样得来的，所以你看到的是一个时间窗口内的结果，而不是某个永恒真值。
+
+### 6.3 然后验证类加载和代码版本
+
+最常见的线上错觉之一是：
+
+- “我明明改了代码，怎么没生效”
+
+这时不要猜，直接查。
+
+```bash
+sc -d com.example.OrderService
+sm com.example.OrderService
+classloader -t
+classloader -c 3d4eac69
+jad com.example.OrderService
+```
+
+这组命令用来回答：
+
+- 类是否已加载
+- 哪个 `ClassLoader` 加载了它
+- code source 在哪个 jar
+- 实际运行中的反编译代码是什么
+
+这里 `classloader` 特别重要，因为很多“代码不生效”不是部署失败，而是：
+
+- 同名类被多个类加载器加载
+- 应用跑的不是你以为那个 jar
+- Spring Boot fat jar / 容器模块化环境里类来源复杂
+
+### 6.4 最后再进入方法级观察
+
+如果已经确认：
+
+- JVM 确实在异常
+- 线程或类加载方向已经有线索
+
+这时再用：
+
+- `monitor`
+- `watch`
+- `trace`
+- `tt`
+
+去拿方法级证据。
+
+---
+
+## 7. 高频命令深度理解
+
+这一章我改成“输入什么、屏幕大概会看到什么、接下来怎么判断”的写法。
+
+注意：
+
+- 下面的输出都是 **节选后的示意输出**
+- 真实线上输出会更长，但字段含义和判断思路是一样的
+- 学习时建议把重点放在“为什么下一步要接这条命令”
+
+## 7.1 `dashboard`: 先看大盘，不要一上来就盯某个方法
+
+### 7.1.1 输入
+
+```bash
+dashboard -i 2000 -n 3
+```
+
+### 7.1.2 你大概率会看到什么
+
+```text
+ID   NAME                          GROUP  PRIORITY  STATE      %CPU
+34   http-nio-8080-exec-12         main   5         RUNNABLE   68
+53   Timer-for-arthas-dashboard    system 5         RUNNABLE   1
+-1   G1 Young RemSet Sampling      -      -         -          0.5
+
+Memory           used   total   max    usage
+heap             612M   1024M   1024M  59.7%
+g1_old_gen       420M   768M    1024M  41.0%
+metaspace        132M   140M    -1     94.2%
+
+Runtime
+os.name          Linux
+java.version     17.0.12
+systemload.average  8.42
+processors       8
+uptime           3d 4h
+```
+
+### 7.1.3 怎么解读
+
+- 如果看到某个业务线程 `%CPU` 很高，下一步去 `thread -n`
+- 如果看到 GC 线程高、heap 使用率高，优先怀疑内存压力和频繁 GC
+- 如果 metaspace 很高，留意类加载、动态生成类、代理类过多
+- 如果只是系统负载高，但 Java 线程 CPU 不高，还要排查机器层问题，不一定是 JVM 本身
+
+### 7.1.4 它最适合什么时候用
+
+- 刚连上一台有问题的 JVM
+- 还不知道问题偏 CPU、内存、线程还是类加载
+- 想先拿“全局第一眼印象”
+
+一句话：
+
+> `dashboard` 负责告诉你“问题大概在哪一层”，但不负责给最终答案。
+
+---
+
+## 7.2 `thread`: CPU 飙高、阻塞、锁竞争的第一入口
+
+### 7.2.1 输入
+
+```bash
+thread -n 3
+```
+
+### 7.2.2 示例输出
+
+```text
+"http-nio-8080-exec-12" Id=87 cpuUsage=68% RUNNABLE
+    at com.example.order.OrderService.createOrder(OrderService.java:142)
+    at com.example.order.OrderController.create(OrderController.java:58)
+
+"HikariPool-1 housekeeper" Id=31 cpuUsage=3% TIMED_WAITING
+
+"G1 Young RemSet Sampling" Id=-1 cpuUsage=1% RUNNABLE
+```
+
+### 7.2.3 怎么解读
+
+- 如果热点线程直接落在业务代码里，下一步通常是 `trace` 或 `watch`
+- 如果热点线程落在 JSON 序列化、正则、集合遍历、加解密等本地计算，优先怀疑 CPU 计算热点
+- 如果热点线程卡在数据库或 RPC 客户端，说明慢点更可能在 IO 或下游
+- 如果热点线程是 GC / JIT 内部线程，要回头结合 `dashboard` 和内存情况看
+
+### 7.2.4 再下钻单个线程
+
+输入：
+
+```bash
+thread 87
+```
+
+示例输出：
+
+```text
+"http-nio-8080-exec-12" Id=87 RUNNABLE
+    at java.util.HashMap.resize(HashMap.java:698)
+    at java.util.HashMap.putVal(HashMap.java:661)
+    at com.example.order.OrderAssembler.build(OrderAssembler.java:89)
+    at com.example.order.OrderService.createOrder(OrderService.java:142)
+```
+
+解释：
+
+- 这时候你已经能判断“慢点在本地对象组装”
+- 下一步比起去看数据库，更应该直接 `trace` 这个方法
+
+### 7.2.5 查阻塞源头
+
+输入：
+
+```bash
+thread -b
+```
+
+示例输出：
+
+```text
+Found one Java-level deadlock:
+"http-nio-8080-exec-9" Id=91 BLOCKED on java.lang.Object@6d06d69c
+    owned by "http-nio-8080-exec-7" Id=88
+```
+
+解释：
+
+- `thread -b` 不是告诉你“谁被挡住了”，而是告诉你“谁挡了别人”
+- 排锁问题时，这条命令非常省时间
+
+---
+
+## 7.3 `sc` / `sm` / `classloader` / `jad`: 排代码版本与类加载问题的四件套
+
+这一组命令最适合解决：
+
+- 我改的代码为什么没生效
+- 这个类是不是被多个类加载器加载了
+- 我现在看到的到底是不是线上运行的那份代码
+
+### 7.3.1 `sc -d`: 先确认类到底是谁
+
+输入：
+
+```bash
+sc -d com.example.order.OrderService
+```
+
+示例输出：
+
+```text
+class-info com.example.order.OrderService
+code-source /app/order-service.jar!/BOOT-INF/classes!/
+name com.example.order.OrderService
+isInterface false
+class-loader +-org.springframework.boot.loader.LaunchedURLClassLoader@7f9a81e8
+classLoaderHash 7f9a81e8
+```
+
+怎么解读：
+
+- `code-source` 告诉你类来自哪个 jar 或目录
+- `classLoaderHash` 是后续 `jad`、`vmtool`、`ognl` 精准定位的重要参数
+- 如果这里显示的 jar 不是你预期的部署包，问题已经基本找到了
+
+### 7.3.2 `sm`: 再确认方法名到底对不对
+
+输入：
+
+```bash
+sm com.example.order.OrderService createOrder
+```
+
+示例输出：
+
+```text
+com.example.order.OrderService
+`- public com.example.order.dto.OrderDTO createOrder(com.example.order.dto.CreateOrderCmd)
+```
+
+怎么解读：
+
+- 这一步的核心不是看源码，而是确认方法真的存在
+- 很多人 `watch` 没结果，根因只是类名或方法名没写对
+
+### 7.3.3 `classloader`: 类加载器问题别靠猜
+
+输入：
+
+```bash
+classloader -t
+```
+
+示例输出：
+
+```text
++-BootstrapClassLoader
+ +-jdk.internal.loader.ClassLoaders$PlatformClassLoader@301ec38b
+   +-com.taobao.arthas.agent.ArthasClassloader@472067c7
+   +-org.springframework.boot.loader.LaunchedURLClassLoader@7f9a81e8
+```
+
+解释：
+
+- Spring Boot 可执行 jar 常见的是 `LaunchedURLClassLoader`
+- 后续很多命令如果不指定类加载器，可能观察到的不是你想要的那一份类
+
+再看这个类加载器到底加载了哪些路径：
+
+输入：
+
+```bash
+classloader -c 7f9a81e8
+```
+
+示例输出：
+
+```text
+jar:file:/app/order-service.jar!/BOOT-INF/classes!/
+jar:file:/app/order-service.jar!/BOOT-INF/lib/spring-web-6.1.8.jar!/
+jar:file:/app/order-service.jar!/BOOT-INF/lib/mysql-connector-j-8.4.0.jar!/
+```
+
+怎么解读：
+
+- 这一步最适合验证 fat jar 内部类路径是否符合预期
+- 如果你怀疑“某个版本的依赖是不是没带进去”，这条命令很有用
+
+### 7.3.4 `jad`: 看正在执行的代码，不看本地仓库的代码
+
+输入：
+
+```bash
+jad -c 7f9a81e8 com.example.order.OrderService createOrder
+```
+
+示例输出：
+
+```java
+public OrderDTO createOrder(CreateOrderCmd cmd) {
+    this.checkParam(cmd);
+    UserDTO user = this.userRemote.query(cmd.getUserId());
+    return this.orderAssembler.build(cmd, user);
+}
+```
+
+怎么解读：
+
+- 如果这里和你以为的代码不一样，先别怀疑 Arthas，先怀疑部署和类加载
+- 如果这里已经能看出方法很短，那慢点多半不在当前方法本体，而在子调用，下一步接 `trace`
+
+---
+
+## 7.4 `monitor` / `watch` / `trace` / `stack` / `tt`: 这组命令一定要结合输出理解
+
+先记一句话：
+
+- `monitor` 看趋势
+- `watch` 看现场值
+- `trace` 看路径耗时
+- `stack` 看调用来源
+- `tt` 看录像回放
+
+### 7.4.1 `monitor`: 先看这个方法最近是不是一直不正常
+
+输入：
+
+```bash
+monitor -c 5 com.example.order.OrderService createOrder
+```
+
+示例输出：
+
+```text
+timestamp            class                            method       total success fail avg-rt(ms) fail-rate
+2026-06-07 20:10:05  com.example.order.OrderService  createOrder  18    16      2    342.7      11.11%
+2026-06-07 20:10:10  com.example.order.OrderService  createOrder  21    21      0    298.4      0.00%
+```
+
+怎么解读：
+
+- `avg-rt(ms)` 高，说明这个方法整体慢
+- `fail-rate` 高，说明不仅慢，可能还有异常
+- 但它只告诉你“最近这段时间整体怎样”，不会告诉你某一笔请求具体传了什么
+
+下一步怎么接：
+
+- 想看某次调用值，用 `watch`
+- 想看慢在哪个子调用，用 `trace`
+
+### 7.4.2 `watch`: 看入参、返回值、异常，最直观
+
+输入：
+
+```bash
+watch com.example.order.OrderService createOrder '{params, returnObj, throwExp}' -x 2
+```
+
+示例输出：
+
+```text
+method=com.example.order.OrderService.createOrder
+ts=2026-06-07 20:12:11; [cost=324.551ms]
+@ArrayList[
+  @Object[][isEmpty=false;size=1],
+  @OrderDTO[id=98765, status=CREATED, amount=199.00],
+  null,
+]
+```
+
+怎么解读：
+
+- 第一项是 `params`
+- 第二项是 `returnObj`
+- 第三项是 `throwExp`
+- 如果第三项是 `null`，说明这次没抛异常
+
+只看异常场景：
+
+输入：
+
+```bash
+watch com.example.order.OrderService createOrder '{params[0], throwExp}' -e -x 2
+```
+
+示例输出：
+
+```text
+@ArrayList[
+  @CreateOrderCmd[userId=1001, skuId=2008, amount=null],
+  java.lang.IllegalArgumentException: amount can not be null
+]
+```
+
+这时候就已经能直接回答：
+
+- 报错的是哪种入参
+- 异常类型是什么
+
+只看进入方法前的参数：
+
+```bash
+watch com.example.order.OrderService createOrder '{params}' -b -x 2
+```
+
+这个很适合你怀疑“方法内部把参数对象改掉了”的情况。
+
+### 7.4.3 `trace`: 这个方法里到底谁最慢
+
+输入：
+
+```bash
+trace com.example.order.OrderService createOrder '#cost > 100'
+```
+
+示例输出：
+
+```text
+`---ts=2026-06-07 20:15:48;thread_name=http-nio-8080-exec-12;id=87;is_daemon=true;priority=5;TCCL=org.springframework.boot.loader.LaunchedURLClassLoader@7f9a81e8
+    `---[312.442ms] com.example.order.OrderService:createOrder()
+        +---[5.122ms] com.example.order.OrderService:checkParam()
+        +---[248.773ms] com.example.user.UserRemoteService:query()
+        `---[36.090ms] com.example.order.OrderAssembler:build()
+```
+
+怎么解读：
+
+- 这里已经很直观地看到主要慢在 `UserRemoteService.query()`
+- 这比“拍脑袋猜数据库慢”要可靠得多
+
+继续下一步怎么接：
+
+- 如果怀疑下游返回值异常，用 `watch` 看 `userRemote.query` 的返回值
+- 如果是全局热点，不只这一条链路慢，可以接 `profiler`
+
+### 7.4.4 `stack`: 谁在调它
+
+输入：
+
+```bash
+stack com.example.order.OrderService createOrder
+```
+
+示例输出：
+
+```text
+ts=2026-06-07 20:18:03;thread_name=http-nio-8080-exec-15
+@java.lang.Exception
+    at com.example.order.OrderService.createOrder(OrderService.java:142)
+    at com.example.order.OrderAppService.submit(OrderAppService.java:66)
+    at com.example.order.OrderController.create(OrderController.java:35)
+```
+
+怎么解读：
+
+- 它不是看方法内部做了什么，而是看“这个方法从哪条链路被调起来的”
+- 适合排“为什么这个方法会被意外调用”这类问题
+
+### 7.4.5 `tt`: 偶发问题先录下来，再慢慢筛
+
+输入：
+
+```bash
+tt -t com.example.order.OrderService createOrder
+```
+
+示例输出：
+
+```text
+Affect(class-cnt:1 , method-cnt:1) cost in 64 ms.
+INDEX   TIMESTAMP                COST(ms)  IS-RET  IS-EXP  OBJECT
+1000    2026-06-07 20:20:01      18.21     true    false   0x7a12bcd1
+1001    2026-06-07 20:20:05      482.77    true    false   0x7a12bcd1
+1002    2026-06-07 20:20:09      6.33      false   true    0x7a12bcd1
+```
+
+接着筛慢调用：
+
+```bash
+tt -s '#cost > 300'
+```
+
+示例输出：
+
+```text
+INDEX   TIMESTAMP                COST(ms)  IS-RET  IS-EXP
+1001    2026-06-07 20:20:05      482.77    true    false
+```
+
+再查看具体记录：
+
+```bash
+tt -i 1001
+```
+
+示例输出：
+
+```text
+index=1001
+params[0]=@CreateOrderCmd[userId=1001, skuId=2008, couponId=889]
+returnObj=@OrderDTO[id=98766, status=CREATED]
+throwExp=null
+```
+
+怎么解读：
+
+- `tt` 的最大价值是先把现场存下来
+- 很适合偶发问题、难复现问题、夜间问题
+
+但一定克制：
+
+- 高并发高频方法不要长时间开着
+- 用完及时清理记录
+
+---
+
+## 7.5 方法观测这一组命令，真正怎么选
+
+如果你只想要一个可执行判断表，可以直接按这个来：
+
+| 你想知道什么 | 优先命令 | 原因 |
+|------|------|------|
+| 这个方法最近是不是一直慢 / 一直报错 | `monitor` | 它给的是统计趋势 |
+| 某一笔请求的参数、返回值、异常是什么 | `watch` | 它给的是单次现场值 |
+| 慢在哪个内部子调用 | `trace` | 它给的是路径耗时 |
+| 到底是谁调了这个方法 | `stack` | 它给的是上游调用来源 |
+| 问题偶发，先录下来以后再分析 | `tt` | 它给的是调用录像 |
+
+如果某个接口慢，一个非常实用的顺序是：
+
+1. 先 `monitor` 看它是不是持续慢
+2. 再 `trace` 看内部谁慢
+3. 再 `watch` 看慢请求的关键参数
+4. 如果问题偶发，再 `tt` 录现场
+
+---
+
+## 7.6 `ognl`: 直接在目标 JVM 里执行表达式
+
+### 7.6.1 输入
+
+```bash
+ognl '@java.lang.System@getProperty("java.version")'
+```
+
+### 7.6.2 示例输出
+
+```text
+@String[17.0.12]
+```
+
+这说明：
+
+- 表达式已经在目标 JVM 里执行
+- 不是在你本地 shell 里执行
+
+再看 Spring Boot 里的静态 logger：
+
+```bash
+ognl --classLoaderClass org.springframework.boot.loader.LaunchedURLClassLoader '@org.springframework.boot.SpringApplication@logger'
+```
+
+示例输出：
+
+```text
+@Slf4jLocationAwareLog[
+  name=@String[org.springframework.boot.SpringApplication],
+  logger=@Logger[Logger[org.springframework.boot.SpringApplication]],
+]
+```
+
+怎么解读：
+
+- `ognl` 最适合快速验证静态字段、配置值、简单表达式结果
+- 它不是让你在线上随便改状态的借口
+
+原则：
+
+- 优先读
+- 表达式短小
+- 明确类加载器
+
+---
+
+## 7.7 `vmtool`: 从 JVM 里抓实例，看对象到底还在不在
+
+### 7.7.1 输入
+
+```bash
+vmtool --action getInstances --className org.springframework.context.ApplicationContext --limit 2
+```
+
+### 7.7.2 示例输出
+
+```text
+@ApplicationContext[][
+  @AnnotationConfigServletWebServerApplicationContext[id=application, startupDate=1749301200000],
+]
+```
+
+怎么解读：
+
+- 这能快速证明容器上下文实例真的存在
+- 对排“对象是否还活着”“容器是否初始化成功”很有帮助
+
+进一步执行表达式：
+
+```bash
+vmtool --action getInstances \
+  --className org.springframework.context.ApplicationContext \
+  --limit 1 \
+  --express 'instances[0].getBeanDefinitionCount()'
+```
+
+示例输出：
+
+```text
+@Integer[286]
+```
+
+再比如筛非 daemon 线程名：
+
+```bash
+vmtool --action getInstances --className java.lang.Thread --limit -1 --express 'instances.{? #this.daemon == false}.{name}'
+```
+
+示例输出：
+
+```text
+@ArrayList[
+  @String[main],
+  @String[http-nio-8080-exec-12],
+  @String[scheduling-1],
+]
+```
+
+注意：
+
+- `--limit` 一定要带
+- 不要对超大对象类、热点类无脑抓全量
+
+---
+
+## 7.8 `profiler`: 想知道全局热点在哪，就上采样
+
+### 7.8.1 输入
+
+```bash
+profiler start
+```
+
+采样一段时间后停止：
+
+```bash
+profiler stop --format html
+```
+
+### 7.8.2 示例输出
+
+```text
+profiler output file: /Users/admin/arthas-output/20260607-202955.html
+```
+
+怎么解读：
+
+- 这说明火焰图结果已经落盘
+- 接下来应该打开结果文件，而不是继续盯终端
+
+什么时候优先用它：
+
+- 你只知道“CPU 高”，但还不知道热点函数在哪
+- 怀疑热点不是单一方法，而是整个系统多个调用栈共同导致
+
+和 `trace` 的区别：
+
+- `trace` 更像手术刀，盯住某条调用链
+- `profiler` 更像热力图，先看全局谁最热
+
+---
+
+## 7.9 `retransform` 和 `redefine`: 热修复前先分清边界
+
+官方建议已经很明确：
+
+> 优先使用 `retransform`，`redefine` 更谨慎。
+
+### 7.9.1 `retransform`
+
+输入：
+
+```bash
+jad --source-only com.example.order.OrderService > /tmp/OrderService.java
+mc /tmp/OrderService.java -d /tmp
+retransform /tmp/com/example/order/OrderService.class
+```
+
+示例输出：
+
+```text
+retransform success, size: 1, classes:
+com.example.order.OrderService
+```
+
+再查看当前 entry：
+
+```bash
+retransform -l
+```
+
+示例输出：
+
+```text
+Id  ClassName                       TransformCount  LoaderHash
+1   com.example.order.OrderService  1               7f9a81e8
+```
+
+怎么解读：
+
+- `retransform` 不是“一次改完就忘”
+- 它会留下 entry，后续要能查、能删、能再次触发
+
+### 7.9.2 `redefine`
+
+输入：
+
+```bash
+redefine /tmp/com/example/order/OrderService.class
+```
+
+示例输出：
+
+```text
+redefine success, size: 1
+```
+
+但它的限制必须记住：
+
+- 不能新增字段和方法
+- `reset` 对它无效
+- 和 `watch/trace/jad/monitor/tt` 等命令会有冲突
+
+所以工程建议仍然是：
+
+- 临时观测优先 `watch/trace/tt`
+- 临时修复优先 `retransform`
+- `redefine` 留给非常明确的场景
+
+---
+
+## 8. Advice / OGNL 变量必须会一点
+
+Arthas 很多命令强大，不是因为命令名，而是因为它们可以写表达式。
+
+常见你会在表达式里用到的核心变量包括：
+
+- `params`
+- `returnObj`
+- `throwExp`
+- `target`
+- `this`
+- `#cost`
+
+其中最常用的几个语义：
+
+- `params`: 方法参数
+- `returnObj`: 返回值
+- `throwExp`: 抛出的异常
+- `target`: 当前目标对象
+- `#cost`: 执行耗时
+
+所以你会看到很多高频写法：
+
+```bash
+watch com.example.UserService queryUser '{params, returnObj}' -x 2
+watch com.example.UserService queryUser '{params, throwExp}' -e -x 2
+trace com.example.UserService queryUser '#cost > 100'
+```
+
+表达式能力带来的收益是：
+
+- 可以精准过滤
+- 可以只看有价值的请求
+- 可以避免把终端刷爆
+
+表达式能力带来的风险是：
+
+- 写错表达式会让你误判
+- 过滤范围过大照样可能影响 JVM
+
+所以真正的原则是：
+
+> 先缩小类，先缩小方法，再缩小条件，最后才展开对象层级。
+
+---
+
+## 9. 四类典型线上问题怎么排
+
+## 9.1 CPU 飙高
+
+推荐路线：
+
+1. `dashboard` 看整体 CPU 和 JVM 内部线程状态
+2. `thread -n 5` 找最忙线程
+3. `thread <id>` 看线程栈
+4. 必要时 `profiler start/stop` 做火焰图
+5. 如果已经怀疑某方法，再用 `trace`
+
+经验判断：
+
+- GC 线程高: 优先看内存 / 分配问题
+- 业务线程高: 优先看具体调用栈
+- JIT 线程活跃异常: 留意最近是否大量增强 / 热更新
+
+官方 `dashboard` 文档还特别指出，执行 `trace/watch/tt/redefine` 等命令后，JIT 线程活动可能变频繁，因为相关 class 的 JIT 编译结果会受影响，这个细节很容易被忽略。
+
+## 9.2 “代码没生效”
+
+推荐路线：
+
+1. `sc -d com.xxx.YourClass`
+2. `classloader -t`
+3. `classloader -c <hash>`
+4. `jad com.xxx.YourClass`
+
+你要确认的不是“我本地代码改了没”，而是：
+
+- JVM 当前加载的是哪份 class
+- 来自哪个 jar
+- 由哪个类加载器加载
+- 运行中的反编译代码是不是你预期的版本
+
+这类问题，80% 不是 Arthas 问题，而是部署 / 类加载问题。
+
+## 9.3 某用户数据异常，但线下复现不了
+
+推荐路线：
+
+1. 先 `watch` 目标方法的关键入参和异常
+2. 如果问题偶发，用 `tt -t` 录调用
+3. 用 `tt -s` 过滤特定用户参数
+4. 必要时用 `watch` 只观察异常路径
+
+这类场景最忌讳：
+
+- 一开始就无条件展开巨大的参数对象
+- 把全量请求都打印出来
+
+更合理的做法是：
+
+- 先按用户 id / 订单号 / trace id 过滤
+- 再观察局部字段
+
+## 9.4 怀疑内存里存在异常对象或容器状态有问题
+
+推荐路线：
+
+1. `sc -d` 先确认类和类加载器
+2. `vmtool --action getInstances ... --limit N`
+3. 配合 `--express` 做进一步筛选
+4. 只在必要时 `forceGc`
+
+这类场景最常见误区是：
+
+- 还没确定目标类，就直接全量抓实例
+
+结果通常是：
+
+- 输出过大
+- JVM 压力升高
+- 证据也没拿清楚
+
+## 9.5 Spring Boot 线上排障案例版
+
+这一节把命令串成一个更真实的 Spring Boot 案例流程。
+
+### 9.5.1 场景
+
+线上 `POST /api/orders/create` 偶发很慢，RT 从平时的 80ms 抖到 500ms 以上。
+
+现象：
+
+- 不是所有请求都慢
+- 没有明显报错
+- 研发怀疑是数据库、远程用户服务、或者新版本代码未生效
+
+### 9.5.2 第一步：先确认是不是 JVM 整体异常
+
+```bash
+dashboard -i 2000 -n 3
+thread -n 5
+```
+
+你看到：
+
+```text
+"http-nio-8080-exec-12" Id=87 cpuUsage=68% RUNNABLE
+```
+
+结论：
+
+- 不是纯 GC 问题
+- 已经能定位到某个业务线程在忙
+
+### 9.5.3 第二步：确认当前运行的是哪份 Spring Boot 代码
+
+```bash
+sc -d com.example.order.OrderService
+classloader -t
+jad -c 7f9a81e8 com.example.order.OrderService createOrder
+```
+
+你看到：
+
+```text
+code-source /app/order-service.jar!/BOOT-INF/classes!/
+class-loader +-org.springframework.boot.loader.LaunchedURLClassLoader@7f9a81e8
+```
+
+结论：
+
+- 运行的确实是当前 Spring Boot fat jar 里的类
+- 类加载器也明确是 Boot 常见的 `LaunchedURLClassLoader`
+- 可以排除“看错类”“部署错包”这条线
+
+### 9.5.4 第三步：先看这个方法最近整体是不是持续变慢
+
+```bash
+monitor -c 5 com.example.order.OrderService createOrder
+```
+
+你看到：
+
+```text
+total  success  fail  avg-rt(ms)  fail-rate
+21     21       0     318.4       0.00%
+```
+
+结论：
+
+- 当前没有异常爆发
+- 但 RT 的确显著升高
+
+### 9.5.5 第四步：看慢在哪个子调用
+
+```bash
+trace com.example.order.OrderService createOrder '#cost > 100'
+```
+
+你看到：
+
+```text
+`---[312.442ms] com.example.order.OrderService:createOrder()
+    +---[5.122ms] com.example.order.OrderService:checkParam()
+    +---[248.773ms] com.example.user.UserRemoteService:query()
+    `---[36.090ms] com.example.order.OrderAssembler:build()
+```
+
+结论：
+
+- 主要慢点不在本地组装，也不在参数校验
+- 主要耗时落在远程用户服务 `UserRemoteService.query()`
+
+### 9.5.6 第五步：再看慢请求传了什么参数、拿到了什么结果
+
+```bash
+watch com.example.user.UserRemoteService query '{params, returnObj, throwExp}' -x 2
+```
+
+你看到某次慢调用：
+
+```text
+ts=2026-06-07 20:36:02; [cost=247.220ms]
+@ArrayList[
+  @Object[][isEmpty=false;size=1],
+  @UserDTO[id=1001, level=VIP, region=HZ],
+  null,
+]
+```
+
+结论：
+
+- 下游不是报错
+- 而是“成功但慢”
+
+这一步之后，你已经可以把排障方向从“代码逻辑错误”收敛到“远程依赖慢”。
+
+### 9.5.7 第六步：问题偶发，再把现场录下来
+
+```bash
+tt -t com.example.order.OrderService createOrder
+tt -s '#cost > 300'
+tt -i 1001
+```
+
+你可能看到：
+
+```text
+params[0]=@CreateOrderCmd[userId=1001, skuId=2008, couponId=889]
+returnObj=@OrderDTO[id=98766, status=CREATED]
+```
+
+结论：
+
+- 可以进一步判断是不是特定用户、特定商品、特定优惠券组合才慢
+- 对偶发问题非常关键，因为你终于把“发生当时的现场”拿到了
+
+### 9.5.8 如果怀疑不是远程调用慢，而是本地 CPU 热点
+
+就换路线：
+
+```bash
+profiler start
+profiler stop --format html
+```
+
+如果火焰图显示热点在：
+
+- JSON 序列化
+- 大对象拷贝
+- HashMap 扩容
+- 加解密
+
+那就说明这次慢并不是下游慢，而是应用本地 CPU 热点。
+
+### 9.5.9 这个案例真正想说明什么
+
+Arthas 的价值不是“命令很多”，而是它能把 Spring Boot 线上排障从拍脑袋变成有步骤地收敛：
+
+1. `dashboard` / `thread` 看全局和热点线程
+2. `sc` / `classloader` / `jad` 确认当前运行代码
+3. `monitor` 判断是不是持续慢
+4. `trace` 找内部慢点
+5. `watch` 看具体参数和返回值
+6. `tt` 录偶发问题现场
+7. `profiler` 看全局 CPU 热点
+
+以后你只要遇到 Spring Boot 接口问题，照着这条链路走，基本都不会完全失焦。
+
+---
+
+## 10. 生产环境使用原则
+
+## 10.1 先小范围，再扩大
+
+错误示范：
+
+```bash
+watch * * '{params,returnObj}' -x 4
+```
+
+正确思路：
+
+- 先锁定类
+- 再锁定方法
+- 再加条件
+- 最后才考虑提高 `-x`
+
+## 10.2 对象展开层级要克制
+
+`-x` 很方便，但层级一大：
+
+- 输出会爆炸
+- 序列展开成本上升
+- 很容易把关键线索淹没
+
+默认建议：
+
+- 先用 `-x 1`
+- 不够再到 `-x 2`
+- 真的必要再继续升
+
+## 10.3 后台任务别开太多
+
+Arthas 支持异步任务：
+
+```bash
+trace com.example.OrderService createOrder &
+jobs
+fg 1
+bg 1
+kill 1
+```
+
+这对“问题不知道何时出现”很有用，但官方也明确提醒：
+
+- 不要同时开启过多后台异步命令
+- 输出重定向虽然方便，但不是零成本
+
+## 10.4 能鉴权就鉴权
+
+如果你要远程访问 Web Console / HTTP API，认证配置一定要上。
+
+官方支持：
+
+- `--username`
+- `--password`
+- `arthas.properties`
+
+默认还有 `arthas.localConnectionNonAuth=true` 这种“本地连接可不鉴权”的便捷配置，但这个便利不能直接照搬到远程环境。
+
+尤其是 HTTP API，官方推荐走标准 `Authorization: Basic ...` 头。
+
+## 10.5 数据敏感性要有意识
+
+`watch`、`tt`、`ognl`、`vmtool` 很可能看到：
+
+- 用户手机号
+- token
+- 密码摘要
+- 身份证号
+- 订单金额
+
+所以实践上要注意：
+
+- 只看必要字段
+- 输出文件要受控
+- 故障结束后及时清理
+
+## 10.6 `reset`、`stop`、`quit` 不要混淆
+
+要有基本边界感：
+
+- `quit`: 退出当前会话
+- `stop`: 停止 Arthas 服务
+- `reset`: 重置增强类，撤销大多数增强效果
+
+但要特别记住：
+
+- `reset` 对 `redefine` 不生效
+- `retransform` 也有自己的 entry 生命周期
+
+所以不能想当然地以为“退出了就一定恢复原样”。
+
+---
+
+## 11. 我认为最值得优先掌握的命令
+
+如果时间有限，先把下面这组学熟，价值最高。
+
+| 命令 | 优先级 | 解决的核心问题 |
+|------|------|------|
+| `dashboard` | 很高 | JVM 当前整体是否异常 |
+| `thread` | 很高 | CPU 高、阻塞、线程栈 |
+| `sc` | 很高 | 类是否加载、来源是什么 |
+| `classloader` | 很高 | 类加载器问题、jar 来源问题 |
+| `jad` | 很高 | 运行中的代码到底长什么样 |
+| `watch` | 很高 | 入参、返回值、异常现场 |
+| `trace` | 很高 | 方法内部到底哪里慢 |
+| `monitor` | 高 | 方法层面的统计趋势 |
+| `tt` | 高 | 偶发问题录现场 |
+| `profiler` | 高 | 全局热点与火焰图 |
+| `vmtool` | 中高 | 内存对象实例排查 |
+| `ognl` | 中高 | 静态字段 / 表达式验证 |
+| `retransform` | 中 | 临时热修复 |
+| `redefine` | 中 | 更高风险热替换 |
+
+---
+
+## 12. 一套我更推荐的学习顺序
+
+很多人学习 Arthas 的问题，不是不会命令，而是顺序错了。
+
+更好的学习路径是：
+
+### 第 1 阶段：先会看
+
+先掌握：
+
+- `dashboard`
+- `thread`
+- `jvm`
+- `memory`
+
+目标：
+
+- 能看懂 JVM 大盘
+
+### 第 2 阶段：再会认代码
+
+再掌握：
+
+- `sc`
+- `sm`
+- `classloader`
+- `jad`
+
+目标：
+
+- 能确认运行时代码和类加载来源
+
+### 第 3 阶段：再会抓现场
+
+再掌握：
+
+- `monitor`
+- `watch`
+- `trace`
+- `stack`
+- `tt`
+
+目标：
+
+- 能在线抓到方法调用证据
+
+### 第 4 阶段：最后再碰高风险命令
+
+最后再掌握：
+
+- `ognl`
+- `vmtool`
+- `profiler`
+- `retransform`
+- `redefine`
+
+目标：
+
+- 在理解风险边界的前提下精细排障
+
+这个顺序的好处是：
+
+- 先建立正确问题分层
+- 不会一开始就陷入表达式和热更新细节
+
+---
+
+## 13. 一份最小排障清单
+
+以后线上接到一个 Java 问题，我会先按这份清单走。
+
+### 13.1 全局确认
+
+```bash
+dashboard -i 2000 -n 3
+thread -n 5
+jvm
+memory
+```
+
+### 13.2 类和代码确认
+
+```bash
+sc -d com.example.YourClass
+sm com.example.YourClass
+classloader -t
+jad com.example.YourClass
+```
+
+### 13.3 方法现场确认
+
+```bash
+monitor -c 5 com.example.YourClass yourMethod
+watch com.example.YourClass yourMethod '{params,returnObj,throwExp}' -x 2
+trace com.example.YourClass yourMethod '#cost > 100'
+```
+
+### 13.4 偶发问题保留现场
+
+```bash
+tt -t com.example.YourClass yourMethod
+tt -l
+```
+
+### 13.5 热点问题进一步下钻
+
+```bash
+profiler start
+profiler stop --format html
+```
+
+---
+
+## 14. 常见误区
+
+### 14.1 误区：Arthas 就是在线 debug
+
+不准确。
+
+它更像：
+
+- 在线观测
+- 在线诊断
+- 有限度的运行时增强
+
+它不是传统 IDE 单步调试器。
+
+### 14.2 误区：命令执行了就一定没成本
+
+不对。
+
+特别是：
+
+- `watch`
+- `trace`
+- `monitor`
+- `tt`
+- `vmtool`
+- `profiler`
+
+都要考虑目标 JVM 成本。
+
+### 14.3 误区：`jad` 看到的就一定能重新编译
+
+不一定。
+
+反编译代码主要用于阅读理解，不要把它等同于原始源码。
+
+### 14.4 误区：`reset` 一下就都恢复了
+
+不绝对。
+
+尤其涉及：
+
+- `redefine`
+- `retransform`
+
+时，要按它们各自机制恢复。
+
+### 14.5 误区：问题不确定，就把后台任务一直挂着
+
+这很危险。
+
+后台任务是应急手段，不是长期常驻方案。
+
+---
+
+## 15. 总结
+
+如果把 Arthas 学成一堆零散命令，它会很快忘。
+
+真正有效的理解方式应该是：
+
+- 先看全局
+- 再看线程
+- 再看类加载和运行时代码
+- 再看方法级调用现场
+- 最后才做对象抓取、采样分析、热修复
+
+也就是说，Arthas 真正教会我们的不是几个命令，而是一种 **线上问题分层定位方法**：
+
+1. 先确认系统级症状
+2. 再确认代码与类加载真相
+3. 再拿方法级证据
+4. 最后才使用高风险动作
+
+如果只保留一句结论，我会写成：
+
+> Arthas 最强的地方，不是能“看很多东西”，而是能让你在运行中的 JVM 里，以尽量小的代价，快速拿到正确证据。
