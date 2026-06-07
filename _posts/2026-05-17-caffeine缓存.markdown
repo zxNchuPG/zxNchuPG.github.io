@@ -14,15 +14,15 @@ tags:
 
 > 这篇笔记主要基于 Caffeine 官方 README、官方 Wiki，以及 Spring Boot / Spring Framework 官方文档整理，尽量只写能核实的信息，不写“听说如此”的内容。
 
-> Caffeine 官方仓库：https://github.com/ben-manes/caffeine
+> [Caffeine 官方仓库](https://github.com/ben-manes/caffeine)
  
-> Caffeine README：https://github.com/ben-manes/caffeine/blob/master/README.md
+> [Caffeine README](https://github.com/ben-manes/caffeine/blob/master/README.md)
  
-> Caffeine Wiki：https://github.com/ben-manes/caffeine/wiki
+> [Caffeine Wiki](https://github.com/ben-manes/caffeine/wiki)
  
-> Spring Boot Caching 文档：https://docs.spring.io/spring-boot/reference/io/caching.html
+> [Spring Boot Caching 文档](https://docs.spring.io/spring-boot/reference/io/caching.html)
  
-> Spring Framework Caffeine 集成文档：https://docs.spring.io/spring-framework/reference/integration/cache/store-configuration.html#cache-store-configuration-caffeine
+> [Spring Framework Caffeine 集成文档](https://docs.spring.io/spring-framework/reference/integration/cache/store-configuration.html#cache-store-configuration-caffeine)
 
 [TOC]
 

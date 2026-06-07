@@ -15,19 +15,19 @@ tags:
 
 > 这篇笔记以 Prometheus 官方文档为主线整理，目标不是只会“把 `/metrics` 抓起来”，而是把 Prometheus 的数据模型、抓取架构、规则系统、查询语义和常见误区连成一个完整脑图。
 
-> Prometheus Data Model: `https://prometheus.io/docs/concepts/data_model/`
+> [Prometheus Data Model](https://prometheus.io/docs/concepts/data_model/)
 
-> Prometheus Jobs and Instances: `https://prometheus.io/docs/concepts/jobs_instances/`
+> [Prometheus Jobs and Instances](https://prometheus.io/docs/concepts/jobs_instances/)
 
-> PromQL Basics: `https://prometheus.io/docs/prometheus/latest/querying/basics/`
+> [PromQL Basics](https://prometheus.io/docs/prometheus/latest/querying/basics/)
 
-> Prometheus Configuration: `https://prometheus.io/docs/prometheus/latest/configuration/configuration/`
+> [Prometheus Configuration](https://prometheus.io/docs/prometheus/latest/configuration/configuration/)
 
-> Recording Rules: `https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/`
+> [Recording Rules](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/)
 
-> Alerting Rules: `https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/`
+> [Alerting Rules](https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/)
 
-> When to use the Pushgateway: `https://prometheus.io/docs/practices/pushing/`
+> [When to use the Pushgateway](https://prometheus.io/docs/practices/pushing/)
 
 [TOC]
 

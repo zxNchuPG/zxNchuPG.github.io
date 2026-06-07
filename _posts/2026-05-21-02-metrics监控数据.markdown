@@ -16,17 +16,17 @@ tags:
 
 > 这篇笔记以 Metrics / Micrometer / Prometheus / Spring Boot 官方文档为主线整理，目标不是只会“接个 `/actuator/prometheus`”，而是把指标语义、数据模型、标签设计、直方图、百分位数、查询思路和工程误区真正串起来。
 
-> Micrometer Concepts: `https://micrometer.io/docs/concepts`
+> [Micrometer Concepts](https://micrometer.io/docs/concepts)
 
-> Micrometer Distribution Summaries: `https://docs.micrometer.io/micrometer/reference/1.12/concepts/distribution-summaries.html`
+> [Micrometer Distribution Summaries](https://docs.micrometer.io/micrometer/reference/1.12/concepts/distribution-summaries.html)
 
-> Prometheus Metric Types: `https://prometheus.io/docs/concepts/metric_types/`
+> [Prometheus Metric Types](https://prometheus.io/docs/concepts/metric_types/)
 
-> Prometheus Histograms and Summaries: `https://prometheus.io/docs/practices/histograms/`
+> [Prometheus Histograms and Summaries](https://prometheus.io/docs/practices/histograms/)
 
-> Spring Boot Metrics: `https://docs.spring.io/spring-boot/reference/actuator/metrics.html`
+> [Spring Boot Metrics](https://docs.spring.io/spring-boot/reference/actuator/metrics.html)
 
-> OpenTelemetry Metrics API: `https://opentelemetry.io/docs/specs/otel/metrics/api/`
+> [OpenTelemetry Metrics API](https://opentelemetry.io/docs/specs/otel/metrics/api/)
 
 [TOC]
 

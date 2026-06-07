@@ -15,15 +15,15 @@ tags:
 
 > 这篇笔记以 Grafana 官方文档为主线整理，目标不是只会“连上 Prometheus 画个图”，而是系统理解 Grafana 的定位、数据源模型、面板系统、变量体系、Explore、告警和 as-code 管理。
 
-> Grafana Data Sources: `https://grafana.com/docs/grafana/latest/datasources/`
+> [Grafana Data Sources](https://grafana.com/docs/grafana/latest/datasources/)
 
-> Grafana Panels and Visualizations: `https://grafana.com/docs/grafana/latest/panels-visualizations/`
+> [Grafana Panels and Visualizations](https://grafana.com/docs/grafana/latest/panels-visualizations/)
 
-> Grafana Variables: `https://grafana.com/docs/grafana/latest/visualizations/dashboards/variables/add-template-variables/`
+> [Grafana Variables](https://grafana.com/docs/grafana/latest/visualizations/dashboards/variables/add-template-variables/)
 
-> Grafana Alerting: `https://grafana.com/docs/grafana/latest/alerting/`
+> [Grafana Alerting](https://grafana.com/docs/grafana/latest/alerting/)
 
-> Grafana Provisioning: `https://grafana.com/docs/grafana/latest/administration/provisioning/`
+> [Grafana Provisioning](https://grafana.com/docs/grafana/latest/administration/provisioning/)
 
 [TOC]
 

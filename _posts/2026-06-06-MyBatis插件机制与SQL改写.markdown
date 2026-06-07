@@ -18,16 +18,16 @@ tags:
 > 如果只是想回答“业务方怎么拿到将要执行的 SQL”，一句话就够了：**运行期最核心的对象是 `BoundSql`**。但如果想回答“为什么分页插件、数据权限插件、动态表名插件都能工作”，那就必须把 `SqlSource`、`MappedStatement`、`BoundSql`、`Executor`、`StatementHandler` 这一整套对象关系看明白。
 
 > 参考资料：
->
-> MyBatis 官方配置文档：https://mybatis.org/mybatis-3/configuration.html#plugins
->
-> MyBatis `Configuration` 源码文档：https://mybatis.org/mybatis-3/jacoco/org.apache.ibatis.session/Configuration.java.html
->
-> MyBatis `MappedStatement` 源码文档：https://mybatis.org/mybatis-3/zh_CN/jacoco/org.apache.ibatis.mapping/MappedStatement.java.html
->
-> MyBatis `BoundSql` 源码文档：https://mybatis.org/mybatis-3/zh_CN/jacoco/org.apache.ibatis.mapping/BoundSql.java.html
->
-> MyBatis-Plus `InnerInterceptor` Javadoc：https://javadoc.io/doc/com.baomidou/mybatis-plus-extension/3.5.5/com/baomidou/mybatisplus/extension/plugins/inner/InnerInterceptor.html
+
+> [MyBatis 官方配置文档](https://mybatis.org/mybatis-3/configuration.html#plugins)
+
+> [MyBatis Configuration 源码文档](https://mybatis.org/mybatis-3/jacoco/org.apache.ibatis.session/Configuration.java.html)
+
+> [MyBatis MappedStatement 源码文档](https://mybatis.org/mybatis-3/zh_CN/jacoco/org.apache.ibatis.mapping/MappedStatement.java.html)
+
+> [MyBatis BoundSql 源码文档](https://mybatis.org/mybatis-3/zh_CN/jacoco/org.apache.ibatis.mapping/BoundSql.java.html)
+
+> [MyBatis-Plus InnerInterceptor Javadoc](https://javadoc.io/doc/com.baomidou/mybatis-plus-extension/3.5.5/com/baomidou/mybatisplus/extension/plugins/inner/InnerInterceptor.html)
 
 [TOC]
 
