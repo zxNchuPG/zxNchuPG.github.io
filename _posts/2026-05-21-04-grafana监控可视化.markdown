@@ -1,6 +1,6 @@
 ---
 layout:      post
-title:       "Grafana 深度学习笔记"
+title:       "Grafana 监控可视化"
 subtitle:    "从数据源、Panel、Variables、Explore、Alerting 到 Provisioning，系统理解 Grafana"
 author:      "Ekko"
 header-img:  "img/bg/bg-scattered.png"

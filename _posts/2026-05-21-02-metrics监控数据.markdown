@@ -1,6 +1,6 @@
 ---
 layout:      post
-title:       "Metrics 深度学习笔记"
+title:       "Metrics 监控数据"
 subtitle:    "从指标语义、标签基数、直方图到 Micrometer / Prometheus / Spring Boot，系统理解 Metrics"
 author:      "Ekko"
 header-img:  "img/bg/bg-scattered.png"

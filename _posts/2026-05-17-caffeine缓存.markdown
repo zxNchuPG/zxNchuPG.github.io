@@ -1,6 +1,6 @@
 ---
 layout:      post
-title:       "Caffeine 缓存笔记"
+title:       "Caffeine 缓存"
 subtitle:    "Java 本地缓存 Caffeine 的核心概念、用法与 Spring Boot 集成"
 author:      "Ekko"
 header-img:  "img/bg/bg-Caffeine.png"

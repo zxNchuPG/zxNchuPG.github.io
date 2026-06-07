@@ -1,6 +1,6 @@
 ---
 layout:      post
-title:       "Metrics、Prometheus、Grafana 三者关系笔记"
+title:       "Metrics、Prometheus、Grafana 三者关系"
 subtitle:    "这三者如何区分、职责分别是什么、为什么总一起出现但又绝不是一回事"
 author:      "Ekko"
 header-img:  "img/bg/bg-scattered.png"

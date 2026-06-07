@@ -1,6 +1,6 @@
 ---
 layout:      post
-title:       "Arthas 诊断工具深度学习笔记"
+title:       "Arthas 诊断工具"
 subtitle:    "从 attach 原理、命令体系到线上排障剧本，系统理解 Arthas"
 author:      "Ekko"
 header-img:  "img/bg/bg-jvm.jpg"

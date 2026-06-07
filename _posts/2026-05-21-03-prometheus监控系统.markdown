@@ -1,6 +1,6 @@
 ---
 layout:      post
-title:       "Prometheus 深度学习笔记"
+title:       "Prometheus 监控系统"
 subtitle:    "从数据模型、拉取架构、PromQL、规则系统到 Pushgateway / Remote Write，系统理解 Prometheus"
 author:      "Ekko"
 header-img:  "img/bg/bg-scattered.png"
