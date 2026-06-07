@@ -533,4 +533,301 @@ public static List<String> encryptTokens(List<String> tokens, String secretKey) 
 |明密文映射表|中（需架构保护）|高|低|对查询性能要求极高的场景|
 |同态加密|极高|极低|极高|暂不适合生产|
 
-		
+---
+
+## 6.电商平台中订单未支付过期如何实现自动关单？
+
+场景：用户下单后30分钟未支付，系统自动取消订单并释放库存
+
+---
+
+### 方案一：定时任务扫描（简单粗暴）
+
+定时扫描数据库中超时未支付的订单，批量关单。
+
+```java
+@Scheduled(fixedRate = 60000) // 每分钟扫描一次
+public void closeExpiredOrders() {
+    List<Order> expiredOrders = orderMapper.selectExpiredUnpaidOrders(
+        OrderStatus.UNPAID, 
+        LocalDateTime.now().minusMinutes(30)
+    );
+    for (Order order : expiredOrders) {
+        closeOrder(order);
+    }
+}
+```
+
+```sql
+SELECT * FROM orders 
+WHERE status = 'UNPAID' 
+  AND create_time < NOW() - INTERVAL 30 MINUTE
+LIMIT 500;
+```
+
+**优点：** 实现简单，无额外中间件依赖
+
+**缺点：**
+- 时效性差：最大延迟 = 扫描间隔（如每分钟扫描，最多延迟1分钟）
+- 数据库压力大：订单量大时频繁全表扫描影响性能
+- 空扫描浪费：大部分时间可能无过期订单
+
+---
+
+### 方案二：RabbitMQ 延迟队列（主流方案）
+
+利用 RabbitMQ 的 TTL + 死信队列（DLX）实现精准延迟。
+
+```
+生产者 --发送订单消息(TTL=30min)--> 延迟队列 --过期转发--> 死信队列 --消费--> 关单处理器
+```
+
+```java
+// 下单时发送延迟消息
+public void createOrder(Order order) {
+    orderMapper.insert(order);
+    // 发送延迟消息，TTL 30分钟
+    rabbitTemplate.convertAndSend("order.delay.exchange", "order.delay.key", 
+        order.getOrderId(),
+        message -> {
+            message.getMessageProperties().setExpiration("1800000"); // 30min
+            return message;
+        });
+}
+
+// 死信队列消费者：处理过期订单
+@RabbitListener(queues = "order.close.queue")
+public void handleExpiredOrder(String orderId) {
+    Order order = orderMapper.selectById(orderId);
+    if (order != null && order.getStatus() == OrderStatus.UNPAID) {
+        closeOrder(order);
+    }
+}
+```
+
+> RabbitMQ 3.8+ 支持原生延迟消息插件 `rabbitmq_delayed_message_exchange`，无需手动配置 DLX
+
+**优点：** 时效性精准，无数据库扫描压力，解耦彻底
+
+**缺点：** 依赖 MQ 可用性，消息堆积时占用内存
+
+---
+
+### 方案三：RocketMQ 延迟消息
+
+RocketMQ 原生支持延迟消息（固定等级）。
+
+```java
+// 发送延迟消息（等级 16 ≈ 30分钟）
+Message msg = new Message("ORDER_CLOSE_TOPIC", orderId.getBytes());
+msg.setDelayTimeLevel(16); // 1s 5s 10s 30s 1m 2m 3m 4m 5m 6m 7m 8m 9m 10m 20m 30m 1h 2h
+producer.send(msg);
+```
+
+> RocketMQ 5.x 支持任意时间精度的延迟消息
+
+**优点：** 原生支持，配置简单，性能高
+
+**缺点：** 固定延迟等级不够灵活（5.x之前）
+
+---
+
+### 方案四：Redis 过期事件通知 / Redisson 延迟队列
+
+#### 4.1 Redis Key 过期事件
+
+利用 Redis 的 keyspace notification，设置 key TTL，过期时触发回调。
+
+```bash
+# 开启过期事件通知
+config set notify-keyspace-events Ex
+```
+
+```java
+// 下单时设置 key
+redisTemplate.opsForValue().set("order:expire:" + orderId, orderId, 30, TimeUnit.MINUTES);
+
+// 监听过期事件
+@Component
+public class OrderExpireListener extends KeyExpirationEventMessageListener {
+    @Override
+    public void onMessage(Message message, byte[] pattern) {
+        String key = message.toString();
+        if (key.startsWith("order:expire:")) {
+            String orderId = key.replace("order:expire:", "");
+            closeOrder(orderId);
+        }
+    }
+}
+```
+
+**缺陷：** Redis 过期事件是“最多一次”语义，不保证可靠性，服务宕机时事件会丢失
+
+#### 4.2 Redisson 延迟队列（推荐）
+
+```java
+RBlockingDeque<String> blockingDeque = redissonClient.getBlockingDeque("order-close-queue");
+RDelayedQueue<String> delayedQueue = redissonClient.getDelayedQueue(blockingDeque);
+
+// 下单时加入延迟队列
+delayedQueue.offer(orderId, 30, TimeUnit.MINUTES);
+
+// 消费端阻塞获取
+new Thread(() -> {
+    while (true) {
+        String orderId = blockingDeque.take();
+        closeOrder(orderId);
+    }
+}).start();
+```
+
+**优点：** 基于 Redis 实现，轻量级，支持分布式
+
+**缺点：** 依赖 Redis 可用性，消息量大时占用内存
+
+---
+
+### 方案五：时间轮算法（HashedWheelTimer）
+
+基于内存的时间轮，适合单机应用。Netty 的 `HashedWheelTimer` 是典型实现。
+
+```java
+HashedWheelTimer timer = new HashedWheelTimer(1, TimeUnit.SECONDS, 512);
+
+// 下单时添加延迟任务
+timer.newTimeout(timeout -> {
+    closeOrder(orderId);
+}, 30, TimeUnit.MINUTES);
+```
+
+**优点：** 精度高，性能好，无外部依赖
+
+**缺点：** 纯内存，服务重启任务丢失，不支持分布式
+
+---
+
+### 方案六：JDK 原生 DelayQueue
+
+`DelayQueue` 是 Java 并发包提供的延迟阻塞队列，元素到期后才能被消费者取出，适合在单机应用中实现简单的延迟关单。
+
+```java
+public class OrderDelayTask implements Delayed {
+    private final String orderId;
+    private final long executeTime;
+
+    public OrderDelayTask(String orderId, long delay, TimeUnit unit) {
+        this.orderId = orderId;
+        this.executeTime = System.currentTimeMillis() + unit.toMillis(delay);
+    }
+
+    public String getOrderId() {
+        return orderId;
+    }
+
+    @Override
+    public long getDelay(TimeUnit unit) {
+        long diff = executeTime - System.currentTimeMillis();
+        return unit.convert(diff, TimeUnit.MILLISECONDS);
+    }
+
+    @Override
+    public int compareTo(Delayed other) {
+        return Long.compare(this.executeTime, ((OrderDelayTask) other).executeTime);
+    }
+}
+
+private final DelayQueue<OrderDelayTask> delayQueue = new DelayQueue<>();
+
+// 下单时放入延迟任务
+public void createOrder(Order order) {
+    orderMapper.insert(order);
+    delayQueue.offer(new OrderDelayTask(order.getOrderId(), 30, TimeUnit.MINUTES));
+}
+
+// 启动消费线程
+@PostConstruct
+public void startConsumer() {
+    Executors.newSingleThreadExecutor().submit(() -> {
+        while (true) {
+            OrderDelayTask task = delayQueue.take();
+            closeOrder(task.getOrderId());
+        }
+    });
+}
+```
+
+**优点：** JDK 原生支持，实现简单，无需引入额外中间件
+
+**缺点：** 仅适合单 JVM，服务重启后任务丢失，不支持分布式扩展
+
+> 本质上它和时间轮一样都偏向内存方案，只是 `DelayQueue` 更通用直观，时间轮在大规模定时任务场景下通常更节省调度开销
+
+---
+
+### 方案七：XXL-JOB / 分布式任务调度
+
+结合分布式任务调度框架，定时批量扫描关单，相比简单定时任务支持分片、失败重试、监控告警。
+
+```java
+@XxlJob("closeExpiredOrderHandler")
+public void closeExpiredOrder() {
+    // 支持分片参数，按 orderId % shardTotal == shardIndex 分配
+    int shardIndex = XxlJobHelper.getShardIndex();
+    int shardTotal = XxlJobHelper.getShardTotal();
+    
+    List<Order> orders = orderMapper.selectExpiredOrders(shardIndex, shardTotal);
+    for (Order order : orders) {
+        closeOrder(order);
+    }
+}
+```
+
+**优点：** 支持分片并行、失败重试、可视化管理
+
+**缺点：** 本质还是扫描，时效性受调度频率限制
+
+---
+
+### 关单操作流程
+
+```bash
+检查订单状态（是否仍为未支付）
+↓
+修改订单状态为“已关闭”
+↓
+释放库存（回滚库存扣减）
+↓
+释放优惠券/积分（如果占用了）
+↓
+通知用户（可选）
+```
+
+> 注意：关单操作需要幂等性保证，防止重复关单（先检查状态再操作）
+
+---
+
+### 方案对比
+
+| 方案 | 时效性 | 可靠性 | 分布式支持 | 实现复杂度 | 适用场景 |
+| --- | --- | --- | --- | --- | --- |
+| 定时任务扫描 | 低（取决于扫描频率） | 高 | 需额外处理 | 低 | 订单量小、对时效要求不高 |
+| RabbitMQ 延迟队列 | 高（精确） | 高（持久化） | 支持 | 中 | **生产环境主流方案** |
+| RocketMQ 延迟消息 | 高 | 高 | 支持 | 低 | 已使用 RocketMQ 的项目 |
+| Redis 过期事件 | 高 | **低（不可靠）** | 支持 | 低 | 不推荐用于核心业务 |
+| Redisson 延迟队列 | 高 | 中 | 支持 | 低 | 轻量级方案，已使用 Redis |
+| 时间轮算法 | 高（精确） | **低（重启丢失）** | 不支持 | 低 | 单机、非核心业务 |
+| JDK DelayQueue | 高（精确） | **低（重启丢失）** | 不支持 | 低 | 单机应用、轻量级延迟任务 |
+| XXL-JOB 分布式扫描 | 中 | 高 | 支持 | 中 | 订单量大，需要分片并行处理 |
+
+---
+
+### 生产环境推荐组合
+
+**延迟消息（主路径） + 定时任务扫描（兑底补偿）**
+
+1. 主流程：下单时发送延迟消息，到期后触发关单
+2. 兑底：定时任务每5分钟扫描一次，处理消息丢失/消费失败的漏网订单
+
+> 这样既保证了时效性，又保证了最终一致性
+
+---

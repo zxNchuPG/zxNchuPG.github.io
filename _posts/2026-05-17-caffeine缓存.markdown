@@ -1,0 +1,2678 @@
+---
+layout:      post
+title:       "Caffeine 缓存笔记"
+subtitle:    "Java 本地缓存 Caffeine 的核心概念、用法与 Spring Boot 集成"
+author:      "Ekko"
+header-img:  "img/bg/bg-Caffeine.png"
+catalog:     true
+tags:
+  - 学习笔记
+  - Java
+  - Spring Boot
+  - 缓存
+---
+
+> 这篇笔记主要基于 Caffeine 官方 README、官方 Wiki，以及 Spring Boot / Spring Framework 官方文档整理，尽量只写能核实的信息，不写“听说如此”的内容。
+>
+> `https://github.com/ben-manes/caffeine` 的确就是 Caffeine 的官方原生项目仓库。
+
+[TOC]
+
+---
+
+## 1. Caffeine 是什么
+
+Caffeine 是一个 **Java 本地内存缓存库**，官方 README 对它的定位是：
+
+- 高性能缓存库
+- 提供接近最优的缓存命中策略
+- 提供类似 Guava Cache 的 API，但在设计和性能上做了进一步改进
+
+它的典型使用场景是：
+
+- 给热点数据做 JVM 内本地缓存
+- 减少数据库、RPC、下游服务的重复访问
+- 在单机场景下提升吞吐、降低平均响应时间
+
+它**不是分布式缓存**，数据默认只存在当前应用实例的内存里，所以：
+
+- 多实例之间不会自动共享数据
+- 应用重启后缓存会丢失
+- 不适合拿来替代 Redis 这类远程缓存
+
+一句话理解：
+
+> Caffeine 更像是“应用进程内部的高性能缓存组件”，而不是“独立部署的缓存中间件”。
+
+---
+
+## 2. Caffeine 的核心特性
+
+根据官方 README，Caffeine 支持以下能力：
+
+- 自动加载缓存项，且可选异步加载
+- 基于大小的淘汰
+- 基于时间的过期
+- `refreshAfterWrite` 式刷新
+- `weakKeys`
+- `weakValues` / `softValues`
+- 移除监听器
+- 统计信息采集
+- JCache 扩展
+
+常见且最实用的能力通常是下面这些：
+
+### 2.1 基于大小的淘汰
+
+最常见的是：
+
+- `maximumSize(long)`：按条目数量限制
+- `maximumWeight(long)` + `weigher(...)`：按权重限制
+
+当缓存超过限制后，Caffeine 会自动淘汰部分条目。
+
+要注意：
+
+- `maximumSize` 更简单，适合大多数业务
+- `maximumWeight` 适合“每个对象大小差异很大”的场景
+- 设置了 `weigher` 以后，是否保留某个对象是按“总权重”而不是“条目数”控制
+
+### 2.2 时间相关策略：把过期和刷新放在一起看
+
+这几个配置必须放在一起理解，不然很容易出现“每个概念单独都懂，组合起来就糊了”的情况。
+
+常见时间相关策略有三个：
+
+- `expireAfterWrite`：写入后一段时间过期
+- `expireAfterAccess`：最后一次访问后一段时间过期
+- `refreshAfterWrite`：写入一段时间后变成“可刷新”
+
+它们最核心的区别可以先看这张表：
+
+| 配置 | 关注点 | 到时间后的行为 | 第一次读取时会发生什么 |
+|------|------|------|------|
+| `expireAfterWrite` | 数据写入后存活多久 | 条目过期 | 视为失效，需要重新加载 |
+| `expireAfterAccess` | 多久没人访问就失效 | 条目过期 | 视为失效，需要重新加载 |
+| `refreshAfterWrite` | 多久后应该尝试更新 | 条目变成“可刷新” | 访问时才触发刷新，通常先返回旧值 |
+
+如果只记一句话：
+
+- `expireAfterWrite` 更像“到点失效”
+- `expireAfterAccess` 更像“太久没人用就失效”
+- `refreshAfterWrite` 更像“到点后，下次有人访问时尝试后台更新”
+
+这也是为什么你刚才指出那句“写进去 10 分钟后一定失效”需要和刷新放在一起讲，因为两者最容易被误当成同一件事。
+
+#### 一个具体时序例子
+
+假设：
+
+- `refreshAfterWrite = 10m`
+- `expireAfterWrite = 30m`
+- `T0` 时刻写入缓存
+
+那么行为是：
+
+- `T0 ~ T10`：缓存正常命中
+- `T10` 之后：条目只是“有资格被刷新”，不是立刻消失
+- `T12` 第一次有人访问：触发异步刷新；刷新期间通常仍然返回旧值
+- 如果 `T10` 之后一直没人访问，到 `T30`：这个条目仍然可能直接过期
+
+这正是 Caffeine 官方 Wiki 对 `refreshAfterWrite` 的描述重点：
+
+- 刷新不是淘汰
+- 刷新通常异步执行
+- 刷新期间旧值仍可返回
+- 只有条目被查询时，刷新才真正开始
+
+所以：
+
+- 如果你要“超过 10 分钟绝不能返回旧值”，不能只配置 `refreshAfterWrite`
+- 如果你想减少热点 key 因硬过期导致的阻塞抖动，`refreshAfterWrite` 才有价值
+
+再补一条容易忽略的细节：
+
+- 刷新失败时，Caffeine 通常会保留旧值，并记录日志后吞掉异常
+
+这意味着它偏向“尽量继续服务旧值”，而不是因为一次刷新失败把缓存直接打穿。
+
+### 2.3 自动加载与回源方式
+
+如果缓存缺失时希望自动计算并写回，可以使用：
+
+- `LoadingCache`
+- `AsyncLoadingCache`
+
+这样在查询缓存时，缺失项可以通过加载函数自动补齐，而不是每次手动写 `if (value == null) { ... }`。
+
+对于手动缓存，官方 Wiki 还特别建议优先使用：
+
+- `cache.get(key, k -> loader(k))`
+
+而不是：
+
+- `getIfPresent` -> miss -> 查库 -> `put`
+
+原因是前者是**原子地计算并写入**，并发场景下更不容易出现重复回源和竞态窗口。
+
+### 2.4 为什么 Caffeine 的命中率通常更好
+
+这一点不是“玄学优化”，官方 `Efficiency` Wiki 直接给出了结论：
+
+- 传统 `LRU` 因为简单，所以非常流行
+- 但在一些典型负载里，尤其是扫描型访问里，`LRU` 命中率并不理想
+- Caffeine 选择的是 `Window TinyLFU` 策略，因为它在命中率和内存占用之间表现很好
+
+可以先用一个不那么学术、但足够准确的理解方式去记：
+
+- 不是只看“最近有没有被访问”
+- 还会参考“这个 key 是否真的经常被访问”
+
+所以它相比“单纯按最近访问时间淘汰”的策略，更不容易被一波一次性流量污染缓存。
+
+这也是为什么 Caffeine 常被拿来做：
+
+- 热点数据缓存
+- 高频查询结果缓存
+- 一级本地缓存
+
+因为它不只是一个“带 TTL 的 ConcurrentHashMap”，而是在**缓存准入和淘汰策略**上做了很多优化。
+
+#### 再往下看一层：`Window TinyLFU` 到底在解决什么问题
+
+如果只用传统 `LRU`，它有一个经典问题：
+
+- 最近访问过，不代表真的值得长期留下
+
+举个例子：
+
+- 缓存里本来放着 1000 个稳定热点 key
+- 突然来一波 5000 个“只访问一次”的扫描请求
+- 纯 `LRU` 很可能把原来的热点挤出去很多
+
+等扫描流量过去以后，会发生什么？
+
+- 真正热点数据要重新慢慢回到缓存里
+- 在这个恢复过程里，命中率会明显下降
+
+这类现象通常叫做：
+
+- **缓存污染**
+
+`Window TinyLFU` 的核心价值，就在于它不是简单地问：
+
+- “你是不是最近访问过？”
+
+而是会额外考虑：
+
+- “你是不是一个值得留下的对象？”
+
+可以把它粗略理解成两段式思路：
+
+1. 先给新进入的数据一个较小的“窗口区”，允许它先暂住
+2. 当缓存有淘汰压力时，再结合频率估计，判断它值不值得挤掉老对象
+
+所以它和 `LRU` 的差别，不只是“排序方法不同”，而是：
+
+- `LRU` 更偏向最近性
+- `Window TinyLFU` 在最近性之外，还会做一次准入判断
+
+#### 为什么它更抗扫描流量
+
+因为一批只访问一次的对象虽然“刚刚很新”，但它们通常：
+
+- 访问频率低
+- 没有持续价值
+
+所以在准入判断时，它们更不容易把真正热点对象批量挤走。
+
+这也是官方文档为什么强调：
+
+- 在典型工作负载里，`LRU` 不是最优
+- `Window TinyLFU` 在命中率和内存占用之间表现更好
+
+#### 什么时候这种优势最明显
+
+下面这些场景最能体现它的价值：
+
+- 有稳定热点，同时偶尔混入大批一次性请求
+- 有搜索、分页扫描、批量导入之类的流量波峰
+- 热点集合相对稳定，但总流量模式并不稳定
+
+如果你的业务访问模式非常平滑、热点也不明显，那么你未必会明显感知策略差异。
+
+但越是复杂真实的线上流量，准入策略通常越重要。
+
+### 2.5 统计与监听
+
+常见能力：
+
+- `recordStats()`：记录命中率、加载次数、淘汰次数等
+- `removalListener(...)`：监听条目被移除的原因
+
+这对定位缓存是否生效、淘汰是否过于频繁、缓存容量是否合理很有帮助。
+
+### 2.6 Caffeine 为什么能快
+
+如果只停留在 API 层，很容易把 Caffeine 理解成：
+
+- 一个支持 TTL 的本地 Map
+
+但它的性能和命中率优势，实际上来自一整套内部设计。
+
+根据官方 `Design` Wiki，可以先抓住 4 个关键词：
+
+- access order queue
+- write order queue
+- read buffer
+- write buffer
+
+#### 访问顺序和写入顺序是分开的
+
+这一点很关键：
+
+- `expireAfterAccess` 依赖“访问顺序”
+- `expireAfterWrite` 依赖“写入顺序”
+- `maximumSize` 这类基于容量的淘汰，也要感知访问热度
+
+如果每次读写都立刻去重排全局链表，在高并发下开销会很大。
+
+所以 Caffeine 的思路不是“每次访问都重操作”，而是：
+
+- 把访问事件先记录下来
+- 批量维护内部队列
+
+#### 读缓冲 / 写缓冲减少了热点锁竞争
+
+官方文档里把它描述得很直白：
+
+- 访问带来的顺序调整，不一定当场立刻完成
+- 先写入 buffer
+- 再批量把这些变化应用到内部策略结构上
+
+这样做的收益是：
+
+- 读路径更轻
+- 高并发下减少频繁锁竞争
+- 缓存维护成本被摊薄，而不是每次访问都做“重活”
+
+这也是为什么 Caffeine 在真实高并发服务里，通常比“自己手搓一个 `ConcurrentHashMap + 定时清理`”更稳。
+
+#### 它优化的不只是执行速度，还有命中率
+
+很多缓存实现只在意：
+
+- 查得快不快
+
+但实际缓存效果还取决于：
+
+- 该留下谁
+- 该淘汰谁
+
+如果准入和淘汰策略差，查得再快也只是“高速地查到大量 miss”。
+
+所以 Caffeine 的优势其实是两层：
+
+- 数据结构和并发设计让它访问成本低
+- `Window TinyLFU` 让它更不容易被低价值流量污染
+
+这两层叠加起来，才形成它在工程上的优势。
+
+---
+
+## 3. Caffeine 的边界
+
+很多人一开始会把它和 Redis 混在一起用“缓存”两个字概括，但边界其实很不一样。
+
+### 3.1 Caffeine 适合什么
+
+- 单机热点数据缓存
+- 计算结果缓存
+- 数据库查询结果的短期复用
+- 作为远程缓存前的一层本地缓存
+
+### 3.2 Caffeine 不适合什么
+
+- 需要多实例共享缓存数据
+- 需要缓存持久化
+- 需要跨服务统一失效
+- 需要大规模分布式容量扩展
+
+所以在实际系统里常见的做法是：
+
+- 只有单体或单实例服务时，直接用 Caffeine
+- 多实例服务中，把 Caffeine 当作一级缓存，本地提速
+- Redis 当二级缓存，负责共享与更大的缓存容量
+
+---
+
+## 4. 三种最常见的 API
+
+## 4.1 `Cache<K, V>`
+
+最基础的手动缓存。
+
+```java
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+
+import java.time.Duration;
+
+Cache<Long, String> userCache = Caffeine.newBuilder()
+    .maximumSize(10_000)
+    .expireAfterWrite(Duration.ofMinutes(10))
+    .build();
+
+String value = userCache.getIfPresent(1L);
+userCache.put(1L, "Tom");
+userCache.invalidate(1L);
+```
+
+如果 miss 时要回源加载，更推荐写成：
+
+```java
+String value = userCache.get(1L, userId -> loadUserNameFromDb(userId));
+```
+
+这样做的好处是：
+
+- 读和写是一个原子动作
+- 代码比“先查再 put”更简洁
+- 并发场景下更稳妥
+
+适合：
+
+- 需要手动控制读写
+- 加载逻辑比较复杂
+- 不想把“查询 miss 后自动回源”绑定在 cache 对象上
+
+---
+
+## 4.2 `LoadingCache<K, V>`
+
+缺失时自动加载。
+
+```java
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.LoadingCache;
+
+import java.time.Duration;
+
+LoadingCache<Long, String> userCache = Caffeine.newBuilder()
+    .maximumSize(10_000)
+    .expireAfterWrite(Duration.ofMinutes(10))
+    .build(userId -> loadUserNameFromDb(userId));
+
+String value = userCache.get(1L);
+```
+
+这里的 `get(1L)` 在缓存 miss 时会自动调用加载函数。
+
+适合：
+
+- “查不到就回源加载”逻辑非常稳定
+- 想把缓存 miss 的处理逻辑集中管理
+
+---
+
+## 4.3 `AsyncLoadingCache<K, V>`
+
+异步加载版本，返回 `CompletableFuture`。
+
+```java
+import com.github.benmanes.caffeine.cache.AsyncLoadingCache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+
+import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
+
+AsyncLoadingCache<Long, String> userCache = Caffeine.newBuilder()
+    .maximumSize(10_000)
+    .expireAfterWrite(Duration.ofMinutes(10))
+    .buildAsync((userId, executor) ->
+        CompletableFuture.supplyAsync(() -> loadUserNameFromDb(userId), executor)
+    );
+
+CompletableFuture<String> future = userCache.get(1L);
+```
+
+适合：
+
+- 加载动作本身就是异步的
+- 希望减少业务线程阻塞
+
+但是异步缓存会带来额外复杂度：
+
+- 失败重试怎么处理
+- 超时怎么处理
+- 上游调用链是否本身就是异步
+
+如果业务本身是同步链路，先别为了“高级”盲目上异步缓存。
+
+---
+
+## 4.4 三种 API 到底该怎么选
+
+前面把 `Cache`、`LoadingCache`、`AsyncLoadingCache` 分开介绍了，但真实项目里，大家更常问的是：
+
+- 我到底该选哪个？
+
+可以先用一句话判断：
+
+- 业务自己掌控回源逻辑，用 `Cache`
+- miss 逻辑天然固定，用 `LoadingCache`
+- 整条链路本身就是异步，用 `AsyncLoadingCache`
+
+#### 选 `Cache` 的信号
+
+适合下面这类情况：
+
+- miss 后不一定直接查数据库，可能先查 Redis、再查 DB
+- 不同业务条件下有不同回源逻辑
+- 你需要更细粒度地控制写入、删除、预热
+
+也就是说：
+
+- 缓存只是你流程中的一个步骤
+- 不是整个“查询模型”的中心
+
+这种情况下，`Cache` 往往最灵活。
+
+#### 选 `LoadingCache` 的信号
+
+适合下面这类情况：
+
+- 给定 key 后，加载逻辑非常稳定
+- 缺失就加载，这个语义一直成立
+- 你希望 `get(key)` 本身就表达“取值，不关心背后是否回源”
+
+例如：
+
+- 配置项
+- 字典项
+- 只读元数据
+
+这种“key -> value”关系很稳定的数据，很适合 `LoadingCache`。
+
+#### 选 `AsyncLoadingCache` 的信号
+
+只有当下面这些条件成立时，`AsyncLoadingCache` 的价值才比较明显：
+
+- 你的数据加载本身就是异步
+- 上游调用链能消费 `CompletableFuture`
+- 你真的想减少阻塞，而不是只是想“用上异步 API”
+
+如果你的应用整体还是同步 MVC / 同步 service 风格，那很多时候它只会增加复杂度。
+
+#### 一个工程上很实用的建议
+
+大多数业务可以这样起步：
+
+1. 先用 `Cache`
+2. 当你发现 miss 逻辑高度固定，再考虑 `LoadingCache`
+3. 当整条链路已经异步化，再考虑 `AsyncLoadingCache`
+
+也就是说：
+
+- 默认从最简单、最可控的方案开始
+
+这通常比“一上来就选最强大的那个接口”更稳。
+
+---
+
+## 4.5 从源码/实现视角理解几个关键行为
+
+这一节不追求逐行看源码，而是抓住几个“看懂后就不容易误用”的实现语义。
+
+### 4.5.1 `getIfPresent + put` 和 `get(key, loader)` 的本质差别
+
+很多人第一次用 Caffeine，会写成：
+
+```java
+var value = cache.getIfPresent(key);
+if (value == null) {
+    value = load(key);
+    cache.put(key, value);
+}
+```
+
+这段代码单线程下没问题，但并发下它是“先读、后算、再写”的拆分流程。
+
+问题在于：
+
+- 多个线程可以同时看到 miss
+- 多个线程可能同时回源
+- 最后再先后把结果写回缓存
+
+而：
+
+```java
+cache.get(key, k -> load(k));
+```
+
+更接近“围绕这个 key 的一次原子加载操作”。
+
+从实现语义上理解，它的价值不只是少写几行代码，而是：
+
+- 把 miss 判断、加载、写回这几个动作收敛在一次 key 级别的原子路径里
+
+如果你把 Caffeine 当成并发组件看，这才是它真正推荐的使用方式。
+
+### 4.5.2 `refreshAfterWrite` 为什么不是“到点后台定时刷新”
+
+这个误解非常常见。
+
+官方 `Refresh` Wiki 讲得很明确：
+
+- `refreshAfterWrite` 只是让条目在某个时间点后“有资格被刷新”
+- 真正的刷新，通常要等**下一次访问**触发
+
+也就是说它不是：
+
+- 到了 5 分钟，框架自动起后台任务把所有 key 刷一遍
+
+而更像：
+
+- 到了 5 分钟后，这个 key 下次再被访问时，可以触发异步刷新
+
+因此它特别适合：
+
+- 热点数据
+- 会持续被访问的数据
+
+而不适合你想象中的：
+
+- 全量定时预热
+- 定时批量刷新所有缓存
+
+#### 刷新期间为什么通常还能返回旧值
+
+这也是官方文档强调的重点：
+
+- 刷新和淘汰不是一回事
+- 刷新期间旧值通常仍然可用
+
+所以当刷新正在进行时：
+
+- 读取线程通常先拿到旧值
+- 新值加载完成后再替换进去
+
+这就是为什么前文一直强调：
+
+- `refreshAfterWrite` 更像“平滑更新”
+- `expireAfterWrite` 更像“硬过期”
+
+#### 刷新失败时会发生什么
+
+官方文档也给出了一个非常关键的行为：
+
+- 如果刷新抛异常，旧值会被保留
+- 异常会被记录并吞掉
+
+这意味着它非常适合“旧值总比失败好”的只读热点数据。
+
+但也意味着：
+
+- 如果你对刷新失败完全没有监控，问题可能会被悄悄掩盖
+
+所以实际项目里，刷新逻辑最好配合：
+
+- 监控
+- 日志
+- 失败计数
+
+一起看。
+
+### 4.5.3 刷新任务跑在哪个线程池
+
+这是另外一个很容易被忽视的实现细节。
+
+官方 `Refresh` 和 `Removal` Wiki 都提到：
+
+- 异步刷新和异步监听默认使用 `ForkJoinPool.commonPool()`
+
+这意味着如果你没有显式指定 executor：
+
+- 它会和应用里其他可能也在用 common pool 的任务共享线程资源
+
+在简单项目里这通常没问题，但在高负载服务里要警惕：
+
+- 刷新任务过多
+- 监听器逻辑过重
+- common pool 被其他异步任务抢占
+
+如果这些情况存在，更稳妥的方式通常是：
+
+- 通过 `Caffeine.executor(...)` 指定自己的线程池
+
+尤其是当刷新逻辑会访问：
+
+- 数据库
+- Redis
+- 下游 HTTP / RPC
+
+这类慢资源时，更不建议把它们随手放进默认公共线程池。
+
+### 4.5.4 `refresh(K)` 的一个重要语义：同一个 key 的在途刷新会去重
+
+官方 `Refresh` Wiki 提到：
+
+- `LoadingCache.refresh(K)` 对正在进行中的刷新请求会做去重
+
+这意味着：
+
+- 同一个 key 已经在刷新时，再次触发刷新不会无限并发叠加
+
+这个语义很重要，因为它避免了热点 key 在刷新场景下再次形成“并发风暴”。
+
+也因此可以把它理解为：
+
+- Caffeine 不只是提供缓存容器
+- 还在一部分关键路径上帮你做了并发折叠
+
+### 4.5.5 `CacheLoader.reload(K, V)` 为什么比只写 `load(K)` 更高级
+
+很多文章只讲：
+
+- miss 时调用 `load(K)`
+
+但官方 `Refresh` Wiki 还特别提到：
+
+- 刷新时可以重写 `reload(K, V)`
+
+这个方法的价值在于：
+
+- 你可以拿到旧值
+- 基于旧值来计算新值
+
+这适合一些更高级的场景：
+
+- 增量刷新
+- 条件刷新
+- 基于旧版本信息决定要不要真正回源
+
+它的意义不是“更复杂的写法”，而是：
+
+- refresh 场景并不一定等同于 cold load 场景
+
+这是源码设计层面一个很有价值的信号。
+
+### 4.5.6 `asMap().compute(...)` 是真正适合复杂写流程的入口
+
+如果只是做普通读缓存，前面的 API 已经够用了。
+
+但当你有下面这些需求时：
+
+- 更新缓存的同时更新外部资源
+- 希望同一个 key 的变更按顺序发生
+- 想把“读改写删”收敛成一次原子流程
+
+官方 `Compute` Wiki 推荐的切入点是：
+
+- `cache.asMap().compute(...)`
+
+它的理解方式可以是：
+
+- 把缓存当成一个支持原子计算的并发 Map 来操作
+
+官方对它的描述很关键：
+
+- 这类 entry 级计算会阻塞该 key 后续的修改操作
+- 在写完成前，读取通常仍返回旧值
+
+所以它更适合：
+
+- 复杂写逻辑
+- 写穿 / 写回
+- 分层缓存联动
+
+而不是简单的查询缓存。
+
+### 4.5.7 `removal`、`eviction`、`invalidation` 不是一回事
+
+官方 `Removal` Wiki 特意区分了这几个词：
+
+- `eviction`：因为缓存策略导致的移除，比如容量、过期
+- `invalidation`：调用方主动删除
+- `removal`：对外泛指条目被移除这个结果
+
+这个区分很有价值，因为很多业务日志里会混着写“删除了缓存”，但实际上语义完全不同。
+
+例如：
+
+- 你主动调用 `invalidate(key)`，这是 invalidation
+- 因为 `maximumSize` 不够被淘汰，这是 eviction
+
+它们在排查问题时不是同一种原因。
+
+### 4.5.8 `removalListener` 和 `evictionListener` 的使用边界
+
+这一点也非常容易写错。
+
+官方 `Removal` Wiki 说明：
+
+- `removalListener` 默认是异步执行的
+- `evictionListener` 用于需要和淘汰同步观察顺序的场景
+
+可以粗略理解成：
+
+- `removalListener` 更适合通知型、记录型动作
+- `evictionListener` 更适合你真的关心“淘汰发生当下”的顺序语义
+
+而且官方也明确说了：
+
+- 监听器异常会被记录并吞掉
+
+这就意味着监听器里不应该塞太重、太关键、失败不能丢的核心业务逻辑。
+
+否则你会得到一种危险状态：
+
+- 主流程看起来没报错
+- 但监听器里的关键副作用已经失败
+
+### 4.5.9 过期和清理不是“墙上时钟一到就立刻删掉”
+
+很多人把 TTL 理解成：
+
+- 到点立刻从内存里消失
+
+但从实现视角更准确的理解是：
+
+- 条目在策略上变成“应该过期”
+- 后续在访问、写入或维护流程里被清理
+
+所以工程上更准确的表述不是：
+
+- “10 分钟一到对象一定已经被物理移除”
+
+而是：
+
+- “10 分钟后它应该被视为过期，不应再作为有效值长期存在”
+
+这也是为什么缓存语义更适合按：
+
+- 命中表现
+- 回源行为
+- 最终淘汰结果
+
+来理解，而不是把它想成严格定时器。
+
+---
+
+## 5. 常用构建方式
+
+```java
+Cache<Long, String> cache = Caffeine.newBuilder()
+    .initialCapacity(100)
+    .maximumSize(10_000)
+    .expireAfterWrite(Duration.ofMinutes(5))
+    .recordStats()
+    .build();
+```
+
+几个高频参数：
+
+- `initialCapacity`：初始容量
+- `maximumSize`：最大条目数
+- `expireAfterWrite`：写入后过期
+- `expireAfterAccess`：访问后过期
+- `refreshAfterWrite`：写入后刷新
+- `recordStats`：开启统计
+- `removalListener`：监听移除事件
+
+---
+
+## 5.1 引用型淘汰：`weakKeys` / `weakValues` / `softValues` 要谨慎
+
+这是 Caffeine 支持、但大多数业务文章不会讲清楚的一组特性。
+
+官方 Wiki 把它归类为：
+
+- reference-based eviction
+
+也就是基于引用类型让对象在 GC 后被回收。
+
+常见选项有：
+
+- `weakKeys()`
+- `weakValues()`
+- `softValues()`
+
+它们不是“更聪明的缓存”，而是把缓存生命周期的一部分交给 GC。
+
+#### 什么时候它们有意义
+
+更适合这些偏框架或基础设施层的场景：
+
+- key 本身就是对象身份，且希望对象无外部引用后自动消失
+- value 很大，且你愿意接受 GC 压力时缓存被回收
+- 缓存条目生命周期天然依赖对象可达性
+
+例如：
+
+- 反射元数据
+- 类加载器相关缓存
+- 框架内部对象关联缓存
+
+#### 为什么业务缓存一般不建议优先用
+
+因为它们会带来几个非常现实的问题：
+
+- 命中率变得更难预测
+- 条目是否还在，不只由 TTL 和容量决定，还受 GC 影响
+- 排查问题时更难分辨“是策略淘汰了，还是 GC 回收了”
+
+对业务侧来说，这意味着：
+
+- 同样代码、同样流量，在不同堆压力下缓存表现可能不一样
+
+这通常不是你想要的“稳定性”。
+
+#### `softValues()` 尤其不要轻易当成“自动内存保护”
+
+很多人会直觉上觉得：
+
+- 内存紧张时让 JVM 自动回收 soft value，好像很合理
+
+但工程上它常见的问题是：
+
+- 回收时机不稳定
+- 命中率波动大
+- 线上现象很像“缓存忽好忽坏”
+
+所以对大多数业务缓存来说，更建议优先用：
+
+- 明确的 `maximumSize`
+- 明确的 `maximumWeight`
+- 明确的过期策略
+
+而不是把关键行为交给软引用。
+
+#### 一个保守但实用的经验
+
+如果你在写的是：
+
+- 用户信息缓存
+- 商品详情缓存
+- 订单查询缓存
+- 配置缓存
+
+那默认就先不要碰：
+
+- `weakValues()`
+- `softValues()`
+
+除非你非常清楚自己为什么要这么做，以及命中率波动带来的代价。
+
+### 5.2 `maximumWeight` 的一个常见误区
+
+前面提过 `maximumWeight` 适合大对象场景，这里再补一个官方 Wiki 明确提醒的点：
+
+- weight 在创建和更新时计算，之后是静态的
+- 淘汰选择并不是简单按“谁更重就先淘汰”
+
+这意味着 `weight` 更像：
+
+- 容量预算控制工具
+
+而不是：
+
+- 精确内存管理器
+
+所以不要把 `weigher` 写成特别昂贵、特别复杂的逻辑，也不要误以为它能精确模拟 JVM 实际占用。
+
+### 5.3 什么时候需要 `Expiry`
+
+大多数业务用：
+
+- `expireAfterWrite`
+- `expireAfterAccess`
+
+就够了。
+
+但如果你的过期时间不是固定值，而是取决于：
+
+- 数据本身的字段
+- 外部返回的过期时间
+- 不同对象不同 TTL
+
+那才需要考虑：
+
+- `expireAfter(Expiry)`
+
+这属于更进阶的用法，适合：
+
+- token 缓存
+- 下游返回自带过期时间的数据
+- 每条数据 TTL 不同的业务对象
+
+如果你的过期策略其实是统一 TTL，就没必要为了“高级”去上 `Expiry`。
+
+---
+
+## 6. 策略组合：在真实系统里怎么配
+
+前面把淘汰、过期、刷新分开讲清楚了，真正落地时更重要的是“怎么组合”。
+
+### 6.1 查询结果缓存
+
+典型场景：
+
+- 用户信息
+- 商品详情
+- 配置项
+
+最常见的组合是：
+
+```java
+Caffeine.newBuilder()
+    .maximumSize(10_000)
+    .expireAfterWrite(Duration.ofMinutes(5))
+    .build();
+```
+
+适合：
+
+- 读多写少
+- 可以容忍几分钟内的轻微陈旧
+- 重点是简单稳定
+
+### 6.2 热点配置或字典数据
+
+如果你希望：
+
+- 尽量不要因为“到点过期”让首个请求阻塞
+- 但数据也不能无限期陈旧
+
+可以考虑：
+
+```java
+Caffeine.newBuilder()
+    .maximumSize(1_000)
+    .refreshAfterWrite(Duration.ofMinutes(1))
+    .expireAfterWrite(Duration.ofMinutes(10))
+    .build(key -> loadConfig(key));
+```
+
+这套组合的语义是：
+
+- 热点数据 1 分钟后有资格刷新
+- 有人访问时触发异步刷新
+- 即使长时间没有访问，10 分钟后也会自然过期
+
+它比较适合：
+
+- 配置中心本地缓存
+- 字典项缓存
+- 热点但允许短暂旧值的只读数据
+
+### 6.3 会话式热点数据
+
+如果你的业务更关心“多久没人用就回收”，那么 `expireAfterAccess` 更贴切。
+
+例如：
+
+- 短时热点对象
+- 页面局部计算结果
+- 一段时间内频繁访问，冷下来就可以回收的数据
+
+这个时候，“最后一次访问时间”比“第一次写入时间”更重要。
+
+### 6.4 多实例系统里的推荐姿势
+
+在多实例部署里，比较常见的组合不是“只用 Caffeine”，而是：
+
+- Caffeine 做一级缓存，TTL 短一些
+- Redis 做二级缓存，负责共享
+- 数据库做最终数据源
+
+这个架构的思路是：
+
+- 本地缓存负责降低单次读取延迟
+- 远程缓存负责跨实例共享
+- 数据库负责最终一致的真实值
+
+如果直接把 Caffeine 当唯一缓存层，多实例一致性会很快变成问题。
+
+### 6.5 高并发下如何避免缓存击穿
+
+当一个热点 key 过期时，最典型的问题不是“单次慢一点”，而是：
+
+- 很多线程同时 miss
+- 一起回源数据库或下游服务
+- 下游瞬间被打满
+
+这就是常说的缓存击穿或 stampede。
+
+#### 直接手写 `getIfPresent` + `put` 容易放大问题
+
+像这样：
+
+```java
+var value = cache.getIfPresent(key);
+if (value == null) {
+    value = loadFromDb(key);
+    cache.put(key, value);
+}
+```
+
+在并发下会出现：
+
+- 多个线程同时看到 miss
+- 多次重复回源
+- 先后写入缓存
+
+所以前面提到的官方推荐写法：
+
+```java
+cache.get(key, k -> loadFromDb(k));
+```
+
+价值不仅是“代码简洁”，更重要的是：
+
+- 对同一个 key 的加载和写入是原子的
+
+#### Spring Cache 里可以用 `sync = true`
+
+Spring 官方文档提供了同步缓存模式：
+
+```java
+@Cacheable(cacheNames = "user", key = "#id", sync = true)
+public User findById(Long id) {
+    return loadUserFromDb(id);
+}
+```
+
+它的语义是：
+
+- 同一个 key 并发 miss 时，只让一个线程去计算
+- 其他线程等待结果写回缓存
+
+这个特性非常适合：
+
+- 热点 key
+- 计算昂贵或回源昂贵的方法
+- 希望降低瞬时击穿风险的场景
+
+但也要知道它的限制，Spring `@Cacheable` 的 javadoc 明确提到：
+
+- `sync = true` 不支持 `unless`
+- 只能指定一个 cache
+- 不能和其他缓存操作混用
+
+所以它不是“哪里都加”，而是留给真正容易击穿的热点方法。
+
+---
+
+## 7. Java Spring Boot 如何使用
+
+这是最实用的一节。
+
+Spring Boot 对缓存提供的是 **Spring Cache 抽象**，如果类路径里存在 Caffeine，Boot 可以自动配置 `CaffeineCacheManager`。
+
+### 7.1 引入依赖
+
+Maven：
+
+```xml
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-cache</artifactId>
+    </dependency>
+
+    <dependency>
+        <groupId>com.github.ben-manes.caffeine</groupId>
+        <artifactId>caffeine</artifactId>
+    </dependency>
+</dependencies>
+```
+
+Gradle：
+
+```gradle
+implementation("org.springframework.boot:spring-boot-starter-cache")
+implementation("com.github.ben-manes.caffeine:caffeine")
+```
+
+说明：
+
+- `spring-boot-starter-cache` 提供 Spring Cache 抽象支持
+- `caffeine` 是实际的本地缓存实现
+
+### 7.2 开启缓存能力
+
+在配置类上加 `@EnableCaching`：
+
+```java
+import org.springframework.cache.annotation.EnableCaching;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+@EnableCaching
+public class CacheConfig {
+}
+```
+
+然后在业务方法上使用注解：
+
+```java
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.stereotype.Service;
+
+@Service
+public class UserService {
+
+    @Cacheable(cacheNames = "user", key = "#userId")
+    public String getUserName(Long userId) {
+        return loadUserNameFromDb(userId);
+    }
+}
+```
+
+语义是：
+
+- 第一次调用执行真实方法
+- 返回值写入缓存
+- 后续相同 key 的调用直接命中缓存
+
+### 7.3 用配置文件快速指定 Caffeine 规则
+
+Spring Boot 官方文档给出的方式之一是使用 `spring.cache.caffeine.spec`。
+
+`application.yml` 示例：
+
+```yaml
+spring:
+  cache:
+    cache-names: user,product
+    caffeine:
+      spec: maximumSize=10000,expireAfterWrite=10m,recordStats
+```
+
+这适合：
+
+- 所有缓存基本共享一套规则
+- 希望快速配置，不想手写 `CacheManager`
+
+但它也有局限：
+
+- 不同缓存难以精细化配置
+- 复杂场景下可读性一般
+
+### 7.4 用 JavaConfig 自定义 `CaffeineCacheManager`
+
+如果你希望更明确地控制缓存配置，可以直接声明 `CacheManager`：
+
+```java
+import com.github.benmanes.caffeine.cache.Caffeine;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.EnableCaching;
+import org.springframework.cache.caffeine.CaffeineCacheManager;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import java.time.Duration;
+import java.util.List;
+
+@Configuration
+@EnableCaching
+public class CacheConfig {
+
+    @Bean
+    public CacheManager cacheManager() {
+        CaffeineCacheManager cacheManager = new CaffeineCacheManager();
+        cacheManager.setCacheNames(List.of("user", "product"));
+        cacheManager.setCaffeine(Caffeine.newBuilder()
+            .initialCapacity(100)
+            .maximumSize(10_000)
+            .expireAfterWrite(Duration.ofMinutes(10))
+            .recordStats());
+        return cacheManager;
+    }
+}
+```
+
+这个方式的优点：
+
+- 类型安全
+- 配置可读性更好
+- 方便追加监听器、统计等能力
+
+### 7.5 Spring Boot 里 Caffeine 配置的优先级
+
+这一点很容易被忽略，但 Spring Boot 官方文档其实写得很明确。
+
+如果使用的是 Boot 自动配置的 `CaffeineCacheManager`，Caffeine 可以按下面顺序定制：
+
+1. `spring.cache.caffeine.spec`
+2. `CaffeineSpec` Bean
+3. `Caffeine` Bean
+
+也就是说：
+
+- 配置文件里的 `spec` 优先级最高
+- 再往下才是容器里的 `CaffeineSpec` 和 `Caffeine` Bean
+
+这在排查“为什么我写了 Java Bean 但没生效”时非常重要。
+
+#### 什么时候优先用 `spec`
+
+适合：
+
+- 大多数 cache 共用一套规则
+- 配置比较简单
+- 希望在不同环境里通过配置中心或 yml 快速调整
+
+例如：
+
+```yaml
+spring:
+  cache:
+    cache-names: user,product,dict
+    caffeine:
+      spec: maximumSize=10000,expireAfterWrite=10m,recordStats
+```
+
+#### 什么时候该切到 JavaConfig
+
+一旦你需要下面这些能力，通常就不该再硬撑 `spec`：
+
+- 自定义 `executor`
+- 自定义 `removalListener`
+- 自定义 `weigher`
+- `maximumWeight`
+- `Expiry`
+- 每个 cache 不同策略
+
+因为这些能力很多都不是简单字符串能优雅表达的。
+
+### 7.6 `spring.cache.cache-names` 到底在干什么
+
+这个配置不只是“声明一下名称”，它还关系到 cache 的创建方式。
+
+例如：
+
+```yaml
+spring:
+  cache:
+    cache-names: user,product,dict
+```
+
+它的意义通常是：
+
+- 在启动时预先准备这些 cache 区域
+
+这和“运行时按需创建”相比，优点是：
+
+- 名称更可控
+- 不容易因为拼写错误动态创建出错误 cache
+- 更适合生产环境做显式治理
+
+### 7.7 `CaffeineCacheManager` 的静态模式和动态模式
+
+从 Spring Framework 的 `CaffeineCacheManager` javadoc 来看，它既支持：
+
+- 动态模式：请求到某个 cache name 时再懒创建
+- 静态模式：通过 `setCacheNames(...)` 预定义固定集合
+
+工程上可以这样理解：
+
+- 开发期、简单项目，用动态模式很方便
+- 生产期、缓存名较多的项目，更推荐静态模式
+
+因为静态模式有一个很现实的好处：
+
+- 你不会因为 `@Cacheable("usr")` 手滑写错，把一个新 cache 悄悄创建出来
+
+### 7.8 每个 cache 不同配置，不能只靠一个全局 `spec`
+
+这是很多项目走到中后期一定会遇到的问题。
+
+例如：
+
+- `user` 想要 `expireAfterWrite=10m`
+- `dict` 想要 `refreshAfterWrite=1m`
+- `product` 想要 `maximumWeight`
+
+这时候单个全局 `spring.cache.caffeine.spec` 就不够用了。
+
+更合适的做法是：
+
+- 自己声明 `CaffeineCacheManager`
+- 通过 `registerCustomCache(...)` 给不同 cache 注册不同的 native cache
+
+例如：
+
+```java
+import com.github.benmanes.caffeine.cache.Caffeine;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.caffeine.CaffeineCacheManager;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import java.time.Duration;
+
+@Configuration
+public class CacheConfig {
+
+    @Bean
+    public CacheManager cacheManager() {
+        CaffeineCacheManager cacheManager = new CaffeineCacheManager();
+
+        cacheManager.registerCustomCache("user",
+            Caffeine.newBuilder()
+                .maximumSize(50_000)
+                .expireAfterWrite(Duration.ofMinutes(10))
+                .recordStats()
+                .build());
+
+        cacheManager.registerCustomCache("dict",
+            Caffeine.newBuilder()
+                .maximumSize(5_000)
+                .refreshAfterWrite(Duration.ofMinutes(1))
+                .expireAfterWrite(Duration.ofMinutes(10))
+                .build());
+
+        return cacheManager;
+    }
+}
+```
+
+这种方式的价值非常高，因为它终于能让：
+
+- 不同业务缓存拥有不同生命周期和容量策略
+
+而不是所有 cache 共用一把尺子。
+
+### 7.9 `CacheManagerCustomizer` 适合补刀，不适合承载全部复杂逻辑
+
+Spring Boot 官方文档提到：
+
+- 如果 `CacheManager` 是 Boot 自动配置出来的，可以用 `CacheManagerCustomizer` 再做定制
+
+这个机制适合：
+
+- 调整 `allowNullValues`
+- 设置 cache names
+- 做一些轻量补充配置
+
+但如果你已经明确需要：
+
+- 多个 custom cache
+- 自定义 executor
+- 自定义 listener
+- 明确的 native cache 注册
+
+那通常更建议：
+
+- 直接自己声明 `CacheManager` Bean
+
+因为到了这个阶段，继续在自动配置上“补丁式扩展”，可读性会快速下降。
+
+### 7.10 `CacheLoader` 是全局共享语义时才值得挂到 `CacheManager`
+
+从 `CaffeineCacheManager` 的 API 设计也能看出：
+
+- `setCacheLoader(...)` 是给这个 manager 管理的 cache 统一设置加载器
+
+这意味着它更适合：
+
+- 多个 cache 的加载语义本来就一致
+
+而不适合：
+
+- 每个 cache 都有完全不同的回源逻辑
+
+否则你会很快陷入一种很尴尬的状态：
+
+- cache manager 很“通用”
+- loader 却不得不写成一堆 `if/else` 按 cache name 分发
+
+通常这种情况说明：
+
+- 你的不同 cache 已经应该拆成独立注册的 native cache 了
+
+### 7.11 `asyncCacheMode` 适合 Spring 6.1+ 的异步缓存抽象场景
+
+Spring Framework 的 `CaffeineCacheManager` 在较新的版本里支持：
+
+- `setAsyncCacheMode(true)`
+
+它的意义不是“让 `@Cacheable` 自动变异步”，而是：
+
+- 底层构建 `AsyncCache`
+- 让 Spring `Cache` 抽象支持 `retrieve(...)` 这类异步访问语义
+
+所以它更适合：
+
+- 你明确在使用 Spring 较新的异步缓存接口
+- 你的调用链本身就是异步风格
+
+如果你的项目仍然主要是：
+
+- `@Cacheable`
+- 同步 service
+- 同步 MVC
+
+那这个配置通常不是优先项。
+
+### 7.12 `allowNullValues` 在 Spring 层是“适配行为”，不是 Caffeine 原生语义
+
+这点很值得单独讲一句。
+
+Caffeine 原生不是靠 `null` 作为正常缓存值来工作的，而在 Spring `CaffeineCache` 里：
+
+- `allowNullValues` 本质上是 Spring 适配层提供的行为
+
+也就是说：
+
+- 这是 Spring Cache 抽象为了兼容“方法可以返回 null”做的一层包装
+
+所以一旦你开启它，就要意识到：
+
+- 你处理的是 Spring 包装过的空值语义
+- 不完全等于“native Caffeine 自然支持 null value”
+
+这也是为什么业务上依然要谨慎：
+
+- 是否真的需要缓存空值
+- 空值 TTL 是否应该更短
+
+### 7.13 一个实用的分层配置建议
+
+如果项目准备长期维护，我更推荐下面这套分层思路：
+
+#### 第一层：配置文件只放简单、全局、可运维调整的项
+
+例如：
+
+- `spring.cache.type`
+- `spring.cache.cache-names`
+- 简单 `spring.cache.caffeine.spec`
+
+#### 第二层：JavaConfig 承载复杂和强语义配置
+
+例如：
+
+- per-cache 策略
+- 自定义线程池
+- 监听器
+- 加载器
+- `Expiry`
+- `weigher`
+
+#### 第三层：业务注解只表达业务语义
+
+例如：
+
+- `cacheNames`
+- `key`
+- `condition`
+- `unless`
+
+这样分层后的好处是：
+
+- 运维改配置，不需要碰业务代码
+- 架构层策略集中在配置类里
+- 业务方法只表达“这个结果是否该缓存”
+
+从长期维护角度看，这比把所有东西都堆进注解或 yml 里更清晰。
+
+### 7.14 一个更接近生产的 Spring Boot 配置示例
+
+```java
+import com.github.benmanes.caffeine.cache.Caffeine;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.EnableCaching;
+import org.springframework.cache.caffeine.CaffeineCacheManager;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import java.time.Duration;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+
+@Configuration
+@EnableCaching
+public class CacheConfig {
+
+    @Bean(destroyMethod = "shutdown")
+    public Executor caffeineExecutor() {
+        return Executors.newFixedThreadPool(4);
+    }
+
+    @Bean
+    public CacheManager cacheManager(Executor caffeineExecutor) {
+        CaffeineCacheManager cacheManager = new CaffeineCacheManager();
+        cacheManager.setAllowNullValues(false);
+
+        cacheManager.registerCustomCache("user",
+            Caffeine.newBuilder()
+                .maximumSize(50_000)
+                .expireAfterWrite(Duration.ofMinutes(10))
+                .recordStats()
+                .executor(caffeineExecutor)
+                .build());
+
+        cacheManager.registerCustomCache("dict",
+            Caffeine.newBuilder()
+                .maximumSize(5_000)
+                .refreshAfterWrite(Duration.ofMinutes(1))
+                .expireAfterWrite(Duration.ofMinutes(10))
+                .executor(caffeineExecutor)
+                .build());
+
+        return cacheManager;
+    }
+}
+```
+
+这个例子体现的不是“代码更长”，而是几个工程原则：
+
+- 不同 cache 用不同策略
+- 刷新/监听等异步行为有明确线程池
+- 默认不缓存空值
+
+如果项目已经进入中大型阶段，这种写法通常比单一 `spec` 更可靠。
+
+### 7.15 一个判断原则：什么时候继续用 Boot 自动配置，什么时候接管
+
+可以用一句话判断：
+
+- 当所有 cache 大差不差时，用 Boot 自动配置
+- 当不同 cache 生命周期、容量、回源方式明显不同，就自己接管
+
+这是一个很重要的分界线，因为很多项目的复杂度问题并不是来自 Caffeine 本身，而是：
+
+- 已经进入“多策略阶段”
+- 却还在坚持“单一全局配置”
+
+这时代码就会越来越别扭。
+
+### 7.16 一个容易忽略的 Boot 细节：不要把 `@EnableCaching` 乱放在主应用类
+
+Spring Boot 官方文档对这一点是有提醒的：
+
+- 不建议把 `@EnableCaching` 直接加在主应用类上，让缓存成为所有场景下都强制开启的能力
+
+尤其在测试场景里，这可能会带来：
+
+- 测试意外走缓存
+- 测试隔离性变差
+- 不同 profile 下行为不够清晰
+
+更稳妥的做法通常是：
+
+- 放在明确的配置类里
+
+这样缓存能力的启用边界更清楚。
+
+### 7.17 常用缓存注解
+
+#### `@Cacheable`
+
+最常见，查缓存，miss 时执行方法并缓存结果。
+
+```java
+@Cacheable(cacheNames = "user", key = "#userId")
+public User findById(Long userId) {
+    return userRepository.findById(userId).orElse(null);
+}
+```
+
+#### `@CachePut`
+
+方法总会执行，然后把结果写入缓存。
+
+适合：
+
+- 更新数据库后顺手更新缓存
+
+```java
+@CachePut(cacheNames = "user", key = "#result.id")
+public User update(User user) {
+    return userRepository.save(user);
+}
+```
+
+#### `@CacheEvict`
+
+删除缓存。
+
+```java
+@CacheEvict(cacheNames = "user", key = "#userId")
+public void delete(Long userId) {
+    userRepository.deleteById(userId);
+}
+```
+
+如果要清空整个缓存分区：
+
+```java
+@CacheEvict(cacheNames = "user", allEntries = true)
+public void clearUsers() {
+}
+```
+
+---
+
+## 8. Spring Boot 集成时的注意点
+
+### 8.1 Spring Cache 是“方法级缓存抽象”
+
+使用 `@Cacheable` 时，本质上是由 Spring AOP 代理拦截方法调用。
+
+所以常见坑包括：
+
+- 同类内部方法自调用，可能不会经过代理
+- 不是 Spring 管理的 Bean，不会生效
+- 以为“加了注解就一定命中”，但实际上 key 可能不一致
+
+### 8.2 Caffeine 是本地缓存，不会跨实例同步
+
+如果应用有多个实例：
+
+- A 实例更新了数据并清理本地缓存
+- B 实例上的本地缓存不会自动一起失效
+
+这时通常需要：
+
+- Redis 统一缓存
+- 或消息通知各实例失效本地缓存
+- 或者把 Caffeine 只当作一级短期缓存
+
+### 8.3 不要把过期时间设得过长
+
+因为它是本地内存缓存，所以：
+
+- TTL 太长，脏数据窗口会更大
+- 容量太大，会挤占业务堆内存
+
+尤其在多实例场景里，长 TTL 会放大数据不一致问题。
+
+### 8.4 是否缓存 `null` 要谨慎
+
+Spring 的 `CaffeineCacheManager` 提供了 `allowNullValues` 相关能力，但业务上要谨慎对待缓存空值。
+
+可以缓存空值来防止缓存穿透，但要注意：
+
+- 空值 TTL 通常应更短
+- 否则数据刚写入库后，空值缓存可能还没失效
+
+### 8.5 Spring Cache 的代理语义：为什么自调用会失效
+
+这是很多人第一次用 `@Cacheable` 时最容易踩的坑。
+
+Spring 默认用的是 **proxy 模式** 来处理缓存注解，核心语义是：
+
+- 只有“经过代理对象”的调用，缓存拦截器才会生效
+
+所以这段代码：
+
+```java
+@Service
+public class UserService {
+
+    public User query(Long id) {
+        return findById(id); // 同类内部调用
+    }
+
+    @Cacheable(cacheNames = "user", key = "#id")
+    public User findById(Long id) {
+        return loadUserFromDb(id);
+    }
+}
+```
+
+很多人以为 `query()` 调 `findById()` 也会命中缓存，但实际上常常不会。
+
+原因不是 Caffeine 有问题，而是：
+
+- `query()` 到 `findById()` 是当前对象内部直接调用
+- 这次调用没有走 Spring 代理
+- 因此缓存拦截器没有机会介入
+
+#### 这类问题怎么解决
+
+常见做法有 3 类：
+
+- 把缓存方法拆到另一个 Spring Bean 里，由外部代理调用
+- 只从外部入口调用带缓存的方法，不在同类内部直接调
+- 特殊场景下改用 AspectJ 模式，而不是默认 proxy 模式
+
+对大多数业务项目来说，第一种通常最清晰：
+
+- 一个 Bean 负责业务编排
+- 另一个 Bean 负责带缓存的数据读取
+
+这样结构也更利于测试。
+
+### 8.6 Spring 默认 key 生成器并不总是你想要的
+
+Spring Cache 不是“没写 `key` 就没 key”，它有默认生成规则。
+
+官方文档给出的默认规则可以概括为：
+
+- 没有参数时，使用 `SimpleKey.EMPTY`
+- 只有一个参数时，直接使用该参数
+- 多个参数时，使用组合键 `SimpleKey`
+
+这个默认规则在很多简单场景下够用，但它有两个问题：
+
+#### 问题 1：默认规则虽然能工作，但不一定够清晰
+
+例如：
+
+```java
+@Cacheable("user")
+public User findById(Long id) {
+    ...
+}
+```
+
+它当然能用，但后期排查问题时你很难第一眼看出：
+
+- key 究竟由哪些参数组成
+- 这个方法是不是和别的方法共用了一个复杂对象 key
+
+所以复杂方法更建议显式写 `key` 或自定义 `KeyGenerator`。
+
+#### 问题 2：参数对象的稳定性会直接影响缓存质量
+
+如果默认 key 直接用的是参数对象本身，那么你要非常确认：
+
+- 它的 `equals()` / `hashCode()` 合理
+- 它不会把无关字段带进比较逻辑
+- 它不会在进入缓存后又被修改
+
+否则就会出现两类问题：
+
+- 该命中的没命中
+- 不该共用的结果被错误复用
+
+#### 什么时候考虑自定义 `KeyGenerator`
+
+当你发现以下情况时，就可以考虑上自定义 `KeyGenerator`：
+
+- 很多方法都遵循同一套 key 命名规则
+- 每个方法手写 SpEL 太长
+- 需要把租户、环境、版本号等统一拼进 key
+
+这种时候把规则收敛到 `KeyGenerator` 里，通常比在几十个注解里手写字符串更稳。
+
+### 8.7 `condition` 和 `unless` 是很实用的高级开关
+
+这是很多入门文章不太会展开的点，但实际非常有用。
+
+#### `condition`
+
+在调用方法前判断“要不要参与缓存”。
+
+```java
+@Cacheable(cacheNames = "user", key = "#id", condition = "#id != null and #id > 0")
+public User findById(Long id) {
+    ...
+}
+```
+
+适合：
+
+- 只缓存合法参数
+- 过滤掉明显不该缓存的调用
+
+#### `unless`
+
+在方法执行后判断“要不要把结果放进缓存”。
+
+```java
+@Cacheable(cacheNames = "user", key = "#id", unless = "#result == null")
+public User findById(Long id) {
+    ...
+}
+```
+
+适合：
+
+- 不缓存空值
+- 不缓存异常结果或不完整结果
+
+一个很实用的理解方式是：
+
+- `condition` 看输入
+- `unless` 看输出
+
+当你不想“什么结果都缓存”时，它们非常有价值。
+
+---
+
+## 9. 实践建议
+
+### 9.1 先从最小配置开始
+
+大多数业务一开始并不需要复杂配置，通常下面这套就够用了：
+
+```java
+Caffeine.newBuilder()
+    .maximumSize(10_000)
+    .expireAfterWrite(Duration.ofMinutes(5))
+    .recordStats()
+    .build();
+```
+
+先观察：
+
+- 命中率是否提升
+- 回源次数是否下降
+- 内存占用是否可接受
+
+再决定要不要上：
+
+- `refreshAfterWrite`
+- `maximumWeight`
+- `weakKeys`
+- 异步加载
+
+### 9.2 对缓存 key 做统一设计
+
+这一节确实可以讲得更具体。
+
+判断一个缓存 key 是不是“正确”，最实用的标准不是它长得漂不漂亮，而是这两句：
+
+- **相同业务结果，必须映射到相同 key**
+- **不同业务结果，必须映射到不同 key**
+
+如果违反任意一句，这个 key 设计就是有问题的。
+
+再拆开一点看，一个好的 key 至少要满足：
+
+- 稳定：同样的业务请求，多次调用生成同一个 key
+- 完整：所有会影响结果的维度都进入 key
+- 去噪：不要把随机值、时间戳、traceId 之类无关维度混进去
+- 可解释：排查问题时，人能看懂这个 key 对应什么业务含义
+
+#### 正确 key 的例子
+
+**场景 1：根据用户 id 查用户资料**
+
+```java
+@Cacheable(cacheNames = "user", key = "#id")
+public User findById(Long id) {
+    ...
+}
+```
+
+这是正确的，因为：
+
+- 用户资料由 `id` 唯一确定
+- 同一个 `id` 总是同一个 key
+- 不同 `id` 不会混淆
+
+**场景 2：商品价格和店铺、会员等级有关**
+
+```java
+@Cacheable(cacheNames = "price", key = "#productId + ':' + #shopId + ':' + #memberLevel")
+public Price queryPrice(Long productId, Long shopId, String memberLevel) {
+    ...
+}
+```
+
+这也是正确的，因为结果依赖三个维度：
+
+- 商品
+- 店铺
+- 会员等级
+
+三个维度都进入 key，才能保证“不同结果 -> 不同 key”。
+
+**场景 3：多租户字典缓存**
+
+```java
+String key = "dict:" + tenantId + ":" + code;
+cache.get(key, k -> loadDict(tenantId, code));
+```
+
+这里 `tenantId` 不能省略，否则不同租户的数据会串缓存。
+
+#### 错误 key 的例子
+
+**错误 1：把随机值放进 key**
+
+```java
+@Cacheable(cacheNames = "user", key = "T(java.util.UUID).randomUUID().toString()")
+```
+
+这会导致：
+
+- 每次调用 key 都不同
+- 等价于完全无法命中缓存
+
+**错误 2：漏掉影响结果的维度**
+
+```java
+@Cacheable(cacheNames = "price", key = "#productId")
+public Price queryPrice(Long productId, Long shopId, String memberLevel) {
+    ...
+}
+```
+
+这会导致：
+
+- 同一个商品在不同店铺、不同会员等级下的价格共用同一个 key
+- 最终读到错误结果
+
+这种问题比“不命中缓存”更危险，因为它会**命中错误数据**。
+
+**错误 3：直接把请求对象当 key，但对象本身不稳定**
+
+```java
+@Cacheable(cacheNames = "search", key = "#request")
+public SearchResult search(SearchRequest request) {
+    ...
+}
+```
+
+这不一定错，但风险很大。常见问题包括：
+
+- `SearchRequest` 没有稳定的 `equals()` / `hashCode()`
+- 对象里带了时间戳、分页游标、调试字段等噪声参数
+- 同样语义的请求，因为对象内容不完全一样而生成不同 key
+
+所以比起“直接塞整个对象”，通常更建议把真正影响结果的字段显式展开。
+
+**错误 4：使用可变且不唯一的业务字段**
+
+例如把用户名、昵称直接当 key：
+
+```java
+@Cacheable(cacheNames = "user", key = "#username")
+```
+
+如果用户名可修改，或者系统真正唯一身份其实是 `userId`，那么这个 key 就不够稳。
+
+#### 一个非常实用的判断方法
+
+写 key 之前，先问自己两个问题：
+
+1. 如果两个请求应该命中同一条缓存，它们现在生成的 key 一样吗？
+2. 如果两个请求不应该共用结果，它们现在生成的 key 一定不同吗？
+
+这比背模板更有用。
+
+#### 在 Spring Cache 里怎么写更合适
+
+如果你已经用了：
+
+```java
+@Cacheable(cacheNames = "user", key = "#id")
+```
+
+那通常已经足够清晰了，因为：
+
+- `cacheNames = "user"` 已经表达了缓存分区
+- `key = "#id"` 只负责表达该分区内的业务主键
+
+也就是说，在 Spring Cache 里，很多时候不需要再刻意写成：
+
+- `user:123`
+
+因为 `user` 这个名字本身已经是缓存区域。除非你是**手动使用同一个 cache 存多种类型对象**，否则 key 保持简单通常更好理解。
+
+### 9.3 开启统计，别盲配
+
+如果不开 `recordStats()`，很多调优都只能靠猜。
+
+建议至少关注：
+
+- hit rate
+- eviction count
+- load success / failure
+
+缓存不是“配上就一定快”，命中率低、淘汰频繁、回源昂贵时，才值得继续精调。
+
+### 9.4 本地缓存更适合“读多写少”
+
+如果数据频繁变化：
+
+- 缓存失效成本高
+- 多实例一致性更难保证
+- 本地缓存收益会明显下降
+
+所以 Caffeine 最适合：
+
+- 读多写少
+- 热点明显
+- 可以容忍短暂最终一致
+
+### 9.5 Caffeine + Redis 两级缓存怎么设计
+
+这是进阶使用里非常常见的一种落地方式。
+
+目标通常不是“炫技”，而是同时拿到两种收益：
+
+- Caffeine 带来的本地低延迟
+- Redis 带来的跨实例共享
+
+一个典型读路径是：
+
+```text
+请求
+ -> 先查 Caffeine
+ -> miss 再查 Redis
+ -> Redis miss 再查数据库
+ -> 回填 Redis
+ -> 回填 Caffeine
+```
+
+这样做的优势：
+
+- 最热的数据在本地 JVM 内命中
+- 次热点数据至少还能走 Redis
+- 数据库压力最低
+
+#### 写路径怎么处理
+
+最常见的不是“先更新缓存”，而是：
+
+```text
+更新数据库
+ -> 删除 Redis
+ -> 删除本地 Caffeine
+```
+
+或者反过来先删本地、再删 Redis，但核心思想基本一致：
+
+- **更新 DB**
+- **删缓存**
+
+原因是“更新缓存”在分布式场景里更容易出现覆盖旧值、顺序错乱、局部成功的问题。
+
+#### 两级缓存最难的是一致性，不是接入
+
+常见问题有：
+
+- A 实例删了本地缓存，B 实例本地缓存还在
+- Redis 已经删掉，但某个实例的本地缓存还没失效
+- 数据刚更新，旧值仍可能在短时间内被某台机器返回
+
+所以两级缓存设计通常要接受一个事实：
+
+- 它更多是**最终一致**
+- 很少能做到严格实时一致
+
+工程上常用的补救手段包括：
+
+- 本地缓存 TTL 设得更短
+- 更新后通过 MQ / 订阅通知其他实例失效本地缓存
+- 对强一致接口绕过本地缓存，直接查 Redis 或 DB
+
+#### 哪些数据适合放两级缓存
+
+适合：
+
+- 热点明显
+- 读远大于写
+- 可以容忍秒级内短暂旧值
+
+不太适合：
+
+- 高频写入
+- 强一致要求极高
+- 单条数据一旦错就会造成明显业务问题
+
+所以两级缓存不是“默认最佳实践”，而是“在读热点足够强时非常有效的实践”。
+
+### 9.6 怎么看指标来调缓存，而不是凭感觉
+
+`recordStats()` 打开以后，`Cache.stats()` 会给出一组非常关键的指标。
+
+官方 Wiki 特别点出的几个核心指标包括：
+
+- `hitRate()`
+- `evictionCount()`
+- `averageLoadPenalty()`
+
+如果把调优理解成“看到命中率低就把容量调大”，通常会走偏。更好的方式是先按现象判断。
+
+#### 场景 1：`hitRate` 低，但 `evictionCount` 也不高
+
+这通常说明问题未必是容量太小，更可能是：
+
+- key 设计有问题
+- TTL 太短
+- 请求本身重复度不高
+- 把本来就不适合缓存的数据拿去缓存了
+
+此时你应该优先排查：
+
+- 是否存在随机 key、请求对象不稳定、维度缺失
+- 是否 `expireAfterWrite` 设得太激进
+- 是否把强实时、低复用的数据也塞进缓存
+
+#### 场景 2：`hitRate` 低，而且 `evictionCount` 很高
+
+这更像典型的容量压力问题：
+
+- 缓存还没来得及积累热点，就不断被淘汰
+
+常见动作包括：
+
+- 适度增大 `maximumSize`
+- 检查是否混入了低价值大流量请求
+- 拆分不同业务缓存，不要所有数据共用一个池子
+
+#### 场景 3：`averageLoadPenalty` 很高
+
+这说明真正 expensive 的不是缓存本身，而是：
+
+- miss 之后的加载代价太高
+
+这时缓存策略就要更激进一些，因为每一次 miss 都更贵。
+
+可考虑：
+
+- 对热点 key 增加保护，例如 `sync = true`
+- 对适合的只读热点数据使用 `refreshAfterWrite`
+- 减少因硬过期导致的集中回源
+
+#### 场景 4：命中率不错，但 RT 还是不稳
+
+这时候别只盯缓存命中率，还要看：
+
+- miss 是否集中在少数大 key
+- 加载线程池是否被打满
+- GC 是否因缓存对象过大而抖动
+
+也就是说：
+
+- 命中率高，不等于系统就稳
+
+缓存调优要把“命中率、淘汰、加载耗时、内存压力”一起看。
+
+#### 一个简单可执行的调优顺序
+
+如果线上要快速排查，可以按这个顺序来：
+
+1. 先确认 key 是否正确
+2. 再确认 TTL 是否合理
+3. 再看容量是否不足
+4. 最后才去考虑更复杂的刷新、异步、分层缓存
+
+这个顺序通常比“先改大缓存容量”更靠谱。
+
+### 9.7 本地缓存和 JVM 内存、GC 的关系
+
+这一点很重要，因为本地缓存不是“免费性能”。
+
+它本质上是在做一笔交换：
+
+- 用更多堆内存
+- 换更少的回源和更低的读取延迟
+
+所以一旦缓存变大，代价就会开始出现：
+
+- 堆占用上升
+- 对象存活时间变长
+- GC 压力变大
+- Full GC 风险变高
+
+#### 为什么 `maximumSize` 不是越大越好
+
+一个很常见的误区是：
+
+- 命中率不够，那就把缓存翻倍
+
+但实际上，命中率提升往往不是线性的，可能出现：
+
+- 容量翻倍
+- 命中率只涨一点点
+- 内存成本和 GC 成本却涨很多
+
+这时就会发生典型的“缓存看起来更大了，系统整体却更慢了”。
+
+#### 大对象场景要考虑 `maximumWeight`
+
+如果缓存里每个对象大小差异很大，只按条目数控制会有问题。
+
+例如：
+
+- 一个 key 对应 1KB 对象
+- 另一个 key 对应 2MB 对象
+
+对 `maximumSize(1000)` 来说，它们都只算 1 条。
+
+这时候更合适的往往是：
+
+- `maximumWeight`
+- `weigher`
+
+因为你真正想控制的是：
+
+- 缓存占用多少内存预算
+
+而不是：
+
+- 单纯放了多少个 key
+
+当然也要注意，`weight` 不是 JVM 精确内存大小，它更像是你定义的一种“成本度量”。
+
+#### 为什么要给缓存单独留预算
+
+工程上比较稳的做法不是“剩下多少内存就给缓存多少”，而是：
+
+- 先估业务对象和线程栈等基础开销
+- 再给缓存留一个上限预算
+
+否则最容易出现的问题是：
+
+- 业务高峰时对象分配变多
+- 缓存又占了太多老年代
+- 两边叠加导致 GC 抖动
+
+所以缓存调优从来不是只看命中率，也一定要看：
+
+- 堆使用率
+- GC 次数和停顿
+- 高峰期内存曲线
+
+### 9.8 两级缓存一致性：工程上常见的几种策略
+
+前面已经说了，两级缓存的难点不是“怎么接入”，而是“如何控制旧值窗口”。
+
+这里把常见策略单独梳理一下。
+
+#### 策略 1：更新 DB 后直接删缓存
+
+最常见，也最推荐作为默认起点。
+
+流程通常是：
+
+```text
+更新数据库
+ -> 删除 Redis
+ -> 删除本地 Caffeine
+```
+
+优点：
+
+- 逻辑最简单
+- 不容易把新旧值覆盖乱
+
+缺点：
+
+- 删除后第一次读会回源
+- 仍然存在短时间并发窗口
+
+#### 策略 2：延迟双删
+
+典型做法是：
+
+```text
+更新数据库
+ -> 删除缓存
+ -> 等一小段时间
+ -> 再删一次缓存
+```
+
+它想解决的问题是：
+
+- 第一次删完后，刚好有并发读把旧值又写回去了
+
+第二次删除用于清理这个竞争窗口里的脏数据。
+
+但它也不是银弹，因为：
+
+- 延迟多久合适并不绝对
+- 只能缩小窗口，不能从理论上完全消灭窗口
+
+#### 策略 3：消息通知各实例失效本地缓存
+
+这在 `Caffeine + Redis` 场景里很常见。
+
+流程大致是：
+
+```text
+更新数据库
+ -> 删除 Redis
+ -> 发送失效消息
+ -> 各实例收到消息后删除本地 Caffeine
+```
+
+优点：
+
+- 能显著缩短多实例本地缓存不一致时间
+
+缺点：
+
+- 依赖 MQ 或订阅通道可靠性
+- 系统复杂度更高
+- 仍然通常是最终一致，而非严格强一致
+
+#### 策略 4：强一致接口绕过本地缓存
+
+这是非常实用但经常被忽略的一招。
+
+并不是所有接口都必须共享同一套缓存策略。
+
+如果某些接口对一致性极敏感，可以选择：
+
+- 不查 Caffeine
+- 直接查 Redis
+- 必要时直接查数据库
+
+这样做的思路是：
+
+- 对大多数读请求优化性能
+- 对极少数强一致请求保守处理
+
+这比一味追求“所有接口都又快又绝对一致”更现实。
+
+### 9.9 常见业务场景怎么配
+
+这一节尽量做成“以后能直接翻回来看”的实战模板。
+
+#### 场景 1：用户信息缓存
+
+特点通常是：
+
+- 读多写少
+- 单条对象不算特别大
+- 更新后允许短时间内重新加载
+
+推荐起步配置：
+
+```java
+Caffeine.newBuilder()
+    .maximumSize(50_000)
+    .expireAfterWrite(Duration.ofMinutes(5))
+    .recordStats()
+    .build();
+```
+
+建议：
+
+- key 用 `userId`
+- 更新用户资料后主动删缓存
+- 如果是多实例，优先配合 Redis 或失效通知一起用
+
+不建议一上来就用 `refreshAfterWrite`，除非用户资料真的是高频热点。
+
+#### 场景 2：商品详情缓存
+
+特点通常是：
+
+- 热点非常明显
+- 读远多于写
+- 单个详情对象可能不小
+
+推荐思路：
+
+```java
+Caffeine.newBuilder()
+    .maximumWeight(200_000)
+    .weigher((Long id, ProductDetail detail) -> estimateWeight(detail))
+    .expireAfterWrite(Duration.ofMinutes(3))
+    .recordStats()
+    .build();
+```
+
+建议：
+
+- 如果对象体积差异很大，优先考虑 `maximumWeight`
+- 商品变更后一定做主动失效
+- 强一致价格字段不要和可容忍旧值的详情字段混在同一个缓存策略里
+
+换句话说：
+
+- 商品详情可以缓存
+- 价格、库存这类强时效字段要更谨慎
+
+#### 场景 3：配置项 / 字典项缓存
+
+特点通常是：
+
+- key 稳定
+- 数据量不大
+- 读频繁，写很少
+
+这类场景最适合 `LoadingCache`：
+
+```java
+LoadingCache<String, DictValue> cache = Caffeine.newBuilder()
+    .maximumSize(5_000)
+    .refreshAfterWrite(Duration.ofMinutes(1))
+    .expireAfterWrite(Duration.ofMinutes(10))
+    .build(this::loadDictValue);
+```
+
+建议：
+
+- 热点配置适合 `refreshAfterWrite + expireAfterWrite`
+- 这样既能平滑刷新，又能避免长期无人访问的数据永久滞留
+
+这类场景通常是 `refreshAfterWrite` 最有价值的地方之一。
+
+#### 场景 4：搜索结果缓存
+
+特点通常是：
+
+- 参数维度复杂
+- key 很容易设计错
+- 一次性请求多，容易污染缓存
+
+这里不要一上来就缓存所有搜索结果，更合理的做法是：
+
+- 只缓存高频、可重复的查询
+- 对低复用长尾搜索不缓存
+- 严格控制 key 维度
+
+例如：
+
+```java
+@Cacheable(
+    cacheNames = "search",
+    key = "#keyword + ':' + #page + ':' + #size",
+    condition = "#page == 1 and #size <= 20"
+)
+public SearchResult search(String keyword, int page, int size) {
+    ...
+}
+```
+
+这样做的意义是：
+
+- 只缓存第一页、高频入口结果
+- 避免把深分页、低价值请求塞进缓存
+
+搜索类场景非常适合结合前面说的准入思路去理解，因为它最容易产生：
+
+- 大量只访问一次的数据
+
+#### 场景 5：本地配置中心或灰度规则缓存
+
+特点通常是：
+
+- 热点明显
+- 对延迟敏感
+- 可以容忍秒级旧值，但不希望频繁阻塞
+
+这时很适合：
+
+```java
+Caffeine.newBuilder()
+    .maximumSize(10_000)
+    .refreshAfterWrite(Duration.ofSeconds(30))
+    .expireAfterWrite(Duration.ofMinutes(5))
+    .build(this::loadRule);
+```
+
+建议：
+
+- 把刷新频率设得比过期更短
+- 让热点规则尽量走“返回旧值 + 后台刷新”的路径
+
+这类场景比用户资料更适合刷新，而不是硬过期。
+
+#### 场景 6：强一致订单状态查询
+
+这个例子反而适合用来说明“不该怎么缓存”。
+
+如果一个接口要求：
+
+- 状态变化要极快可见
+- 读到旧值代价很高
+
+那就不要默认套本地缓存模板。
+
+更稳妥的选择可能是：
+
+- 不用 Caffeine
+- 或只缓存极短 TTL
+- 或只缓存某些只读派生字段
+
+订单状态、支付状态、库存扣减结果这类数据，通常不是本地缓存的理想对象。
+
+#### 一个总的判断口诀
+
+给业务挑配置时，可以先问自己 4 个问题：
+
+1. 它是不是读多写少？
+2. 它是不是有稳定热点？
+3. 它能不能容忍短暂旧值？
+4. 它的对象大小是否差异很大？
+
+对应关系通常是：
+
+- 前 3 个都满足，优先考虑本地缓存
+- 第 4 个满足，进一步考虑 `maximumWeight`
+
+这样比直接背某套固定参数更有用。
+
+---
+
+## 10. 常见误区
+
+### 10.1 误区：Caffeine 可以代替 Redis
+
+不行。
+
+因为：
+
+- Caffeine 是 JVM 本地缓存
+- Redis 是独立的远程缓存服务
+
+二者定位不同，经常是互补关系。
+
+### 10.2 误区：`refreshAfterWrite` 就是过期时间
+
+不完全对。
+
+`refreshAfterWrite` 是“到时间后在访问时触发刷新”，不等于“到时间后直接当作失效值”。
+
+### 10.3 误区：用了 `@Cacheable` 就不会查数据库
+
+不一定。
+
+可能原因包括：
+
+- key 设计不一致
+- 方法自调用导致代理失效
+- 缓存配置没有真正生效
+- 缓存被淘汰或已过期
+
+### 10.4 误区：本地缓存越大越好
+
+不对。
+
+缓存本质上是在拿 JVM 堆内存换访问速度：
+
+- 太小，命中率不够
+- 太大，内存压力上升，GC 成本可能增加
+
+所以 `maximumSize` 必须结合业务访问模式和内存预算来定。
+
+---
+
+## 11. 一段最小可用示例
+
+如果只是想在 Spring Boot 项目里快速用起来，可以先从这个版本开始：
+
+```java
+import com.github.benmanes.caffeine.cache.Caffeine;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.EnableCaching;
+import org.springframework.cache.caffeine.CaffeineCacheManager;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import java.time.Duration;
+
+@Configuration
+@EnableCaching
+public class CacheConfig {
+
+    @Bean
+    public CacheManager cacheManager() {
+        CaffeineCacheManager cacheManager = new CaffeineCacheManager("user");
+        cacheManager.setCaffeine(Caffeine.newBuilder()
+            .maximumSize(10_000)
+            .expireAfterWrite(Duration.ofMinutes(10))
+            .recordStats());
+        return cacheManager;
+    }
+}
+```
+
+```java
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.stereotype.Service;
+
+@Service
+public class UserService {
+
+    @Cacheable(cacheNames = "user", key = "#id")
+    public User findById(Long id) {
+        return loadUserFromDb(id);
+    }
+
+    @CacheEvict(cacheNames = "user", key = "#user.id")
+    public User update(User user) {
+        return updateUserInDb(user);
+    }
+}
+```
+
+这个版本已经覆盖了最基本的增益点：
+
+- 读请求命中缓存
+- 更新后主动删缓存
+- 配置简单，可快速验证收益
+
+---
+
+## 12. 总结
+
+Caffeine 适合作为 **Java 应用中的高性能本地缓存**，核心价值在于：
+
+- 本地内存访问快
+- API 清晰
+- 与 Spring 生态集成成熟
+- 能覆盖大多数单机缓存与一级缓存场景
+
+真正使用时，最重要的不是“配置项背得多全”，而是这几个判断：
+
+- 这是本地缓存，不是分布式缓存
+- `expireAfterWrite` 和 `refreshAfterWrite` 语义不同
+- 多实例场景下一致性要单独考虑
+- 先观察命中率和回源成本，再调参数
+
+---
+
+## 13. 参考资料
+
+- Caffeine 官方仓库：https://github.com/ben-manes/caffeine
+- Caffeine README：https://github.com/ben-manes/caffeine/blob/master/README.md
+- Caffeine Wiki：https://github.com/ben-manes/caffeine/wiki
+- Spring Boot Caching 文档：https://docs.spring.io/spring-boot/reference/io/caching.html
+- Spring Framework Caffeine 集成文档：https://docs.spring.io/spring-framework/reference/integration/cache/store-configuration.html#cache-store-configuration-caffeine
