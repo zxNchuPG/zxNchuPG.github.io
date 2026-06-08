@@ -2145,7 +2145,7 @@ metaObject.setValue("delegate.boundSql.sql", newSql);
 - MyBatis-Plus 的 `InnerInterceptor` 是上层封装，底层仍然建立在 MyBatis 原生插件链之上
 - 复杂 SQL 改写越往后走，越要依赖 AST 解析、忽略策略、参数同步与缓存一致性设计
 
-如果后面继续深挖，我觉得最值得继续补的两个方向是：
+顺着这条主线继续展开，比较值得单独分析的两个专题是：
 
-- 结合具体源码，专门拆一篇 `DynamicSqlSource`、`RawSqlSource`、`StaticSqlSource` 的生成与调用链
+- `DynamicSqlSource`、`RawSqlSource`、`StaticSqlSource` 的生成与调用链
 - 以“数据权限插件”为例，完整走一遍 AST 改写、`BoundSql` 重建、插件忽略策略、测试设计
