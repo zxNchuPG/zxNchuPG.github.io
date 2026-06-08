@@ -259,7 +259,72 @@ Java中用**补码**来表示二进制数，补码的最高位是符号位，最
 ---
 ## HashMap 相关
 
-**这部分内容比较多，整理完后再进行补充**
+### 底层数据结构
+
+- **JDK1.7：** 数组 + 链表（拉链法解决哈希冲突）
+- **JDK1.8：** 数组 + 链表 + 红黑树（链表长度 >= 8 且数组长度 >= 64 时转为红黑树，红黑树节点数 <= 6 时退化为链表）
+
+### 重要参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| initialCapacity | 16 | 初始容量，必须是2的幂次方 |
+| loadFactor | 0.75f | 负载因子 |
+| threshold | capacity * loadFactor | 扩容阈值 |
+| TREEIFY_THRESHOLD | 8 | 链表转红黑树的阈值 |
+| UNTREEIFY_THRESHOLD | 6 | 红黑树退化为链表的阈值 |
+| MIN_TREEIFY_CAPACITY | 64 | 链表转红黑树时数组最小长度 |
+
+### hash计算
+
+```java
+// JDK1.8的hash方法
+static final int hash(Object key) {
+    int h;
+    // key为null时hash为0，所以HashMap允许key为null
+    // 高16位与低16位异或，增加低位的随机性，减少碰撞
+    return (key == null) ? 0 : (h = key.hashCode()) ^ (h >>> 16);
+}
+// 定位桶下标：(n - 1) & hash，等价于 hash % n（n为2的幂次时）
+```
+
+### put流程（JDK1.8）
+
+1. 对key求hash值，计算桶下标 `(n-1) & hash`
+2. 如果桶为空，直接新建节点放入
+3. 如果桶不为空（发生碰撞）：
+   - 如果第一个节点key相同，直接覆盖value
+   - 如果是TreeNode（红黑树），调用红黑树的插入方法
+   - 否则遍历链表，尾插法插入（JDK1.7是头插法），遍历中如果发现key相同则覆盖
+4. 链表插入后判断长度是否 >= 8，是则尝试转红黑树
+5. 判断 `++size > threshold`，是则扩容
+
+### 扩容机制
+
+- 容量变为原来的2倍，阈值也变为原来的2倍
+- JDK1.8优化：扩容时不需要重新计算hash，只需看新增的那一位bit是0还是1
+  - 是0：位置不变
+  - 是1：新位置 = 原位置 + 旧容量
+
+### JDK1.7并发下的死循环问题
+
+ JDK1.7采用头插法，多线程扩容时可能导致链表形成环，后续get操作死循环。JDK1.8改为尾插法解决了此问题，但HashMap仍然是非线程安全的
+
+### HashMap vs Hashtable vs ConcurrentHashMap
+
+| 对比项 | HashMap | Hashtable | ConcurrentHashMap |
+|--------|---------|-----------|-------------------|
+| 线程安全 | 否 | 是（synchronized） | 是 |
+| null key/value | key可null，value可null | 都不可null | 都不可null |
+| 初始容量 | 16 | 11 | 16 |
+| 扩容方式 | 2倍 | 2倍+1 | 分段扩容 |
+| 底层结构 | 数组+链表+红黑树 | 数组+链表 | JDK1.8: CAS+synchronized+数组+链表+红黑树 |
+| 效率 | 高 | 低（全表锁） | 高（锁粒度细） |
+
+### ConcurrentHashMap的演进
+
+- **JDK1.7：** Segment分段锁（继承ReentrantLock），每个Segment维护一段HashEntry数组，默认16个Segment，并发度16
+- **JDK1.8：** 抛弃Segment，采用 `CAS + synchronized` 锁住链表/红黑树的头节点，锁粒度更细，并发度更高
 
 ---
 
@@ -378,7 +443,53 @@ private static class ArrayList<E> extends AbstractList<E>
 ---
 ## ArrayList、LinkedList 和 Vector 的区别 
 
-**内容较多，整理完后补充**
+### 底层数据结构
+
+- **ArrayList：** Object数组（连续内存空间）
+- **LinkedList：** 双向链表（JDK1.6之前为循环链表，JDK1.7改为非循环双向链表）
+- **Vector：** Object数组（与ArrayList相同）
+
+### 线程安全
+
+- **ArrayList：** 非线程安全
+- **LinkedList：** 非线程安全
+- **Vector：** 线程安全，方法使用synchronized修饰
+
+### 扩容机制
+
+- **ArrayList：** 默认初始容量10，扩容为原来的1.5倍（`oldCapacity + (oldCapacity >> 1)`）
+- **Vector：** 默认初始容量10，扩容为原来的2倍（也可通过构造函数指定增量`capacityIncrement`）
+- **LinkedList：** 链表结构不存在扩容概念
+
+### 性能对比
+
+| 操作 | ArrayList | LinkedList | 原因 |
+|------|-----------|------------|------|
+| 随机访问（get） | O(1) | O(n) | 数组支持下标直接访问，链表需要遍历 |
+| 尾部插入（add） | O(1)均摊 | O(1) | ArrayList可能触发扩容 |
+| 指定位置插入 | O(n) | O(n) | ArrayList需要移动元素，LinkedList需要先遍历定位 |
+| 删除 | O(n) | O(n) | ArrayList需要移动元素，LinkedList需要先遍历定位 |
+
+> 注：LinkedList虽然插入/删除理论是O(1)，但定位到目标节点需要O(n)，所以实际是O(n)
+
+### 使用场景
+
+- **ArrayList：** 读多写少的场景，频繁随机访问
+- **LinkedList：** 频繁在头部/尾部插入删除（如队列、双端队列），LinkedList实现了Deque接口
+- **Vector：** 不推荐使用，需要线程安全可用 `Collections.synchronizedList()` 或 `CopyOnWriteArrayList`
+
+### RandomAccess接口
+
+ArrayList实现了RandomAccess接口（标记接口，无方法），表示支持快速随机访问。在Collections工具类的binarySearch方法中，会根据是否实现RandomAccess来选择不同的遍历方式：
+
+```java
+public static <T> int binarySearch(List<? extends Comparable<? super T>> list, T key) {
+    if (list instanceof RandomAccess || list.size() < BINARYSEARCH_THRESHOLD)
+        return Collections.indexedBinarySearch(list, key);  // for循环下标访问
+    else
+        return Collections.iteratorBinarySearch(list, key); // 迭代器访问
+}
+```
 
 ---
 ## Set 和 List 区别、Set 如何保证元素不重复

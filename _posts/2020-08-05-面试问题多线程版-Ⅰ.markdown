@@ -160,22 +160,154 @@ java 提供了一个 java.util.concurrent.Executor接口的实现用于创建线
 
 ## synchronized 的作用
 
-在Java中，synchronized关键字是用来控制线程同步的，就是在多线程的环境下，控制synchronized代码段不被多个线程同时执行，是一种**重量级锁**
+可以先把 `synchronized` 理解成一句人话：
 
-synchronized实现同步的基础是：Java中的每个对象都可作为锁。所以synchronized锁的都对象，只不过不同形式下锁的对象不一样：
+**给一段代码上锁，同一时刻只允许一个线程进去执行。**
 
-- 对于普通同步方法，锁的是当前实例对象
-- 对于静态同步方法，锁的是当前类的Class对象
-- 对于同步方法块，锁是Synchronized括号里配置的对象
+它最主要解决的是多个线程同时操作共享资源时，出现数据错乱的问题。
+
+比如下面这个例子：
+
+```java
+class Counter {
+    private int count = 0;
+
+    public void add() {
+        count++;
+    }
+}
+```
+
+`count++` 看起来只有一行，但它不是原子操作，大致可以拆成三步：
+
+1. 读取 `count`
+2. `count + 1`
+3. 写回 `count`
+
+如果两个线程同时执行，就可能都读到旧值，最后只加了一次。
+
+这时候就可以用 `synchronized`：
+
+```java
+class Counter {
+    private int count = 0;
+
+    public synchronized void add() {
+        count++;
+    }
+}
+```
+
+加上之后，同一时刻只能有一个线程执行 `add()`，这样这个复合操作就被保护起来了。
+
+### synchronized 能保证什么
+
+`synchronized` 主要能保证三件事：
+
+1. **原子性**：被它保护的代码块，同一时刻只能有一个线程执行。
+2. **可见性**：一个线程在同步代码块里修改了共享变量，退出同步块后，其他线程再次拿到同一把锁时能看到最新值。
+3. **有序性**：在同步代码块内部，JVM 不会让这段临界区里的执行效果对持有同一把锁的线程表现得乱序。
+
+所以面试里如果被问到：`synchronized` 解决了什么问题？
+
+一个比较稳的回答是：
+
+**它通过加锁保证临界区同一时刻只被一个线程执行，从而保证原子性，同时借助进入锁和释放锁的内存语义保证可见性和一定程度上的有序性。**
+
+### synchronized 锁的是什么
+
+`synchronized` 的本质是“对某个对象监视器加锁”，所以关键不是这个关键字本身，而是**你锁的是谁**。
+
+- 对于普通同步方法，锁的是当前实例对象，也就是 `this`
+- 对于静态同步方法，锁的是当前类对应的 `Class` 对象
+- 对于同步代码块，锁的是括号里显式传入的那个对象
+
+例如：
+
+```java
+public synchronized void methodA() {
+}
+```
+
+等价于：
+
+```java
+public void methodA() {
+    synchronized (this) {
+    }
+}
+```
+
+再比如：
+
+```java
+public static synchronized void methodB() {
+}
+```
+
+它锁的是：
+
+```java
+synchronized (当前类.class) {
+}
+```
+
+### 使用 synchronized 时要注意什么
+
+#### 1. 锁对象必须是多个线程真正共享的那一个
+
+下面这种写法几乎等于没加锁：
+
+```java
+public void method() {
+    synchronized (new Object()) {
+        // do something
+    }
+}
+```
+
+因为每次进来都会 `new` 一个新对象，每个线程拿到的都不是同一把锁。
+
+#### 2. 锁的范围不要过大
+
+锁的范围越大，并发度越低。能只锁核心共享逻辑，就不要把无关代码也一起锁住。
+
+#### 3. synchronized 是可重入锁
+
+同一个线程已经拿到这把锁之后，再次进入这把锁保护的代码，不会把自己锁死。
+
+```java
+synchronized void a() {
+    b();
+}
+
+synchronized void b() {
+}
+```
+
+这里 `a()` 里调用 `b()` 是没问题的，因为当前线程已经持有这把锁。
+
+### 面试里怎么快速区分
+
+- `synchronized` 适合保护一整段临界区
+- 它可以保证原子性、可见性、有序性
+- 它是悲观锁思路，先加锁，再操作共享资源
+- 它不能提高并发，只能保证并发下结果正确
 
 ## volatile关键字的作用
 
-1. 保证可见性
-2. 禁止指令重排序
+`volatile` 也可以先记一句人话：
 
-和synchronized一样，两者都起到相同的作用：保证共享变量的线程可见性
+**一个线程改了值，别的线程马上能看到；并且这个变量相关的读写，不会被随意重排序。**
 
-与synchronized相比volatile可以看做是轻量级的synchronized，没有线程的上下文切换和调试，性能比synchronized要好很多，但需要注意的是volatile变量在复合操作的时候并不能保证线程安全，相反sychronized能
+它主要有两个作用：
+
+1. **保证可见性**
+2. **禁止指令重排序**
+
+但是一定要记住一句最重要的话：
+
+**volatile 不能保证复合操作的原子性。**
 
 ```java
 volatile public int i = 1;
@@ -186,11 +318,123 @@ volatile public int i = 1;
 
 这时监听CPU总线的处理器会收到这个修改信号后，如果发现修改的数据自己缓存了，就把自己缓存的数据失效掉。这样其它线程访问到这段缓存时知道缓存数据失效了，需要从主内存中获取。这样所有线程中的共享变量i就达到了一致性
 
+### 1. volatile 的可见性
+
+看一个最经典的例子：
+
+```java
+class TaskRunner {
+    private volatile boolean running = true;
+
+    public void stop() {
+        running = false;
+    }
+
+    public void run() {
+        while (running) {
+            // do work
+        }
+    }
+}
+```
+
+如果 `running` 不加 `volatile`，有可能线程 A 已经把它改成 `false` 了，但线程 B 还一直读到旧值 `true`，导致循环停不下来。
+
+加上 `volatile` 后，线程 A 的修改会更快地对其他线程可见，线程 B 读到新值后就能结束循环。
+
+所以 `volatile` 很适合这种场景：
+
+- 一个线程写
+- 多个线程读
+- 变量本身的赋值是独立、简单的
+
+比如：
+
+- 开关标记
+- 状态位
+- 配置刷新标记
+
+### 2. volatile 的有序性
+
+`volatile` 还能禁止某些关键的指令重排序。
+
+这个点最常见的场景是单例双重检查：
+
+```java
+public class Singleton {
+    private static volatile Singleton instance;
+
+    public static Singleton getInstance() {
+        if (instance == null) {
+            synchronized (Singleton.class) {
+                if (instance == null) {
+                    instance = new Singleton();
+                }
+            }
+        }
+        return instance;
+    }
+}
+```
+
+这里 `instance` 必须用 `volatile`，否则可能发生指令重排序，导致“对象引用已经赋值了，但对象还没完全初始化好”，其他线程就可能拿到一个未完全构造的对象。
+
+### 3. 为什么 volatile 不能保证线程安全
+
+很多人最容易误会这里。
+
+例如：
+
+```java
+class Counter {
+    volatile int count = 0;
+
+    public void add() {
+        count++;
+    }
+}
+```
+
+虽然 `count` 是 `volatile`，但 `count++` 依然不是原子操作。
+
+它还是那三步：
+
+1. 读
+2. 改
+3. 写
+
+如果两个线程同时执行，还是可能互相覆盖，最终结果依旧不对。
+
+所以：
+
+- `volatile` 能保证你读到的是**最新值**
+- 但不能保证“读出来再改再写回去”这一整套动作是安全的
+
+如果你要保护 `i++`、`check-then-act`、余额扣减这类复合逻辑，就不能只靠 `volatile`，而要用：
+
+- `synchronized`
+- `Lock`
+- `AtomicInteger` 这类原子类
+
+### 4. volatile 的底层可以怎么理解
+
+不用背太底层的 CPU 细节，面试里能讲到下面这层就够用了：
+
+- 对 `volatile` 变量的写，会及时刷新到主内存
+- 其他线程读取这个变量时，会从主内存重新读取最新值
+- JVM 会在 `volatile` 读写前后插入内存屏障，限制重排序
+
+如果再展开一点，可以理解为缓存一致性协议会让其他 CPU 核心中对应缓存行失效，之后别的线程再读时，就会去拿新值。
+
 --- 
 
 ### volatile 可见性
 
-让其他线程可见
+可以把它理解成：
+
+**这个变量一旦被某个线程修改，其他线程下次读取时，不会一直抱着自己的旧缓存不放。**
+
+所以它解决的是“你改了，我看不见”的问题，不解决“你改的时候别人也在改”的问题。
 
 1个线程修改完 volatile 修饰的值后，立即推送到主存。推送主存的过程中，要经过总线。其他cpu线程一直在嗅探总线的数据流通。在缓存一致性协议的保障下，其他线程能嗅探到这条数据修改，如果自己的缓存行有这条数据，将自己的缓存行置为不可用，如果下一个线程要用这个数据，需要先从主存拉取数据保存到自己的缓存行
 
@@ -198,21 +442,48 @@ volatile public int i = 1;
 
 ### volatile 禁止指令重排序
 
-禁止在编译阶段
+可以先把“指令重排序”理解成：编译器和 CPU 为了提高执行效率，可能会在**不改变单线程结果**的前提下，调整部分指令顺序。
 
-在volatile写操作之前插入StoreStore屏障，之后插入StoreLoad屏障
-在volatile读操作之后插入LoadLoad屏障和LoadStore屏障
+单线程下通常没问题，但多线程下如果另一个线程刚好观察这个过程，就可能看到一个“中间状态”。
+
+`volatile` 会通过内存屏障约束这种重排序。
+
+常见记法是：
+
+- `volatile` 写前后会插入写屏障
+- `volatile` 读前后会插入读屏障
+
+如果你只是为了面试回答，一般不用死背 `StoreStore`、`StoreLoad`、`LoadLoad`、`LoadStore` 这些名字，知道它的作用是**限制重排序并保证内存可见性**就够了。
 
 ---
 
 ####  问题一：cpu在嗅探总线的过程中，怎么知道这个变量是 volatile 修饰的
 
-如果变量被 volatile 修饰，在线程推送到总线的时候，汇编指令会在里面加上关键字 Lock 
+更准确一点的理解是：
 
-Lock 关键词有2个含义
+- `volatile` 是 Java 内存模型里的语义要求
+- JVM 在生成机器指令时，会选择合适的屏障或带锁前缀的指令来实现这种语义
+- 最终效果是让其他处理器核心感知到这次写入，并保证可见性和有序性
 
-1. 将这条数据的修改信息，推送到主存
-2. Lock指令过总线的时候，其他cpu线程会嗅探带 Lock 的汇编指令
+所以面试里不建议回答成“CPU先识别 Java 代码里有 volatile”，而是应该说：
+
+**JVM 会把 `volatile` 的语义翻译成底层的内存屏障和相关机器指令，底层硬件再配合缓存一致性协议完成可见性保证。**
+
+---
+
+### synchronized 和 volatile 怎么选
+
+这个问题面试非常常见，可以直接这样记：
+
+| 关键字 | 能保证什么 | 不能保证什么 | 典型场景 |
+|------|------|------|------|
+| `synchronized` | 原子性、可见性、有序性 | 不能提升并发性能 | 保护临界区、复合操作 |
+| `volatile` | 可见性、有序性 | 不能保证原子性 | 状态标记、开关量、单次赋值 |
+
+一句话总结：
+
+- 只需要让一个值对别的线程立刻可见，用 `volatile`
+- 需要把一整段逻辑作为一个整体保护起来，用 `synchronized`
 
 ---
 
