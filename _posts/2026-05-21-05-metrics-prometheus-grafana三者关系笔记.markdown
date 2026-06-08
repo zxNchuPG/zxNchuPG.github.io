@@ -1114,9 +1114,9 @@ sum(rate(cache_load_duration_seconds_count{cache="user"}[5m]))
 
 ---
 
-## 19. 适合继续延伸的方向
+## 19. 相关延伸主题
 
-如果后面你想把这组专题继续补全，比较自然的下一步是：
+顺着这组专题继续展开，比较自然的延伸主题是：
 
 - `PromQL 深度学习笔记`
 - `Grafana Dashboard 设计实战笔记`
