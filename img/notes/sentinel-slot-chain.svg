@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="500" viewBox="0 0 1200 500">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#5b6b88"/>
+    </marker>
+    <style>
+      .title { font: 700 28px Arial, sans-serif; fill: #1f2d3d; }
+      .label { font: 700 16px Arial, sans-serif; fill: #243447; }
+      .text { font: 14px Arial, sans-serif; fill: #425466; }
+      .a { fill: #eef5ff; stroke: #5f8dd3; stroke-width: 2; rx: 12; ry: 12; }
+      .b { fill: #f7fbf3; stroke: #72a44a; stroke-width: 2; rx: 12; ry: 12; }
+      .c { fill: #fff8ea; stroke: #d3a24d; stroke-width: 2; rx: 12; ry: 12; }
+      .line { stroke: #5b6b88; stroke-width: 2.4; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1200" height="500" fill="#ffffff"/>
+  <text x="48" y="45" class="title">Sentinel 默认 Slot Chain 主干</text>
+
+  <rect x="50" y="120" width="155" height="95" class="a"/>
+  <text x="71" y="156" class="label">NodeSelectorSlot</text>
+  <text x="82" y="184" class="text">创建或选择当前</text>
+  <text x="87" y="205" class="text">Context 的 DefaultNode</text>
+
+  <rect x="230" y="120" width="155" height="95" class="a"/>
+  <text x="250" y="156" class="label">ClusterBuilderSlot</text>
+  <text x="259" y="184" class="text">关联 ClusterNode</text>
+  <text x="274" y="205" class="text">和 OriginNode</text>
+
+  <rect x="410" y="120" width="155" height="95" class="b"/>
+  <text x="451" y="156" class="label">StatisticSlot</text>
+  <text x="441" y="184" class="text">记录 pass / rt /</text>
+  <text x="445" y="205" class="text">thread / exception</text>
+
+  <rect x="590" y="120" width="140" height="95" class="c"/>
+  <text x="620" y="156" class="label">AuthoritySlot</text>
+  <text x="620" y="184" class="text">来源控制</text>
+
+  <rect x="755" y="120" width="140" height="95" class="c"/>
+  <text x="796" y="156" class="label">SystemSlot</text>
+  <text x="785" y="184" class="text">系统保护</text>
+
+  <rect x="920" y="120" width="140" height="95" class="c"/>
+  <text x="948" y="156" class="label">ParamFlowSlot</text>
+  <text x="949" y="184" class="text">热点参数限流</text>
+
+  <rect x="320" y="300" width="170" height="95" class="c"/>
+  <text x="370" y="336" class="label">FlowSlot</text>
+  <text x="347" y="364" class="text">普通流控检查</text>
+
+  <rect x="560" y="300" width="170" height="95" class="c"/>
+  <text x="603" y="336" class="label">DegradeSlot</text>
+  <text x="579" y="364" class="text">熔断降级检查</text>
+
+  <path d="M205 167 H230" class="line"/>
+  <path d="M385 167 H410" class="line"/>
+  <path d="M565 167 H590" class="line"/>
+  <path d="M730 167 H755" class="line"/>
+  <path d="M895 167 H920" class="line"/>
+  <path d="M990 215 V260 H405 V300" class="line"/>
+  <path d="M490 348 H560" class="line"/>
+
+  <text x="52" y="446" class="text">前半段更偏“准备节点与统计结构”，后半段更偏“规则检查与保护动作”。</text>
+  <text x="52" y="470" class="text">这就是 Sentinel 能把多种高可用能力统一到同一条职责链里的原因。</text>
+</svg>

@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#5b6b88"/>
+    </marker>
+    <style>
+      .title { font: 700 28px Arial, sans-serif; fill: #1f2d3d; }
+      .label { font: 700 18px Arial, sans-serif; fill: #243447; }
+      .text { font: 15px Arial, sans-serif; fill: #425466; }
+      .box { fill: #f8fbff; stroke: #8aa4c8; stroke-width: 2; rx: 14; ry: 14; }
+      .box2 { fill: #eef5ff; stroke: #5f8dd3; stroke-width: 2; rx: 14; ry: 14; }
+      .note { fill: #fff8ea; stroke: #d8b15e; stroke-width: 2; rx: 12; ry: 12; }
+      .line { stroke: #5b6b88; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1200" height="420" fill="#ffffff"/>
+  <text x="48" y="45" class="title">Sentinel 资源进入总流程</text>
+
+  <rect x="40" y="120" width="170" height="88" class="box"/>
+  <text x="86" y="156" class="label">业务入口</text>
+  <text x="73" y="184" class="text">@SentinelResource</text>
+  <text x="79" y="205" class="text">或 SphU.entry()</text>
+
+  <rect x="260" y="120" width="170" height="88" class="box"/>
+  <text x="322" y="156" class="label">CtSph</text>
+  <text x="295" y="184" class="text">为资源获取对应的</text>
+  <text x="298" y="205" class="text">ProcessorSlotChain</text>
+
+  <rect x="480" y="120" width="170" height="88" class="box"/>
+  <text x="531" y="156" class="label">Context</text>
+  <text x="500" y="184" class="text">建立入口上下文并</text>
+  <text x="522" y="205" class="text">挂接当前 Entry</text>
+
+  <rect x="700" y="120" width="200" height="88" class="box2"/>
+  <text x="749" y="156" class="label">Slot Chain</text>
+  <text x="724" y="184" class="text">Node / Statistic / Flow</text>
+  <text x="728" y="205" class="text">Degrade / Param / System</text>
+
+  <rect x="950" y="120" width="190" height="88" class="box"/>
+  <text x="1013" y="156" class="label">结果</text>
+  <text x="977" y="184" class="text">放行业务执行 or</text>
+  <text x="981" y="205" class="text">抛出 BlockException</text>
+
+  <path d="M210 164 H260" class="line"/>
+  <path d="M430 164 H480" class="line"/>
+  <path d="M650 164 H700" class="line"/>
+  <path d="M900 164 H950" class="line"/>
+
+  <rect x="220" y="270" width="760" height="92" class="note"/>
+  <text x="248" y="304" class="label">主线含义</text>
+  <text x="248" y="330" class="text">1. Sentinel 先把一次访问抽象成 Entry，再放入 Context 和统计节点体系。</text>
+  <text x="248" y="352" class="text">2. 限流、熔断、热点参数、系统保护都不是分散实现，而是在同一条 Slot Chain 上完成。</text>
+</svg>

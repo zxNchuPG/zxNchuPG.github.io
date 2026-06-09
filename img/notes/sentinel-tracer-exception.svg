@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#5b6b88"/>
+    </marker>
+    <style>
+      .title { font: 700 28px Arial, sans-serif; fill: #1f2d3d; }
+      .label { font: 700 17px Arial, sans-serif; fill: #243447; }
+      .text { font: 15px Arial, sans-serif; fill: #425466; }
+      .a { fill: #f8fbff; stroke: #8aa4c8; stroke-width: 2; rx: 14; ry: 14; }
+      .b { fill: #fff8ea; stroke: #d8b15e; stroke-width: 2; rx: 14; ry: 14; }
+      .c { fill: #eef5ff; stroke: #5f8dd3; stroke-width: 2; rx: 14; ry: 14; }
+      .line { stroke: #5b6b88; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1200" height="420" fill="#ffffff"/>
+  <text x="48" y="45" class="title">Tracer.trace(ex) 与异常统计链</text>
+
+  <rect x="50" y="120" width="185" height="92" class="a"/>
+  <text x="91" y="156" class="label">业务执行异常</text>
+  <text x="89" y="184" class="text">例如调用下游失败</text>
+
+  <rect x="290" y="120" width="185" height="92" class="b"/>
+  <text x="338" y="156" class="label">Tracer</text>
+  <text x="327" y="184" class="text">trace(ex) /</text>
+  <text x="309" y="205" class="text">traceEntry(ex, entry)</text>
+
+  <rect x="530" y="120" width="185" height="92" class="c"/>
+  <text x="585" y="156" class="label">Entry</text>
+  <text x="559" y="184" class="text">setError(ex)</text>
+
+  <rect x="770" y="120" width="185" height="92" class="c"/>
+  <text x="808" y="156" class="label">StatisticSlot.exit</text>
+  <text x="795" y="184" class="text">读取 error 并写入</text>
+  <text x="801" y="205" class="text">exception 统计</text>
+
+  <rect x="1010" y="120" width="145" height="92" class="a"/>
+  <text x="1046" y="156" class="label">熔断规则</text>
+  <text x="1027" y="184" class="text">异常数 / 异常比例</text>
+
+  <path d="M235 166 H290" class="line"/>
+  <path d="M475 166 H530" class="line"/>
+  <path d="M715 166 H770" class="line"/>
+  <path d="M955 166 H1010" class="line"/>
+
+  <rect x="160" y="275" width="880" height="92" class="b"/>
+  <text x="190" y="309" class="label">关键结论</text>
+  <text x="190" y="335" class="text">1. catch 住业务异常但不调用 Tracer.trace(ex)，异常就不会进入当前 Entry 的统计链。</text>
+  <text x="190" y="357" class="text">2. BlockException 不属于业务异常，默认不会被计入异常熔断统计。</text>
+</svg>

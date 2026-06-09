@@ -1,0 +1,1565 @@
+---
+layout:      post
+title:       "Sentinel 原理与源码解析"
+subtitle:    "从资源模型、Slot Chain、流控熔断到 @SentinelResource 与动态规则"
+author:      "Ekko"
+header-img:  "img/bg/bg-springcloud.jpg"
+catalog:     true
+tags:
+  - 学习笔记
+  - Java
+  - 微服务
+  - Spring Cloud
+  - Sentinel
+  - 源码分析
+---
+
+> 这篇笔记不是只回答“Sentinel 怎么配规则”或者“控制台怎么点”，而是把问题往下压一层：**Sentinel 到底在保护什么、它靠什么抽象统一了限流/熔断/热点参数/系统保护、一次请求进入 Sentinel 后会经过哪些核心对象和执行链。**
+
+> 正文会同时覆盖三层内容：一层是日常开发最需要的能力视图，一层是规则与统计的运行机制，一层是源码主线，包括 `SphU`、`CtSph`、`Entry`、`Context`、`Node`、`ProcessorSlotChain`、`FlowSlot`、`DegradeSlot`、`@SentinelResource` 这一整条核心链路。
+
+> 参考资料：
+>
+> [Sentinel 官方仓库](https://github.com/alibaba/Sentinel)
+>
+> [Sentinel 官方文档仓库](https://github.com/sentinel-group/sentinel-website)
+>
+> [Spring Cloud Alibaba Sentinel Overview](https://sca.aliyun.com/en/docs/2023/user-guide/sentinel/overview/)
+>
+> [Spring Cloud Alibaba Sentinel Advanced Guide](https://sca.aliyun.com/en/docs/2022/user-guide/sentinel/advanced-guide/)
+>
+> [CtSph.java](https://github.com/alibaba/Sentinel/blob/master/sentinel-core/src/main/java/com/alibaba/csp/sentinel/CtSph.java)
+>
+> [DefaultSlotChainBuilder.java](https://github.com/alibaba/Sentinel/blob/master/sentinel-core/src/main/java/com/alibaba/csp/sentinel/slots/DefaultSlotChainBuilder.java)
+>
+> [FlowSlot.java](https://github.com/alibaba/Sentinel/blob/master/sentinel-core/src/main/java/com/alibaba/csp/sentinel/slots/block/flow/FlowSlot.java)
+>
+> [DegradeSlot.java](https://github.com/alibaba/Sentinel/blob/master/sentinel-core/src/main/java/com/alibaba/csp/sentinel/slots/block/degrade/DegradeSlot.java)
+>
+> [SentinelResourceAspect.java](https://github.com/alibaba/Sentinel/blob/master/sentinel-extension/sentinel-annotation-aspectj/src/main/java/com/alibaba/csp/sentinel/annotation/aspectj/SentinelResourceAspect.java)
+
+[TOC]
+
+---
+
+## 一、为什么 Sentinel 值得单独拆一篇
+
+在 Spring Cloud 体系里，很多组件都可以从“它提供了什么功能”来理解：
+
+- `Nacos` 负责注册中心和配置中心
+- `Gateway` 负责统一入口
+- `OpenFeign` 负责声明式调用
+- `Sleuth` / `Zipkin` 负责链路追踪
+
+但 `Sentinel` 稍微特殊一点。
+
+它看上去像一个“高可用组件”，实际上它处理的是一整类问题：
+
+- 突发流量把接口打爆怎么办
+- 某个下游服务持续超时怎么办
+- 某个热点商品、热点参数请求量过高怎么办
+- 整体系统 CPU、Load、入口流量过高怎么办
+- 一条调用链里某个节点抖动时，怎样避免故障放大成雪崩
+
+也就是说，`Sentinel` 不是只做“熔断”，也不是只做“限流”。
+
+更准确地说，它做的是：
+
+**围绕流量、并发、响应时间、异常比例、系统负载这些运行期信号，对资源进行实时保护。**
+
+这也是为什么很多人学完 `Hystrix` 之后，再看 `Sentinel`，会觉得它不是简单的替代品，而是把“服务保护”这件事做得更完整了。
+
+---
+
+## 二、先把定位摆正：Sentinel 在 Spring Cloud 里扮演什么角色
+
+如果把一个典型的微服务系统拆开，大致会有下面这些层次：
+
+```text
+客户端
+  -> Gateway
+  -> 应用服务 A
+     -> OpenFeign / RestTemplate
+     -> 应用服务 B
+     -> 应用服务 C
+  -> MQ / DB / 缓存 / 外部依赖
+```
+
+而 Sentinel 可以嵌在多个位置上：
+
+- 保护 Web 接口
+- 保护服务内部方法
+- 保护 OpenFeign 调用
+- 保护 RestTemplate 调用
+- 保护 Gateway 路由
+- 保护热点业务资源
+
+所以它不是一个“中心化的代理”，而更像是：
+
+**嵌入到应用进程内的流量治理内核。**
+
+这和 Gateway 很不一样。
+
+- `Gateway` 主要守住系统入口
+- `Sentinel` 可以守住入口，也可以守住系统内部任意一个被标记的资源
+
+如果只记一句话，可以概括为：
+
+**Gateway 更偏“边界流量治理”，Sentinel 更偏“资源级保护”。**
+
+---
+
+## 三、理解 Sentinel，先抓住五个核心抽象
+
+Sentinel 的功能虽然很多，但底层并不是一套功能写一套逻辑。它靠的是几个统一抽象。
+
+### Resource：被保护的对象
+
+Sentinel 里最重要的概念不是规则，而是**资源**。
+
+资源可以是很多东西：
+
+- 一个 HTTP 接口
+- 一个 Java 方法
+- 一次远程调用
+- 一个网关路由
+- 一段业务代码
+
+只要能被唯一命名并被纳入统计，它就可以成为 Sentinel 的资源。
+
+这也是 Sentinel 的第一原则：
+
+**先定义资源，再围绕资源挂规则。**
+
+### Rule：对资源施加的保护策略
+
+资源定义出来以后，规则才有意义。
+
+常见规则包括：
+
+- `FlowRule`：流控规则
+- `DegradeRule`：熔断降级规则
+- `ParamFlowRule`：热点参数规则
+- `SystemRule`：系统保护规则
+- `AuthorityRule`：授权规则
+
+从模型上看，规则本质上就是：
+
+**当某个资源的运行期指标满足某种条件时，决定本次请求是否允许通过。**
+
+### Entry：一次资源访问
+
+从调用方视角看，进入 Sentinel 最经典的写法是：
+
+```java
+try (Entry entry = SphU.entry("createOrder")) {
+    // business logic
+} catch (BlockException ex) {
+    // 被 Sentinel 规则阻塞
+}
+```
+
+这里的 `Entry` 就代表：
+
+**本次对某个资源的一次访问。**
+
+它不是一个静态定义，而是一次真正发生的运行期进入事件。
+
+### Context：一次调用上下文
+
+Sentinel 不是只关心“资源总量”，它还关心“从哪条调用路径进来的”。
+
+所以它引入了 `Context`。
+
+`Context` 可以理解成：
+
+**一次调用链路在 Sentinel 里的运行上下文。**
+
+它会携带：
+
+- 当前入口名
+- 当前调用来源 `origin`
+- 当前节点
+- 当前 `Entry`
+
+没有 `Context`，就很难支持链路维度统计、调用来源控制、上下文相关的节点树。
+
+### Node：统计数据的承载体
+
+规则不是凭空判断的，规则判断一定依赖统计数据。
+
+Sentinel 里承载统计信息的就是 `Node` 体系。
+
+常见的有：
+
+- `DefaultNode`：某个资源在某个上下文里的节点
+- `ClusterNode`：某个资源的全局统计节点
+- `EntranceNode`：入口节点
+
+这些节点上会积累：
+
+- 通过数
+- 阻塞数
+- 线程数
+- RT
+- 异常数
+
+所有后续的流控、熔断、系统保护，最终都离不开这些统计值。
+
+---
+
+## 四、再补两个容易被忽略、但源码里很关键的对象
+
+前面那五个抽象已经够建立主框架了，但如果要把 Sentinel 真正读顺，还得再补两个对象：
+
+- `BlockException`
+- `ContextUtil`
+
+### `BlockException`：规则命中的统一失败信号
+
+Sentinel 最有代表性的异常不是普通业务异常，而是 `BlockException`。
+
+它的意义不是“系统出错了”，而是：
+
+**本次请求被 Sentinel 主动阻止了。**
+
+这两者语义完全不同：
+
+- 业务异常：业务执行出了问题
+- `BlockException`：业务还没真正执行，或者执行路径被 Sentinel 主动拦住了
+
+在工程里，这种区分非常重要，因为它决定了：
+
+- 是否应该告警
+- 是否应该统计为业务失败
+- 是否应该进入 fallback
+- 是否应该直接返回限流/熔断提示
+
+从类型上看，常见的阻塞异常可以对应到不同规则来源：
+
+- `FlowException`：流控规则触发
+- `DegradeException`：熔断降级触发
+- `ParamFlowException`：热点参数规则触发
+- `AuthorityException`：授权规则触发
+- `SystemBlockException`：系统保护触发
+
+也正因为如此，Sentinel 才能用统一的 `catch (BlockException ex)` 承接不同保护能力。
+
+### `ContextUtil`：调用链不是天然存在的，而是被显式建立的
+
+很多人第一次接触 Sentinel，会把它想象成“天然知道一切调用链”。  
+实际上，调用链上下文是需要建立的。
+
+最常见的入口就是：
+
+```java
+ContextUtil.enter("order-service");
+try {
+    Entry entry = SphU.entry("createOrder");
+    // ...
+} finally {
+    ContextUtil.exit();
+}
+```
+
+`ContextUtil.enter(...)` 的意义，不是简单塞一个名字，而是：
+
+- 建立当前调用入口
+- 让后续资源访问挂到这个入口下
+- 为链路模式、来源模式、节点树统计提供上下文基础
+
+如果没有上下文，Sentinel 仍然可以做很多事情，但很多“链路维度”的能力就很难成立。
+
+因此，从源码视角看：
+
+**`SphU.entry()` 负责资源进入，`ContextUtil.enter()` 负责把这次资源进入放进哪条调用链里。**
+
+---
+
+## 五、Sentinel 的能力体系，不只是“限流 + 熔断”
+
+### 流量控制
+
+这是大家最熟悉的一类能力：
+
+- 按 QPS 限流
+- 按并发线程数限制
+- 快速失败
+- 预热
+- 匀速排队
+
+它的目标是：
+
+**把进入系统的流量，控制在资源能够承受的范围内。**
+
+### 熔断降级
+
+这部分更像是“发现资源已经不稳定了，于是暂时切断或收紧访问”。
+
+常见判断维度包括：
+
+- 慢调用比例
+- 异常比例
+- 异常数
+
+它的目标不是单纯拒绝流量，而是：
+
+**避免一个已经不稳定的资源继续拖垮整条链路。**
+
+### 热点参数限流
+
+有些系统平时整体流量不高，但某个热点参数会瞬时把某个点打爆。
+
+比如：
+
+- 某个热门商品 `productId`
+- 某个明星直播间 `roomId`
+- 某个活动场次 `activityId`
+
+这个时候，普通的资源级限流不够细，需要对“参数值”再做一层控制。
+
+### 系统自适应保护
+
+这部分不是看单个资源，而是看整个系统的健康度。
+
+例如：
+
+- 系统负载
+- CPU 使用率
+- 入口流量
+- 并发线程数
+
+系统保护的本质是：
+
+**当机器整体已经接近极限时，提前拒绝新流量，而不是等系统彻底崩掉。**
+
+### 授权控制
+
+除了流量和稳定性，Sentinel 还支持调用来源维度的黑白名单控制。
+
+比如：
+
+- 只允许某些来源访问
+- 拒绝某些来源访问
+
+这类能力在网关、BFF、服务间来源管控里很常见。
+
+---
+
+## 六、Sentinel 和 Hystrix 到底是什么关系
+
+很多资料会把 Sentinel 和 Hystrix 直接并列，这样没错，但还不够准确。
+
+如果只看“都能做熔断降级”，它们确实有交集。
+
+但从关注点看，两者更像这样：
+
+- `Hystrix` 更偏**调用容错**
+- `Sentinel` 更偏**流量治理 + 资源保护**
+
+换句话说：
+
+- Hystrix 更像“调用失败后怎么保护”
+- Sentinel 更像“在流量进入和资源运行过程中，怎么持续保护”
+
+因此，Sentinel 比 Hystrix 更强调这些事情：
+
+- 流量控制
+- 热点参数保护
+- 系统自适应保护
+- 实时控制台和动态规则
+
+而在较新的 Spring 生态里，如果不走 Spring Cloud Alibaba 路线，也常会看到 `Resilience4j`。
+
+三者可以粗略理解为：
+
+- `Hystrix`：经典但偏旧
+- `Sentinel`：国内 Spring Cloud Alibaba 项目非常常见
+- `Resilience4j`：较新的 Spring 官方生态里更常见
+
+---
+
+## 七、最小使用方式：Sentinel 从哪里开始接入
+
+在 Spring Cloud Alibaba 里，最常见的接入方式是引入 starter：
+
+```xml
+<dependency>
+  <groupId>com.alibaba.cloud</groupId>
+  <artifactId>spring-cloud-starter-alibaba-sentinel</artifactId>
+</dependency>
+```
+
+然后在业务方法上标一个 `@SentinelResource`：
+
+```java
+@GetMapping("/hello")
+@SentinelResource(value = "hello")
+public String hello() {
+    return "Hello Sentinel";
+}
+```
+
+这只是最外层使用方式。
+
+如果只停在这一层，很容易把 Sentinel 理解成“一个注解 + 一个控制台”。  
+但实际上，它的真正核心并不在注解，而在：
+
+- 资源进入
+- 上下文建立
+- 统计收集
+- slot chain 检查
+- 规则命中后的阻塞或放行
+
+也正因为如此，下面的源码主线才是整篇笔记的重点。
+
+---
+
+## 八、源码主线总览：一次请求进入 Sentinel，到底发生了什么
+
+从最核心的 API 入口看，可以先把调用链压成下面这条：
+
+```text
+SphU.entry(...)
+  -> CtSph.entryWithPriority(...)
+  -> 根据资源获取或创建 ProcessorSlotChain
+  -> 进入 Context
+  -> 创建 Entry
+  -> 执行 slot chain.entry(...)
+  -> 某个 slot 放行 or 抛出 BlockException
+  -> 业务执行
+  -> entry.exit(...)
+  -> 统计收集、线程数回收、熔断器完成态更新
+```
+
+真正值得抓住的，是这条链上的几个骨架类：
+
+- `SphU`
+- `CtSph`
+- `Entry`
+- `ContextUtil`
+- `ProcessorSlotChain`
+- `DefaultNode` / `ClusterNode`
+- `FlowSlot`
+- `DegradeSlot`
+
+先把这条主线换成图来看，会更容易建立整体感：
+
+![Sentinel 资源进入总流程](/img/notes/sentinel-resource-flow.svg)
+
+---
+
+## 九、入口对象：`SphU` 和 `CtSph` 做了什么
+
+在大多数业务代码里，大家看到的是 `SphU.entry()`。  
+但真正干活的核心实现是 `CtSph`。
+
+### `SphU` 更像门面
+
+`SphU` 本质上是给业务方暴露的一层静态门面，方便直接调用。
+
+业务代码不会直接关心：
+
+- slot chain 从哪里来
+- context 如何建立
+- entry 怎么挂到上下文里
+
+这些细节都被门面隐藏了。
+
+### `CtSph` 是真正的核心入口
+
+从 `CtSph` 的实现可以看到，Sentinel 会为资源维护一个 `chainMap`：
+
+- 相同资源共享同一条 `ProcessorSlotChain`
+- 这条链和具体上下文无关
+- 上下文变化主要体现在节点和统计上，而不是重新建一条链
+
+这点非常关键，因为它解释了两件事：
+
+1. **规则检查链是资源级共享的**
+2. **统计节点却可以在不同 Context 下拆分**
+
+也就是说，Sentinel 的设计不是“每次请求都现拼一套检查器”，而是：
+
+**资源共享规则执行链，请求在上下文里绑定自己的统计节点。**
+
+---
+
+## 十、为什么 Sentinel 能同时支持多种能力：核心在 `ProcessorSlotChain`
+
+Sentinel 最漂亮的一点，是它没有把流控、熔断、系统保护、热点参数这些能力写成互相耦合的一大团 if/else。
+
+它采用的是 **slot chain** 模式。
+
+### `ProcessorSlotChain` 是一条职责链
+
+从源码看，`ProcessorSlotChain` 本身就是一条链接多个 `ProcessorSlot` 的链。
+
+`DefaultProcessorSlotChain` 负责：
+
+- 维护链头和链尾
+- 按顺序串起来所有 slot
+- 在 `entry` 时依次往后传
+- 在 `exit` 时触发退出逻辑
+
+这意味着 Sentinel 的每一类能力都可以做成一个独立 slot：
+
+- 前面的 slot 负责准备统计结构
+- 中间的 slot 负责规则检查
+- 后面的 slot 负责统计回收或补充逻辑
+
+### 默认链是怎么建出来的
+
+默认情况下，`DefaultSlotChainBuilder` 会通过 SPI 加载所有 `ProcessorSlot`，按顺序排序后挂到链上。
+
+这背后的设计价值非常直接：
+
+- 功能解耦
+- 顺序可控
+- 扩展友好
+
+换句话说，Sentinel 的各种保护能力，表面上很多，底层其实都只是：
+
+**在统一的执行链上插入不同的规则检查和统计处理节点。**
+
+![Sentinel 默认 Slot Chain 主干](/img/notes/sentinel-slot-chain.svg)
+
+---
+
+## 十一、默认 slot chain 的主干顺序
+
+如果把 Sentinel 的默认 slot chain 主干抽出来，大致可以理解为：
+
+```text
+NodeSelectorSlot
+  -> ClusterBuilderSlot
+  -> LogSlot
+  -> StatisticSlot
+  -> AuthoritySlot
+  -> SystemSlot
+  -> ParamFlowSlot
+  -> FlowSlot
+  -> DegradeSlot
+```
+
+其中顺序不是随便排的，而是有明确依赖关系。
+
+### `NodeSelectorSlot`
+
+这一步主要负责：
+
+- 在当前 `Context` 下为资源找到或创建 `DefaultNode`
+- 把当前节点挂到调用树上
+- 把 `context.curNode` 指向当前资源节点
+
+这一层决定了：
+
+**同一个资源在不同 Context 下，可以有不同的 `DefaultNode`。**
+
+所以链路维度的统计，真正是从这里开始分叉的。
+
+### `ClusterBuilderSlot`
+
+这一层做的是全局维度的统计绑定：
+
+- 为资源找到或创建 `ClusterNode`
+- 把当前 `DefaultNode` 关联到这个 `ClusterNode`
+- 如果存在调用来源 `origin`，还会准备来源节点
+
+因此可以把 `DefaultNode` 和 `ClusterNode` 的关系概括为：
+
+- `DefaultNode`：上下文内视角
+- `ClusterNode`：资源全局视角
+
+### `StatisticSlot`
+
+这一步是整个 Sentinel 里非常关键的一层。
+
+它负责：
+
+- 请求通过时增加线程数和通过数
+- 请求被阻塞时增加阻塞数
+- 退出时统计 RT、成功数、异常数
+- 退出时减少线程数
+
+可以说，后续很多规则能否成立，根基都在 `StatisticSlot`。
+
+没有这层，就没有：
+
+- 当前线程数
+- 近一秒通过数
+- 近一秒阻塞数
+- 平均 RT
+- 异常数
+
+### `AuthoritySlot`
+
+基于 `origin` 做来源控制：
+
+- 黑名单
+- 白名单
+
+这一层不复杂，但很实用，尤其适合服务来源治理。
+
+### `SystemSlot`
+
+基于系统整体状态做保护，例如：
+
+- load
+- CPU
+- 入口流量
+- 并发线程数
+
+它不是面向单资源，而是偏向整机级别的兜底保护。
+
+### `ParamFlowSlot`
+
+这是热点参数限流的核心 slot。
+
+它会：
+
+- 判断当前资源是否存在参数规则
+- 根据规则里的参数下标拿到参数值
+- 初始化该参数的统计结构
+- 判断这个参数值当前是否允许通过
+
+这一步让 Sentinel 从“资源级治理”进一步细化到“参数值级治理”。
+
+### `FlowSlot`
+
+这是普通流控的核心 slot。
+
+它会根据已经准备好的统计数据和配置好的 `FlowRule`，判断本次请求是否应该通过。
+
+如果规则不允许通过，就直接抛出 `FlowException`。
+
+### `DegradeSlot`
+
+这是熔断降级的核心 slot。
+
+它在进入阶段会判断断路器当前是否允许通过，在退出阶段会根据请求完成情况更新断路器状态。
+
+这一层让 Sentinel 不只是“入口挡流量”，还能做：
+
+- 资源健康度判断
+- 慢调用比例熔断
+- 异常比例熔断
+- 异常数熔断
+
+---
+
+## 十二、Sentinel 的统计模型：为什么它能实时判断规则
+
+所有规则最终都离不开一句话：
+
+**先统计，再判断。**
+
+Sentinel 统计的核心指标大致包括：
+
+- `thread`：当前线程数
+- `pass`：通过数
+- `block`：阻塞数
+- `success`：成功数
+- `exception`：异常数
+- `rt`：响应时间
+
+这些统计值不是只存在一个地方，而是会分布在不同节点上：
+
+- 当前 `DefaultNode`
+- `OriginNode`
+- `ClusterNode`
+- 全局入口节点
+
+这使得 Sentinel 能从多个维度做判断：
+
+- 当前调用链维度
+- 调用来源维度
+- 资源全局维度
+- 入口流量维度
+
+这也是它和很多“只在单接口计数”的简单限流器最大的差别。
+
+### 统计不是普通计数器，而是滑动窗口
+
+这一层正是 Sentinel 最重要、也最容易被忽略的核心机制。
+
+很多资料讲到统计时，只会说它“记录 QPS、RT、异常数”。  
+但如果不把**滑动窗口**讲明白，后面的流控、熔断、系统保护其实都只是结论，没有解释能力。
+
+更准确地说，Sentinel 不是把指标简单地累加在一个全局计数器里，而是：
+
+**把最近一段时间切成多个时间桶，在滑动窗口里持续滚动统计。**
+
+这意味着 Sentinel 关心的不是“从系统启动到现在一共发生了多少次请求”，而是：
+
+- 最近 1 秒内通过了多少请求
+- 最近 1 秒内异常比例是多少
+- 最近 1 秒内平均 RT 是多少
+- 最近 1 分钟内各秒的统计分布是什么
+
+也正因为如此，Sentinel 才能做出“实时、近似连续”的规则判断。
+
+### `StatisticSlot` 在统计链上的职责
+
+从源码看，`StatisticSlot` 负责的不是“所有统计逻辑”，而是两段关键时机：
+
+- `entry` 阶段：请求已经通过后续 slot 检查，开始增加线程数和通过数
+- `exit` 阶段：请求执行完成，补充 RT、成功数、异常数，并回收线程数
+
+这意味着 Sentinel 的统计并不是“请求一进来就盲目记成功”，而是：
+
+- 先让后面的规则 slot 决定能不能过
+- 通过之后再记 `pass` 和 `thread`
+- 退出时再记 `rt`、`success`、`exception`
+
+这一点非常重要，因为它解释了为什么 Sentinel 的统计结果更接近真实运行状态。
+
+### 滑动窗口真正落地在哪些类里
+
+从源码结构看，这条统计链可以压成下面几层：
+
+```text
+StatisticNode
+  -> ArrayMetric
+     -> LeapArray
+        -> WindowWrap
+           -> MetricBucket
+```
+
+每一层分工都很明确：
+
+- `StatisticNode`：对外暴露资源统计能力，同时维护秒级和分钟级统计
+- `ArrayMetric`：提供指标读写接口，比如 `addPass()`、`pass()`、`exception()`
+- `LeapArray`：滑动窗口底层结构，负责按时间定位桶、创建桶、复用过期桶
+- `WindowWrap`：某个时间窗口的包装对象，记录窗口开始时间和桶内容
+- `MetricBucket`：窗口里的真实统计数据，保存 `pass`、`block`、`success`、`exception`、`rt` 等指标
+
+这一层关系，是理解 Sentinel 统计机制最关键的一张图。
+
+### `StatisticNode` 为什么会有秒级和分钟级两套统计
+
+从 `StatisticNode` 的实现可以看到，它至少维护了两类指标：
+
+- `rollingCounterInSecond`
+- `rollingCounterInMinute`
+
+这两者的关注点并不一样：
+
+- **秒级窗口** 更适合给规则判断提供实时数据，比如当前 QPS、当前异常比例、当前平均 RT
+- **分钟级窗口** 更适合做历史趋势、监控展示和按秒粒度输出指标
+
+换句话说，Sentinel 不是只做“眼前这一跳的判断”，它还要给控制台和观测面提供可回看的统计视图。
+
+### `LeapArray` 为什么是核心中的核心
+
+`LeapArray` 可以看成 Sentinel 的滑动窗口底盘。
+
+它有几个很关键的设计点：
+
+- 整个统计区间是 `intervalInMs`
+- 会被均匀切成 `sampleCount` 个桶
+- 每个桶的长度是 `windowLengthInMs = intervalInMs / sampleCount`
+- 底层使用 `AtomicReferenceArray<WindowWrap<T>>` 存桶
+
+这一套设计的含义是：
+
+**Sentinel 不会为每个请求单独建一个统计对象，而是把请求映射到当前时间所属的桶里。**
+
+请求来了以后，大致会做这些事：
+
+1. 根据当前时间计算当前应该落在哪个桶
+2. 如果桶不存在，就创建新桶
+3. 如果桶还在当前时间窗内，就直接复用
+4. 如果桶已经过期，就把这个位置重置成新的时间桶
+
+这就是典型的循环数组 + 滑动窗口思路。
+
+### 为什么这叫“滑动窗口”，而不是“固定窗口”
+
+固定窗口常见的问题是边界抖动。
+
+比如限制“每秒最多 100 次”，如果刚好卡在整秒边界，很可能在 `0.99s` 和 `1.01s` 两侧各放过大量请求，导致瞬时流量尖刺。
+
+而 Sentinel 的滑动窗口思路是：
+
+- 不盯死某个自然秒
+- 而是始终统计“最近一段连续时间”内的有效桶
+
+这样做的好处是：
+
+- 统计更平滑
+- 阈值更接近真实系统压力
+- 对突发流量边界更不敏感
+
+因此，**滑动窗口并不是 Sentinel 的一个边缘知识点，而是整个统计与规则判断体系的地基。**
+
+### `WindowWrap` 和 `MetricBucket` 分别保存什么
+
+`WindowWrap` 负责时间维度：
+
+- 这个桶从什么时候开始
+- 这个桶覆盖多长时间
+- 这个桶里真正存的是什么值
+
+`MetricBucket` 负责指标维度：
+
+- `PASS`
+- `BLOCK`
+- `SUCCESS`
+- `EXCEPTION`
+- `RT`
+- `OCCUPIED_PASS`
+
+所以可以把两者关系概括为：
+
+- `WindowWrap` 解决“这是谁的时间片”
+- `MetricBucket` 解决“这个时间片里记了什么”
+
+### `ArrayMetric` 对外暴露了什么能力
+
+`ArrayMetric` 是连接“业务指标语义”和“滑动窗口底层结构”的那一层。
+
+例如：
+
+- `addPass()` 会把通过数加到当前桶
+- `addBlock()` 会把阻塞数加到当前桶
+- `addException()` 会把异常数加到当前桶
+- `addRT()` 会把 RT 加到当前桶
+- `pass()`、`exception()`、`rt()` 则会汇总当前有效窗口内所有桶的数据
+
+这说明 Sentinel 的指标读取不是直接读一个全局变量，而是：
+
+**先拿到当前有效窗口，再把窗口内各桶的数据聚合起来。**
+
+### 统计值是怎样在 `StatisticSlot` 里被写入的
+
+这一层如果顺着源码看，会非常清楚。
+
+`StatisticSlot.entry()` 中：
+
+- 放行后增加线程数
+- 放行后增加通过数
+- 同步更新 `DefaultNode`、`OriginNode`、`ENTRY_NODE`
+
+`StatisticSlot.exit()` 中：
+
+- 计算本次调用 RT
+- 增加成功数
+- 减少线程数
+- 如果存在业务异常，则增加异常数
+
+因此，Sentinel 的统计模型并不是“某个地方统一扫一遍”，而是：
+
+**在请求生命周期的关键节点，把不同指标分别落到当前时间桶里。**
+
+### 这一层为什么直接决定后续所有规则是否靠谱
+
+后面的几乎所有规则，都要依赖这些统计值：
+
+- `FlowSlot` 依赖通过数、线程数
+- `DegradeSlot` 依赖 RT、异常数、异常比例
+- `SystemSlot` 依赖入口流量、并发线程、系统状态
+- 控制台展示依赖分钟级聚合结果
+
+因此可以直接下结论：
+
+**Sentinel 的“核心机制”不是某一条流控规则，也不是某一种熔断策略，而是这套滑动窗口统计结构。**
+
+这一块如果只看文字还是容易抽象，结合下面这张图会更直观：
+
+![Sentinel 滑动窗口统计结构](/img/notes/sentinel-sliding-window.svg)
+
+---
+
+## 十三、流控机制深入：`FlowRule` 到底在判断什么
+
+流控是 Sentinel 最常用、也最值得吃透的一块。
+
+### 两种最基本的限流维度
+
+流控最基础的判断维度有两个：
+
+- **QPS**
+- **并发线程数**
+
+两者的区别非常重要。
+
+`QPS` 关注的是单位时间内请求量。  
+`线程数` 关注的是当前正在占用资源的并发量。
+
+这两种模式分别适合不同场景：
+
+- 接口被高频调用，优先看 `QPS`
+- 接口单次执行很慢、容易堆线程，优先看 `线程数`
+
+### 三种常见流控效果
+
+从工程使用上，最常见的流控效果有三种：
+
+- **快速失败**
+- **Warm Up**
+- **匀速排队**
+
+它们背后的含义分别是：
+
+- 快速失败：超了就直接拒绝
+- Warm Up：给系统一个从冷到热的预热过程
+- 匀速排队：让流量平滑通过，而不是瞬时冲击后端
+
+### `FlowSlot` 源码主线
+
+`FlowSlot.entry()` 的逻辑很直接：
+
+1. 调用 `checkFlow(...)`
+2. 让 `FlowRuleChecker` 检查当前资源的规则
+3. 若不通过，抛 `FlowException`
+4. 若通过，继续 `fireEntry(...)`
+
+这段设计很说明 Sentinel 的风格：
+
+**slot 本身更像规则检查的组织者，真正的判断细节下沉给 checker。**
+
+### `FlowRuleChecker` 的细粒度判断逻辑
+
+真正“放不放这次请求”的核心，实际上在 `FlowRuleChecker`。
+
+如果把它的决策过程压缩一下，大致是下面这条链：
+
+```text
+拿到资源规则
+  -> 遍历每条 FlowRule
+  -> 判断是否集群模式
+  -> 选择统计节点
+  -> 交给 rule.getRater().canPass(...)
+  -> 不通过则抛 FlowException
+```
+
+这里最容易被忽略的，不是 `canPass()` 本身，而是前面的两步：
+
+- **选择哪一个统计节点**
+- **按哪种流控策略判断**
+
+#### 第一层：先看 `limitApp`
+
+`limitApp` 决定规则是对谁生效：
+
+- `default`：对默认来源生效
+- 具体来源名：只对指定来源生效
+- `other`：对除显式来源外的其他来源生效
+
+这一层解释了为什么 Sentinel 不只是“按资源限流”，还可以“按调用来源限流”。
+
+#### 第二层：再看 `strategy`
+
+流控策略常见有三种思路：
+
+- `DIRECT`：直接针对当前资源
+- `RELATE`：关联资源模式，参考另一个资源的统计
+- `CHAIN`：链路模式，在指定入口链路下生效
+
+源码里会通过 `selectNodeByRequesterAndStrategy(...)` 和 `selectReferenceNode(...)` 去决定最终拿哪个 `Node` 做判断。
+
+这一步非常关键，因为它决定了：
+
+- 这条规则到底是看当前资源的全局统计
+- 还是看某个来源下的统计
+- 还是看某条入口链路下的统计
+
+#### 第三层：本地模式还是集群模式
+
+`FlowRuleChecker` 不只处理本地限流，还会先判断：
+
+- 规则是不是 `cluster mode`
+
+如果是集群模式，它会尝试走 `TokenService` 去申请令牌；  
+如果集群服务不可用，则根据配置决定：
+
+- 回退到本地限流
+- 或者直接放行
+
+这解释了一个工程上非常重要的事实：
+
+**Sentinel 的流控不是天然只做单机判断，它的源码从一开始就把集群流控作为同一套决策链的一部分。**
+
+#### 第四层：真正的放行判断交给 `Rater`
+
+前面的节点选择和模式判断做完之后，最终会落到：
+
+```java
+rule.getRater().canPass(selectedNode, acquireCount, prioritized)
+```
+
+这里的 `Rater` 才是真正决定：
+
+- 当前通过数是否超阈值
+- 线程数是否超限
+- 是否需要预热
+- 是否需要排队等待
+
+所以从职责拆分看：
+
+- `FlowSlot` 负责组织流程
+- `FlowRuleChecker` 负责选规则、选节点、选模式
+- `Rater` 负责具体算法判断
+
+这样整个流控实现才既清晰，又方便扩展。
+
+### `FlowRuleManager` 做了什么
+
+`FlowRuleManager` 负责：
+
+- 注册规则属性源
+- 接收规则更新
+- 按资源维度维护规则映射
+- 为 `FlowSlot` 提供当前资源的规则列表
+
+它的关键设计点在于：
+
+- `loadRules()` 是直接更新规则的一种方式
+- 更推荐通过 `SentinelProperty` / `DataSource` 做动态规则管理
+
+这意味着 Sentinel 的规则体系天生就是为“动态更新”准备的，而不是只为本地硬编码配置服务的。
+
+---
+
+## 十四、熔断降级机制深入：`DegradeSlot` 和断路器状态机
+
+Sentinel 的熔断已经不是老式“简单失败率阈值 + 睡眠时间”那种单薄模型了，而是围绕 `CircuitBreaker` 工作。
+
+### 三类常见熔断指标
+
+当前常见的熔断判断方式可以概括为：
+
+- 慢调用比例
+- 异常比例
+- 异常数
+
+它们分别对应不同问题：
+
+- 接口没报错，但越来越慢
+- 接口频繁抛异常
+- 短时间内异常绝对数量太多
+
+### 断路器的典型状态
+
+可以把 Sentinel 的熔断状态理解为：
+
+- **Closed**：关闭，正常放行
+- **Open**：打开，直接阻断
+- **Half-Open**：半开，试探性放行部分请求
+
+这套状态机的核心思想是：
+
+**不是永远把问题资源关死，而是在保护期后尝试恢复。**
+
+### `DegradeSlot` 源码主线
+
+`DegradeSlot` 在进入阶段会：
+
+- 获取资源对应的断路器列表
+- 调用 `tryPass(context)`
+- 如果不允许通过，则抛出 `DegradeException`
+
+在退出阶段则会：
+
+- 忽略已经被 block 的请求
+- 对通过的请求调用 `circuitBreaker.onRequestComplete(context)`
+- 让断路器根据本次请求结果更新自身状态
+
+所以 `DegradeSlot` 的职责非常清晰：
+
+- `entry` 阶段：决定放不放
+- `exit` 阶段：决定后续状态怎么变
+
+---
+
+## 十五、热点参数限流为什么单独做一套：`ParamFlowSlot`
+
+普通流控规则的对象是“资源”。  
+热点参数限流的对象是“资源里的某个参数值”。
+
+这两件事在模型上其实差很多。
+
+举个例子：
+
+- `GET /product/detail?id=1001`
+- `GET /product/detail?id=1002`
+
+从资源级看，它们是同一个接口。  
+但从热点视角看，`1001` 和 `1002` 完全可以是两种流量命运。
+
+`ParamFlowSlot` 做的事情就是：
+
+- 读取资源的参数规则
+- 按规则取到指定参数下标
+- 把参数值映射成统计 key
+- 基于参数值维度做通过判断
+
+这使得 Sentinel 能处理很多传统限流器不擅长的场景：
+
+- 某个热门商品详情页
+- 某个热点活动入口
+- 某个大客户 ID
+
+---
+
+## 十六、`@SentinelResource` 注解机制：它到底只是语法糖，还是另一套逻辑
+
+结论是：
+
+**它是接入层语法糖，但底层仍然回到同一套 Sentinel 核心模型。**
+
+### `SentinelResourceAspect` 的主线
+
+从 `SentinelResourceAspect` 可以看到，它在 AOP 环绕增强里会做这几件事：
+
+1. 解析注解和方法
+2. 生成资源名
+3. 调用 `SphU.entry(...)`
+4. 执行业务方法
+5. 捕获 `BlockException` 走 `blockHandler`
+6. 捕获业务异常，根据配置决定是否 `trace` 或 `fallback`
+7. 在 `finally` 中执行 `entry.exit(...)`
+
+这说明两件事：
+
+- 注解模式并没有绕开 Sentinel 的核心链路
+- 它只是把“显式 try-catch + entry/exit”这套模板代码隐藏掉了
+
+### `blockHandler` 和 `fallback` 不是一回事
+
+这是 Sentinel 使用时最容易混淆的点。
+
+两者分工应该严格区分：
+
+- `blockHandler`：处理 **Sentinel 规则触发** 导致的阻塞
+- `fallback`：处理 **业务执行异常**
+
+换句话说：
+
+- 被限流、被熔断、被系统保护挡住，走 `blockHandler`
+- 业务代码自己抛异常，走 `fallback`
+
+这两种路径的含义完全不同，生产代码里不要混用。
+
+### `exceptionsToTrace` / `exceptionsToIgnore`
+
+注解还允许细化异常处理策略：
+
+- 某些异常是否进入 Sentinel 的异常统计
+- 某些异常是否直接忽略
+
+这会影响：
+
+- 熔断统计
+- fallback 行为
+- 异常观察结果
+
+如果这里配置混乱，后续熔断规则往往也会失真。
+
+### `Tracer.trace(ex)` 和异常统计到底是什么关系
+
+这一层是 Sentinel 使用里非常关键、但很多文章讲得不透的一点。
+
+`Tracer` 的职责不是做链路追踪，而是：
+
+**把业务异常显式记录到当前 `Entry` 上，供后续统计和熔断判断使用。**
+
+从 `Tracer` 的源码可以看到，它最终做的核心动作其实很简单：
+
+- 判断这个异常是否应该被统计
+- 如果应该统计，就把异常挂到当前 `Entry` 上
+
+本质上就是：
+
+```java
+entry.setError(e);
+```
+
+看上去只是一个赋值动作，但意义非常大。
+
+因为在 `StatisticSlot.exit()` 里，会读取当前 `Entry` 上的 error，然后决定：
+
+- 是否增加异常数
+- 是否把这次请求计入异常比例或异常数熔断判断
+
+换句话说，真正的链路是这样的：
+
+```text
+业务异常发生
+  -> Tracer.trace(ex) / Tracer.traceEntry(ex, entry)
+  -> 当前 Entry 记录 error
+  -> StatisticSlot.exit() 读取 error
+  -> node.increaseExceptionQps(...)
+  -> 熔断统计可见这次异常
+```
+
+因此，`Tracer.trace(ex)` 和异常统计不是并列关系，而是前后依赖关系：
+
+- `Tracer` 负责“把异常挂到当前资源访问上”
+- `StatisticSlot` 负责“在退出阶段把它写成统计指标”
+
+### 什么异常会被 `Tracer` 统计
+
+从源码看，`Tracer.shouldTrace(Throwable t)` 默认有几个关键判断：
+
+- `null` 不统计
+- `BlockException` 不统计
+- 如果配置了 `exceptionsToIgnore`，优先忽略
+- 如果配置了 `exceptionsToTrace`，只统计命中的异常
+- 否则默认统计除 `BlockException` 外的大部分业务异常
+
+这里最核心的一条原则是：
+
+**规则阻塞不属于业务异常，因此不能把 `BlockException` 继续算进异常熔断统计。**
+
+这也解释了为什么 Sentinel 能同时区分两类失败：
+
+- 被规则主动拦住
+- 业务自己执行失败
+
+### 什么时候需要手动调用 `Tracer.trace(ex)`
+
+如果使用 `@SentinelResource`，很多异常处理路径已经被切面封装好了。  
+但在手动埋点模式下，如果业务代码自己 `catch` 住异常又不往外抛，那么 Sentinel 默认并不知道这次请求失败了。
+
+这时就需要显式调用：
+
+```java
+catch (Exception ex) {
+    Tracer.trace(ex);
+    // 你的补偿逻辑
+}
+```
+
+否则会出现一种很典型的错觉：
+
+- 业务明明失败了
+- 但 Sentinel 统计里异常数不高
+- 异常比例熔断也触发不起来
+
+从根本上说，不是熔断规则失效，而是异常没有被记进当前 `Entry`。
+
+![Tracer.trace(ex) 与异常统计链](/img/notes/sentinel-tracer-exception.svg)
+
+---
+
+## 十七、动态规则为什么是生产环境重点，而不是控制台本身
+
+很多人第一次接触 Sentinel，会把控制台当成重点。  
+但真正到生产环境，重点其实不是控制台页面，而是**规则数据怎么持续、可靠地下发和生效**。
+
+### `loadRules()` 只是最基础入口
+
+以 `FlowRuleManager` 为例，直接调用：
+
+```java
+FlowRuleManager.loadRules(rules);
+```
+
+当然可以完成规则加载，但它更适合：
+
+- 本地测试
+- demo
+- 临时验证
+
+生产上如果只靠这种方式，规则管理会非常脆弱。
+
+### Sentinel 的动态规则模型
+
+Sentinel 为规则动态化预留了统一抽象：
+
+- `SentinelProperty`
+- `ReadableDataSource`
+
+它的思路是：
+
+- 规则真正存放在外部数据源
+- 客户端通过数据源接口读取和监听变化
+- 变化后更新到内存态规则管理器
+
+因此，规则系统可以拆成两部分：
+
+- **规则存储与分发**
+- **规则运行时生效**
+
+### 为什么生产上常配 Nacos
+
+在 Spring Cloud Alibaba 项目里，最常见的组合通常是：
+
+- `Nacos` 持久化规则
+- `Sentinel Dashboard` 提供可视化管理
+- 客户端通过数据源监听规则变化
+
+这套组合的价值在于：
+
+- 规则可以持久化
+- 服务重启后规则不会丢
+- 多实例之间的规则更容易统一
+
+如果没有外部规则源，很多控制台规则只停留在内存里，重启就没了，这在生产上是不可接受的。
+
+---
+
+## 十八、Sentinel Dashboard 到底做了什么
+
+控制台不是 Sentinel 的内核，但它非常有用。
+
+它主要承担两类职责：
+
+### 观测
+
+可以实时看到：
+
+- 资源列表
+- QPS
+- RT
+- block 数
+- 异常情况
+
+这让流量治理不再只是“拍脑袋配阈值”，而有了基本的观测面。
+
+### 规则管理
+
+控制台可以：
+
+- 配规则
+- 下发规则
+- 观察规则命中情况
+
+但要注意，**控制台本身不等于规则持久化中心**。  
+它更像一个管理入口。真正稳定的生产形态，仍然需要结合外部数据源。
+
+---
+
+## 十九、和 Spring Cloud 生态的整合点，真正有价值的是哪些
+
+Sentinel 不是单独存在的，它通常会嵌进几个非常关键的 Spring Cloud 组件里。
+
+### 和 OpenFeign
+
+这时候它保护的是：
+
+- 某次远程调用
+- 某个下游依赖
+- 某类调用失败后的降级路径
+
+价值在于避免一个不稳定下游把调用方拖死。
+
+#### Feign 适配器的源码入口
+
+如果顺着 Spring Cloud Alibaba 的源码往下看，Feign 这条线最值得关注的入口有两个：
+
+- `SentinelFeign.Builder`
+- `SentinelInvocationHandler`
+
+其中：
+
+- `SentinelFeign.Builder` 负责替换默认的 Feign 构建过程
+- `SentinelInvocationHandler` 负责把一次 Feign 方法调用包装成 Sentinel 资源访问
+
+从 `SentinelInvocationHandler` 可以看到，它在调用阶段会做这些事：
+
+1. 根据 `MethodMetadata` 组装资源名
+2. 调用 `ContextUtil.enter(resourceName)`
+3. 调用 `SphU.entry(resourceName, EntryType.OUT, 1, args)`
+4. 执行真正的 Feign 远程调用
+5. 如果出现业务异常，调用 `Tracer.traceEntry(ex, entry)`
+6. 如果配置了 fallback / fallbackFactory，则走降级返回
+7. 最后在 `finally` 中执行 `entry.exit(...)` 和 `ContextUtil.exit()`
+
+这条链说明得非常清楚：
+
+**Feign 适配器不是“调用失败后再补一个 fallback”这么简单，而是把每次远程调用完整纳入了 Sentinel 的资源模型。**
+
+另外，它默认构造的资源名一般会包含：
+
+- HTTP Method
+- 目标 URL
+- 请求路径
+
+也就是说，在 Feign 这一层，Sentinel 保护的是一个**对外调用资源**，而不是一个普通本地方法。
+
+### 和 Gateway
+
+这时候它保护的是：
+
+- 网关入口流量
+- 路由级限流
+- API 级限流
+
+价值在于把系统入口的流量先收住，再让后端服务各自做更细的资源保护。
+
+#### Gateway 适配器的源码入口
+
+Gateway 这条线和 Feign 最大的不同，在于它不是同步方法调用模型，而是 Reactor 响应式链路。
+
+这里最值得看的入口类是：
+
+- `SentinelGatewayFilter`
+- `GatewayCallbackManager`
+
+`SentinelGatewayFilter` 的核心职责是：
+
+- 从 `ServerWebExchange` 中拿到当前 `Route`
+- 把 `routeId` 或命中的自定义 API 名称当成资源名
+- 解析热点参数和请求来源
+- 通过 `SentinelReactorTransformer` 把请求链路包装进 Sentinel
+
+也就是说，Gateway 适配器不是自己手写一套 `try/finally + entry/exit`，而是把 Sentinel 接进 Reactor 的响应式执行链。
+
+这一层非常关键，因为它解释了为什么网关模式下可以直接做：
+
+- 路由维度限流
+- API 分组限流
+- 参数维度限流
+- 自定义来源解析
+
+而 `GatewayCallbackManager` 则主要负责网关场景下两个可扩展点：
+
+- `BlockRequestHandler`：请求被阻塞后怎么返回
+- `RequestOriginParser`：如何从请求里解析调用来源
+
+所以 Gateway 适配器的整体思路可以概括为：
+
+**先把路由或 API 定义映射成 Sentinel 资源，再把响应式请求链放进 Sentinel 的统一规则执行模型。**
+
+把 Feign 和 Gateway 两条接入线放在一起看，会更容易理解“适配器到底适配了什么”：
+
+![Gateway 与 Feign 适配器如何接入 Sentinel](/img/notes/sentinel-adapters.svg)
+
+### 和 Web 接口 / 业务方法
+
+这时候它保护的是最细粒度的业务资源。
+
+这类用法特别适合：
+
+- 核心下单接口
+- 秒杀活动接口
+- 热点查询接口
+- 某段高风险业务逻辑
+
+---
+
+## 二十、生产实践里最容易踩的坑
+
+### 把 Sentinel 当成“控制台点点点工具”
+
+如果只会在 Dashboard 上加规则，而不理解资源、统计、规则来源和异常路径，后面出了问题很难定位。
+
+Sentinel 真正重要的是运行机制，不是页面操作。
+
+### `blockHandler` 和 `fallback` 混用
+
+前者处理规则阻塞，后者处理业务异常。  
+一旦混用，日志、统计和故障语义都会乱。
+
+### 资源名设计过于随意
+
+如果资源名没有统一规范，后面会出现：
+
+- 同一类资源命名不一致
+- 控制台里资源碎片化
+- 规则无法稳定复用
+
+资源命名应该尽量稳定、可读、可聚合。
+
+### 只配控制台规则，不做持久化
+
+这是最常见的“测试环境好好的，重启之后全没了”问题。
+
+生产一定要把规则外置到可靠的数据源。
+
+### 阈值拍脑袋
+
+流控阈值、熔断阈值都不应该纯凭感觉设置。
+
+更合理的方式是：
+
+- 先观测
+- 再压测
+- 再定阈值
+- 最后持续调整
+
+### 所有异常都做 trace
+
+如果把所有业务异常都记进 Sentinel 异常统计，熔断指标很可能被污染。
+
+不是所有异常都应该进入熔断判断。
+
+---
+
+## 二十一、如果从源码角度复盘，Sentinel 真正漂亮在哪
+
+如果只看功能清单，Sentinel 很像“很多保护策略的集合”。  
+但从源码结构看，它真正漂亮的地方在于统一模型。
+
+可以把它概括成下面这套关系：
+
+```text
+资源 Resource
+  -> 一次访问 Entry
+  -> 所处上下文 Context
+  -> 挂接统计节点 Node
+  -> 进入 ProcessorSlotChain
+  -> 由各类 Slot 做检查与统计
+  -> 命中规则则抛 BlockException
+  -> 退出时完成统计回收与状态更新
+```
+
+这套模型一旦建立，很多功能都顺理成章了：
+
+- 为什么流控能做
+- 为什么熔断能做
+- 为什么热点参数能做
+- 为什么系统保护能做
+- 为什么注解模式和手动模式底层能统一
+- 为什么规则可以动态下发
+
+Sentinel 的能力不是靠一个个场景硬拼出来的，而是：
+
+**先搭出统一资源运行模型，再把不同保护策略放进 slot chain。**
+
+---
+
+## 二十二、最后把整篇内容压成一张脑图
+
+如果只想保留一个简化模型，可以记住下面这张文字版脑图：
+
+```text
+Sentinel
+  -> 定义资源
+  -> 建立 Context
+  -> 创建 Entry
+  -> 绑定 Node 统计结构
+  -> 进入 Slot Chain
+     -> NodeSelectorSlot
+     -> ClusterBuilderSlot
+     -> StatisticSlot
+     -> AuthoritySlot
+     -> SystemSlot
+     -> ParamFlowSlot
+     -> FlowSlot
+     -> DegradeSlot
+  -> 命中规则则抛 BlockException
+  -> 未命中则执行业务
+  -> exit 时统计 RT / success / exception / thread
+```
+
+如果再往工程上压缩成一句话：
+
+**Sentinel 本质上是一个面向资源的运行时保护框架，它用统一的上下文、统计节点和职责链模型，把限流、熔断、热点参数、系统保护这些高可用能力收敛到了一套内核里。**
+
+---
+
+## 二十三、一个更适合落地的学习顺序
+
+如果后续还要继续深入，比较推荐按下面顺序看：
+
+1. 先把 `Resource`、`Entry`、`Context`、`Node` 这套模型吃透
+2. 再读 `CtSph` 和 `DefaultSlotChainBuilder`
+3. 然后重点看 `StatisticSlot`、`FlowSlot`、`DegradeSlot`
+4. 接着看 `@SentinelResource` 的 AOP 封装
+5. 最后再看动态规则、Gateway 适配、OpenFeign 适配
+
+这样读，比一上来就点控制台、背规则字段，要扎实得多。
