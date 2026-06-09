@@ -167,23 +167,23 @@ flowchart TD
 所以 HTTPS 加密的重点不是“你本机里永远看不到明文”，而是：**明文不会裸奔在公网链路上。**
 
 ```mermaid
-flowchart LR
-    subgraph P4[应用层视角]
-        A[前端代码组装 HTTP 请求] --> B[F12 / Network 中通常仍可看到明文参数]
+flowchart TD
+    subgraph P4[浏览器内]
+        A[前端代码组装请求] --> B[F12 中通常可见明文参数]
+        B --> C[浏览器网络栈接管]
     end
 
-    B --> C[浏览器网络栈接管请求]
+    C --> D
 
-    subgraph P5[TLS 与网络传输]
-        C --> D[TLS 在发送前完成加密]
-        D --> E[公网链路上传输的是密文]
+    subgraph P5[TLS 与网络]
+        D[TLS 在发送前加密] --> E[公网链路中传输密文]
     end
 
-    E --> F[服务器收到 TLS 数据]
+    E --> F
 
-    subgraph P6[服务端视角]
-        F --> G[服务器 TLS 模块先解密]
-        G --> H[Web 服务器和后端应用拿到明文请求]
+    subgraph P6[服务器内]
+        F[服务器收到 TLS 数据] --> G[TLS 先解密]
+        G --> H[后端应用拿到明文请求]
     end
 ```
 
