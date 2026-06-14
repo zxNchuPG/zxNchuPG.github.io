@@ -78,72 +78,54 @@ flowchart TD
 ```
 
 ```mermaid
-%%{init: {
-  "theme": "base",
-  "themeVariables": {
-    "fontSize": "20px"
-  },
-  "flowchart": {
-    "useMaxWidth": true,
-    "htmlLabels": true,
-    "nodeSpacing": 40,
-    "rankSpacing": 85,
-    "curve": "basis"
-  }
-}}%%
 flowchart TD
     R[refreshContext]
     R --> R1[prepareRefresh]
     R1 --> R2[obtainFreshBeanFactory]
     R2 --> R3[prepareBeanFactory]
-    R3 --> R4[invokeBeanFactoryPostProcessors]
+    R3 --> R4[invokeBeanFactory<br>PostProcessors]
     R4 --> R5[registerBeanPostProcessors]
     R5 --> R6[initMessageSource]
     R6 --> R7[initApplicationEventMulticaster]
     R7 --> R8[onRefresh]
     R8 --> R9[registerListeners]
-    R9 --> R10[finishBeanFactory<br/>Initialization]
+    R9 --> R10[finishBeanFactory<br>Initialization]
     R10 --> R11[finishRefresh]
 
-    subgraph S1[阶段 1：准备刷新]
-        direction TB
-        R1a[记录<br/>启动时间]
-        R1b[校验<br/>必需属性]
-        R1c[初始化<br/>早期事件集合]
+    subgraph S1 [阶段 1: 准备刷新]
+        R1a[记录<br>启动时间]
+        R1b[校验<br>必需属性]
+        R1c[初始化<br>早期事件集合]
         R1 --> R1a
         R1 --> R1b
         R1 --> R1c
     end
 
-    subgraph S2[阶段 2：刷新 BeanFactory]
-        direction TB
-        R2a[创建或刷新<br/>BeanFactory]
-        R2b[加载<br/>BeanDefinition]
+    subgraph S2 [阶段 2: 刷新 BeanFactory]
+        R2a[创建或刷新<br>BeanFactory]
+        R2b[加载<br>BeanDefinition]
         R2 --> R2a
         R2 --> R2b
     end
 
-    subgraph S3[阶段 3：准备容器能力]
-        direction TB
-        R3a[注册<br/>基础组件]
-        R3b[准备类加载器<br/>与环境能力]
+    subgraph S3 [阶段 3: 准备容器能力]
+        R3a[注册<br>基础组件]
+        R3b[准备类加载器<br>与环境能力]
         R3 --> R3a
         R3 --> R3b
     end
 
-    subgraph S4[阶段 4：执行后置处理器]
-        direction TB
-        R4a[执行 BeanDefinitionRegistry<br/>PostProcessor]
-        R4b[执行 BeanFactory<br/>PostProcessor]
+    subgraph S4 [阶段 4: 执行后置处理器]
+        R4a[执行 BeanDefinitionRegistry<br>PostProcessor]
+        R4b[执行 BeanFactory<br>PostProcessor]
         R4 --> R4a
         R4 --> R4b
     end
 
-    subgraph S5[阶段 5：完成刷新]
-        direction TB
-        R10a[实例化非懒加载<br/>单例 Bean]
-        R11a[初始化<br/>LifecycleProcessor]
-        R11b[发布<br/>ContextRefreshedEvent]
+    subgraph S5 [阶段 5: 完成刷新]
+        R10a[实例化非懒加载<br>单例 Bean]
+        R11a[初始化<br>LifecycleProcessor]
+        R11b[发布<br>ContextRefreshedEvent]
         R10 --> R10a
         R11 --> R11a
         R11 --> R11b
