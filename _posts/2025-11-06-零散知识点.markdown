@@ -1,72 +1,419 @@
 ---
 layout:      post
-title:       "零散知识点"
-subtitle:    "实战"
+title:       "Java / Spring 零散知识点整理"
+subtitle:    "从依赖注入、并发同步到自动装配与 JVM 参数的复习笔记"
 author:      "Ekko"
 header-img:  "img/bg/bg-scattered.png"
 catalog:     true
 tags:
   - 学习笔记
-  - 数据库
+  - Java
+  - Spring
+  - 并发编程
 ---
+
+> 这篇笔记用于整理平时开发、面试和源码阅读中反复遇到的一些高频知识点，内容覆盖 `Spring`、`Java 并发`、`JVM`、`HTTP` 和服务器参数配置。重点不是把概念拆成孤立问答，而是尽量把“是什么、为什么、适用边界、容易误解的点”放在一起，方便后续复习。
+
+> 文章以实战理解和原理梳理为主，不追求把每个主题都扩展成源码级长文。像 `Spring 循环依赖`、`自动装配`、`SimpleDateFormat` 这类容易被面试化简过头的知识点，会补上版本差异和边界条件，避免记成“口诀”。
+
+> 参考资料：
+>
+> [Spring Framework Core Technologies](https://docs.spring.io/spring-framework/reference/core.html)
+>
+> [Spring Boot Reference: Creating Your Own Auto-configuration](https://docs.spring.io/spring-boot/reference/features/developing-auto-configuration.html)
+>
+> [Oracle JDK Docs: SimpleDateFormat](https://docs.oracle.com/en/java/javase/11/docs/api/java.base/java/text/SimpleDateFormat.html)
+>
+> [MDN: Referer Header](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Referer)
 
 [TOC]
 
 ---
 
-## 问题一：为什么越来越多人喜欢用构造器注入
+## 一、Spring 相关知识点
 
-1、不可变性 (Immutability)
+### 1. 为什么越来越多人喜欢用构造器注入
 
-构造器注入强制依赖项为 final，确保对象不可变
+构造器注入之所以被大量推荐，不是因为 `Setter` 注入完全不能用，而是因为它更适合表达“这个对象要想成立，哪些依赖是必需的”。对核心业务对象而言，这种表达方式更稳定。
 
-清晰的契约：对象创建时所有依赖必须就位
+#### 1.1 核心优势
+
+1. **依赖完整性更强**
+
+构造器要求对象在创建时就把必要依赖准备好，不容易出现“对象已经创建，但依赖还没注入完成”的中间状态。
+
+2. **更容易写成不可变对象**
+
+依赖通常可以声明为 `final`，对象状态更清晰，也更适合做单元测试。
+
+3. **更容易发现设计问题**
+
+如果一个类的构造函数参数越来越多，往往说明它职责过重，应该拆分；如果出现构造器循环依赖，Spring 也会更早暴露问题。
+
+4. **测试更直接**
+
+不依赖容器时，单元测试直接 `new` 对象并传入 mock 即可。
 
 ```java
 @Service
 public class UserService {
-    
+
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
 
-    // 构造器注入 - 所有依赖都是 final
-    public UserService(UserRepository userRepository, 
-                      PasswordEncoder passwordEncoder,
-                      EmailService emailService) {
+    public UserService(UserRepository userRepository,
+                       PasswordEncoder passwordEncoder,
+                       EmailService emailService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailService = emailService;
     }
-    
-    // 业务方法...
 }
 ```
 
-2、依赖完整性保证
+#### 1.2 为什么 `Setter` 注入更容易留下隐患
 
-构造器注入确保对象在创建时所有依赖都可用
+`Setter` 注入不是错误，只是更适合“可选依赖”或框架层面的装配扩展。如果把必需依赖也放到 `Setter` 中，就可能出现以下问题：
 
-Setter注入，有一些场景下注入失败，运行的时候才会NPE异常
+- 对象先被创建，后完成注入，中间存在“不完整对象”状态
+- 依赖遗漏时，问题可能延后到运行时才暴露
+- 依赖是否必需，从类定义上不够直观
+- `@PostConstruct` 或初始化逻辑里若提前使用依赖，更容易踩空
 
-1. 缺少 @Component
-2. 缺少 @Autowired
-3. 复杂依赖关系
-4. @PostConstruct 中使用
+常见误区不是“少了 `@Autowired` 就一定是 Setter 的锅”，而是：`Setter` 允许对象以不完整状态存在，因此更依赖外部配置正确性。
 
-3、避免循环依赖问题
+#### 1.3 构造器注入与循环依赖
 
-构造器注入能更早地暴露循环依赖问题
+如果 `A` 构造器依赖 `B`，`B` 构造器又依赖 `A`，Spring 无法拿到任一方的“半成品对象”，通常会直接抛出 `BeanCurrentlyInCreationException`。
 
-启动失败：BeanCurrentlyInCreationException
+这也是很多团队更偏好构造器注入的原因之一：它会更早暴露设计上的环形依赖，而不是帮你把问题拖到后面。
+
+```mermaid
+flowchart LR
+    A[创建 A] --> B[需要 B]
+    B --> C[创建 B]
+    C --> D[需要 A]
+    D --> E[发现 A 正在构造中]
+    E --> F[启动失败\nBeanCurrentlyInCreationException]
+```
+
+#### 1.4 什么时候 `Setter` 注入仍然合理
+
+下面这些场景，`Setter` 注入依然有价值：
+
+- 依赖是可选项，而不是对象成立的必要条件
+- 需要兼容老框架或某些配置绑定方式
+- 需要在测试场景中灵活替换某个协作者
+- 通过 `@Lazy` 做延迟注入时，希望减少启动时的强耦合
+
+可以概括为一句话：**必需依赖优先构造器注入，可选依赖再考虑 Setter 注入。**
 
 ---
 
-## 主线程等待子线程完成
+### 2. AOP 什么时候会失效
 
-### 1. CountDownLatch
+很多 Spring 能力本质上都建立在代理之上，例如 `@Transactional`、`@Async`、`@Cacheable`。代理没有介入，请求链就不会经过增强逻辑，于是表现出来就像“AOP 失效”。
 
-基于 AQS 实现的计数器，主线程调用 `await()` 阻塞，子线程完成后调用 `countDown()` 将计数减1，计数归零时主线程被唤醒。
+#### 2.1 最常见的失效场景
+
+1. **同类内部调用**
+
+对象内部通过 `this.xxx()` 调用方法，调用的是目标对象本身，不会经过代理。
+
+2. **对象不是 Spring 容器创建的**
+
+直接 `new` 出来的对象没有代理，自然也不会有事务、异步、缓存等增强。
+
+3. **方法无法被代理**
+
+典型情况包括：
+
+- `private` 方法
+- `final` 方法
+- 某些代理模式下未暴露到代理接口的方法
+
+4. **对注解行为的边界理解错误**
+
+例如 `@Transactional` 只对通过代理进入的方法生效；如果异常被吃掉、传播行为不符合预期，也会表现成“事务没生效”。
+
+#### 2.2 解决思路
+
+- 把需要增强的方法放到另一个 Spring Bean 中，由外部调用
+- 通过容器拿代理对象，而不是自己 `new`
+- 必要时使用 `AopContext.currentProxy()`，但这更像补救方案，需要开启 `exposeProxy`
+- 不要把事务、异步边界全堆在同一个类的自调用中
+
+```java
+@Service
+public class OrderService {
+
+    @Transactional
+    public void createOrder() {
+        // 这里如果直接 this.updateStock()，不会走代理
+        updateStock();
+    }
+
+    @Transactional
+    public void updateStock() {
+        // ...
+    }
+}
+```
+
+上面的写法里，`createOrder()` 内部直接调用 `updateStock()`，调用链没有再经过代理对象，因此 `updateStock()` 上的增强逻辑不会重新生效。
+
+---
+
+### 3. Spring Boot 自动装配原理
+
+Spring Boot 自动装配的核心目标，是根据类路径、配置项和用户自定义 Bean 的存在情况，**有条件地导入一批配置类**，从而减少显式 XML 或手写配置。
+
+老项目，应该都写过 xml 吧，注入bean，依赖配置 bean 等等
+
+SpringBoot 主要优化的就是这部分内容
+
+@EnableAutoConfiguration -> 加载 Spring.factories -> 条件筛选(@Conditional) -> 动态注册Bean
+
+启动类注解 @SpringBootApplication 包含了 @EnableAutoConfiguration
+
+**个人理解：先通过spi机制加载Spring.factories注册一些bean，使springboot具备自动装配的能力，再通过 @ComponentScan 扫描包路径等方式，加载其他的bean**
+
+#### 3.1 一条主线先看明白
+
+`@SpringBootApplication` 是一个组合注解，其中包含：
+
+- `@SpringBootConfiguration`
+- `@EnableAutoConfiguration`
+- `@ComponentScan`
+
+其中真正触发自动装配的是 `@EnableAutoConfiguration`，它会导入 `AutoConfigurationImportSelector`，后者再去筛选应该加载哪些自动配置类。
+
+```mermaid
+flowchart TD
+    A[启动类] --> B[@SpringBootApplication]
+    B --> C[@EnableAutoConfiguration]
+    C --> D[AutoConfigurationImportSelector]
+    D --> E[读取自动配置候选项]
+    E --> F[@Conditional 条件过滤]
+    F --> G[导入满足条件的配置类]
+    G --> H[注册 BeanDefinition]
+```
+
+#### 3.2 `spring.factories` 和 `AutoConfiguration.imports` 的区别
+
+这里是最容易被记混的地方。
+
+- **Spring Boot 2.x 及更早版本**：自动配置候选项主要通过 `META-INF/spring.factories` 声明
+- **Spring Boot 3.x**：自动配置候选项改为通过 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` 声明
+
+所以如果只记“Spring Boot 自动装配就是加载 `spring.factories`”，这个说法在新版本下已经不完整了。
+
+#### 3.3 自动装配到底做了什么
+
+可以拆成下面几个步骤：
+
+1. 读取候选自动配置类
+2. 去重、排序、处理排除项
+3. 根据 `@ConditionalOnClass`、`@ConditionalOnBean`、`@ConditionalOnMissingBean`、`@ConditionalOnProperty` 等条件筛选
+4. 将满足条件的配置类导入容器
+5. 由这些配置类再注册对应的 Bean
+
+一个更准确的理解方式是：**Spring Boot 不是“自动帮你创建所有 Bean”，而是“自动导入一批带条件的配置类”。**
+
+#### 3.4 和 `@ComponentScan` 的关系
+
+这两者经常被混为一谈，但职责不同：
+
+- `@ComponentScan`：扫描你业务代码中的 `@Component`、`@Service`、`@Controller` 等组件
+- 自动装配：导入框架或中间件提供的配置类，例如 `DataSource`、`DispatcherServlet`、`RedisTemplate` 等相关 Bean
+
+也就是说，自动装配解决的是“框架基础设施怎么进容器”，组件扫描解决的是“你的业务 Bean 怎么进容器”。
+
+---
+
+### 4. SPI 机制与 Spring 扩展机制
+
+#### 4.1 什么是 Java SPI
+
+SPI 全称 `Service Provider Interface`，本质是一种**服务发现机制**：调用方依赖接口，具体实现由外部提供，并在运行时被发现和加载。
+
+JDK 标准 SPI 通常基于 `ServiceLoader`，配置文件放在：
+
+```text
+META-INF/services/接口全限定名
+```
+
+文件内容是一行一个实现类，例如 JDBC 驱动：
+
+```text
+java.sql.Driver
+```
+
+对应的实现类示例：
+
+```java
+com.mysql.cj.jdbc.Driver
+```
+
+#### 4.2 Java SPI 的典型特点
+
+- 调用方只依赖接口，不依赖具体实现
+- 第三方 Jar 只要按约定提供实现和配置文件，就可以被发现
+- 符合“对扩展开放、对修改关闭”的设计思路
+
+#### 4.3 不要把 Java SPI 和 Spring 扩展机制混为一谈
+
+很多资料会把 `Spring Boot 自动配置 = SPI` 直接画等号，这种说法不够严谨。
+
+更准确地说：
+
+- `Java SPI` 是 JDK 提供的标准服务发现机制
+- `spring.factories`、`SpringFactoriesLoader`、`AutoConfiguration.imports` 是 Spring 体系自己的扩展发现机制
+
+它们的共同点都是“按约定发现扩展”，但不是同一套实现。
+
+#### 4.4 更稳妥的记忆方式
+
+- `JDBC 驱动`：典型的 Java SPI
+- `Spring Boot 自动配置`：Spring 自己的自动配置发现机制
+- 二者都属于“约定优于硬编码”的扩展思想，但不要直接混成一个概念
+
+---
+
+### 5. Spring 如何解决循环依赖
+
+Spring 解决循环依赖，是一个很容易被“三级缓存口诀化”的主题。真正要记住的是：**Spring 只解决部分场景下的单例 Bean 属性注入循环依赖，不是所有循环依赖都能解。**
+
+#### 5.1 哪些循环依赖 Spring 能解决，哪些不能
+
+**通常能解决：**
+
+- 单例 Bean
+- 基于字段注入或 Setter 注入
+- 允许提前暴露早期引用
+
+**通常不能解决：**
+
+- 构造器循环依赖
+- 原型作用域 Bean 的循环依赖
+- 某些过早类型匹配或代理包装不一致的复杂场景
+
+另外，从 Spring Boot 2.6 开始，循环依赖默认就是不鼓励的；很多项目即便“技术上能解”，也不建议把它当成正常设计。
+
+#### 5.2 三级缓存分别做什么
+
+```java
+public class DefaultSingletonBeanRegistry {
+
+    // 一级缓存：已经完成初始化的单例 Bean
+    private final Map<String, Object> singletonObjects = new ConcurrentHashMap<>(256);
+
+    // 二级缓存：已经创建出的早期引用，可能是原始对象，也可能是代理对象
+    private final Map<String, Object> earlySingletonObjects = new ConcurrentHashMap<>(16);
+
+    // 三级缓存：用于按需创建早期引用的 ObjectFactory
+    private final Map<String, ObjectFactory<?>> singletonFactories = new HashMap<>(16);
+}
+```
+
+可以先这样记：
+
+- 一级缓存：最终成品
+- 二级缓存：已经拿出来给别人先用的“半成品引用”
+- 三级缓存：还没真正创建半成品，只是先放一个“创建器”
+
+#### 5.3 为什么需要三级缓存
+
+如果只有一级缓存和三级缓存，也能在某些情况下拿到早期引用，但有一个关键问题：**如果 Bean 需要 AOP 代理，三级缓存里的 `ObjectFactory` 每次调用都可能重新生成早期代理引用。**
+
+这会带来两个风险：
+
+1. 同一个单例 Bean 在不同依赖方里拿到的可能不是同一个代理实例
+2. 容器还没真正完成初始化，就把对象误当成最终成品对外暴露
+
+所以 Spring 才会在第一次通过三级缓存拿到早期引用后，把它放进二级缓存，后续别人再来拿时直接复用，不再重复创建。
+
+#### 5.4 一个典型创建流程
+
+假设存在 `A -> B -> C -> A` 的属性依赖，且 `A` 需要被 AOP 代理。
+
+```mermaid
+flowchart TD
+    A1[创建 A 实例] --> A2[把 A 的 ObjectFactory 放入三级缓存]
+    A2 --> B1[A 注入 B, 开始创建 B]
+    B1 --> C1[B 注入 C, 开始创建 C]
+    C1 --> A3[C 需要 A]
+    A3 --> A4[从三级缓存调用 ObjectFactory]
+    A4 --> A5[得到 A 的早期引用]
+    A5 --> A6[放入二级缓存]
+    A6 --> C2[C 完成初始化]
+    C2 --> B2[B 完成初始化]
+    B2 --> A7[A 完成初始化]
+    A7 --> A8[把最终可用对象放入一级缓存]
+```
+
+这个流程里，二级缓存的核心价值就是：**缓存第一次产生的早期引用，避免重复创建。**
+
+#### 5.5 为什么不能直接把代理对象放进一级缓存
+
+因为一级缓存表示的是“最终可用的单例 Bean”。而当 `A` 还在创建过程中时，它可能还没完成：
+
+- 属性填充
+- `BeanPostProcessor` 处理
+- 初始化回调
+- 最终包装
+
+这时如果直接把它放进一级缓存，相当于把“还没初始化完”的对象冒充成“最终成品”。语义上是错的，也会污染容器的单例状态管理。
+
+所以：
+
+- 一级缓存代表最终态
+- 二级缓存代表早期引用态
+- 三级缓存代表早期引用的工厂态
+
+这三层并不是机械叠加，而是三种不同生命周期状态。
+
+#### 5.6 为什么三级缓存是 `HashMap`
+
+这个点原始理解方向是对的：三级缓存的大多数访问都发生在同步控制之内，因此没有必要像一级、二级缓存那样使用 `ConcurrentHashMap`。
+
+可以简单理解为：
+
+- 一级、二级缓存经常在更广泛的读取路径中被访问，需要更直接的并发可见性支持
+- 三级缓存主要作为创建阶段的内部结构，被同步块保护，因此使用普通 `HashMap` 即可
+
+---
+
+### 6. 什么是 Spring、Spring MVC、Spring Boot、Spring Cloud
+
+把这几个概念拆开看，会比背定义更清楚。
+
+| 组件 | 核心定位 | 关键词 |
+| --- | --- | --- |
+| Spring | 基础开发框架 | IoC、AOP、Bean 生命周期 |
+| Spring MVC | Web MVC 框架 | DispatcherServlet、HandlerMapping、ViewResolver |
+| Spring Boot | 快速构建 Spring 应用 | 自动装配、约定配置、内嵌容器 |
+| Spring Cloud | 微服务生态工具集 | 注册中心、配置中心、网关、熔断限流 |
+
+可以这样理解：
+
+- `Spring` 解决基础对象管理和横切逻辑
+- `Spring MVC` 解决 Web 请求分发
+- `Spring Boot` 解决工程启动与配置复杂度
+- `Spring Cloud` 解决分布式系统配套能力
+
+---
+
+## 二、Java 并发与对象模型
+
+### 1. 主线程等待子线程完成
+
+主线程等待子线程完成，本质上就是“如何建立等待关系”。不同工具的差异在于：等待的是线程、任务结果，还是一组参与者到达同一个同步点。
+
+#### 1.1 `CountDownLatch`
+
+适合“主线程等待 N 个子任务全部结束”。
 
 ```java
 CountDownLatch latch = new CountDownLatch(3);
@@ -81,33 +428,45 @@ for (int i = 0; i < 3; i++) {
     }).start();
 }
 
-latch.await(); // 主线程阻塞，直到计数为0
+latch.await();
 ```
 
-特点：一次性使用，计数不可重置
+特点：
 
-### 2. CyclicBarrier
+- 一次性使用
+- 计数只能递减，不能重置
+- 更像“倒计时门闩”
 
-循环屏障，所有线程到达屏障点后一起继续执行，可重复使用。
+#### 1.2 `CyclicBarrier`
+
+适合“多个线程互相等待，等都到齐后再一起继续”。
 
 ```java
 CyclicBarrier barrier = new CyclicBarrier(3, () -> {
-    System.out.println("所有线程到达屏障，继续执行");
+    System.out.println("所有线程都到达屏障点");
 });
 
 for (int i = 0; i < 3; i++) {
     new Thread(() -> {
-        // 业务逻辑
-        barrier.await(); // 等待其他线程到达
+        try {
+            // 业务逻辑
+            barrier.await();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }).start();
 }
 ```
 
-特点：可重用（`reset()`），适合多轮同步场景
+特点：
 
-### 3. Future / CompletableFuture
+- 可重复使用
+- 更适合阶段性协作
+- 不是“主线程等子线程”专用工具，而是“参与者彼此等”
 
-通过 `Future.get()` 阻塞等待子线程返回结果。
+#### 1.3 `Future` / `CompletableFuture`
+
+如果除了等待完成，还要拿结果，那么 `Future` 或 `CompletableFuture` 更自然。
 
 ```java
 ExecutorService executor = Executors.newFixedThreadPool(3);
@@ -121,11 +480,11 @@ for (int i = 0; i < 3; i++) {
 }
 
 for (Future<String> future : futures) {
-    future.get(); // 阻塞等待每个子线程完成
+    future.get();
 }
 ```
 
-CompletableFuture 更灵活：
+`CompletableFuture` 的组合能力更强：
 
 ```java
 CompletableFuture<Void> all = CompletableFuture.allOf(
@@ -133,562 +492,351 @@ CompletableFuture<Void> all = CompletableFuture.allOf(
     CompletableFuture.runAsync(() -> { /* task2 */ }),
     CompletableFuture.runAsync(() -> { /* task3 */ })
 );
-all.join(); // 等待所有任务完成
+
+all.join();
 ```
 
-### 4. Thread.join()
+#### 1.4 `Thread.join()`
 
-最简单的方式，主线程调用子线程的 `join()` 方法阻塞等待。
+最简单，也最直接。
 
 ```java
 Thread t1 = new Thread(() -> { /* 业务逻辑 */ });
 Thread t2 = new Thread(() -> { /* 业务逻辑 */ });
+
 t1.start();
 t2.start();
 
-t1.join(); // 等待t1完成
-t2.join(); // 等待t2完成
+t1.join();
+t2.join();
 ```
 
-底层原理：基于 `wait/notifyAll`，线程结束时 JVM 会调用 `notifyAll()` 唤醒等待的线程
+它适合线程数量较少、控制逻辑简单的场景。
 
-### 对比总结
+#### 1.5 对比总结
 
-| 方式 | 是否可重用 | 是否有返回值 | 适用场景 |
+| 方式 | 可重用 | 是否有返回值 | 适用场景 |
 | --- | --- | --- | --- |
-| CountDownLatch | 否 | 否 | 主线程等待N个子线程完成 |
-| CyclicBarrier | 是 | 否 | 多线程互相等待到达同一点 |
-| Future/CompletableFuture | 否 | 是 | 需要获取子线程执行结果 |
-| Thread.join() | 否 | 否 | 简单场景，线程数少 |
+| `CountDownLatch` | 否 | 否 | 一个线程等待多个任务结束 |
+| `CyclicBarrier` | 是 | 否 | 多个线程在阶段点互相等待 |
+| `Future` / `CompletableFuture` | 否 | 是 | 既要等待完成，也要拿结果或编排流程 |
+| `Thread.join()` | 否 | 否 | 简单场景，线程数少 |
 
 ---
 
-## 对象的创建过程
+### 2. 对象的创建过程
 
-```bash
-类加载检查
-↓ （加载、验证、准备、解析、初始化）
-内存分配
-↓
-初始化零值（默认值）
-↓
-设置对象头（MarkWord、类型指针）
-↓
-执行构造方法
-↓
-引用关联
-```
----
+“对象创建过程”这个题，最容易把“类加载过程”和“对象实例化过程”混在一起。
 
-## Http Referer
+更准确的说法是：**执行 `new` 指令创建对象时，JVM 先检查类元信息是否已经加载；如果没有，则先完成类加载。之后才进入真正的对象分配与初始化流程。**
 
-Referer 是 HTTP 请求头中的一个字段，表示当前请求是从哪个页面链接过来的（即来源页面的 URL）。
-
-### 作用
-
-1. **防盗链**：服务器检查 Referer 判断请求是否来自合法域名，阻止外部站点直接引用资源（图片、视频等）
-2. **统计分析**：追踪用户从哪个页面跳转过来，用于流量来源分析
-3. **CSRF 防御辅助**：校验请求来源是否为本站，作为 CSRF 防护的一层手段
-
-### 局限性
-
-1. **可以被伪造**：客户端可以任意修改 Referer 头，不能作为唯一安全凭据
-2. **可能为空**：
-   - 用户直接在地址栏输入 URL
-   - 从 HTTPS 页面跳转到 HTTP 页面（默认不发送）
-   - 浏览器隐私设置/插件阻止发送
-   - 使用 `<meta name="referrer" content="no-referrer">` 控制
-3. **隐私问题**：暴露用户浏览路径，Referrer-Policy 头可控制发送策略
-
-### Referrer-Policy 策略
-
-```
-Referrer-Policy: no-referrer              // 不发送
-Referrer-Policy: origin                   // 只发送域名部分
-Referrer-Policy: same-origin              // 同源才发送
-Referrer-Policy: strict-origin-when-cross-origin  // 默认策略
+```mermaid
+flowchart TD
+    A[new 指令] --> B{类是否已加载?}
+    B -- 否 --> C[执行类加载、验证、准备、解析、初始化]
+    B -- 是 --> D[直接进入对象创建]
+    C --> D
+    D --> E[为对象分配内存]
+    E --> F[初始化零值]
+    F --> G[设置对象头]
+    G --> H[执行实例初始化逻辑和构造方法]
+    H --> I[返回对象引用]
 ```
 
-> 注：Referer 是 HTTP 标准中 Referrer 的拼写错误，但已被广泛使用无法修改
+可以拆成下面几步：
+
+1. 检查类是否已加载
+2. 为对象分配内存
+3. 把实例字段设为零值
+4. 设置对象头，例如 Mark Word、类型指针
+5. 执行实例初始化与构造方法
+6. 把对象引用返回给调用方
+
+这里要特别注意：**类加载不是每次创建对象都重新执行，而是按需在首次使用时触发。**
 
 ---
 
-## SimpleDateFormat 线程不安全
+### 3. `SimpleDateFormat` 为什么线程不安全
+
+`SimpleDateFormat` 的线程不安全，不只是因为“它里面有个 `Calendar`”，更准确地说是：**它在格式化和解析过程中会修改内部可变状态，而官方文档也明确说明并发访问时需要外部同步。**
 
 ```java
 public class SimpleDateFormat extends DateFormat {
-
 }
 
 public abstract class DateFormat extends Format {
     protected Calendar calendar;
+    protected NumberFormat numberFormat;
 }
 ```
 
-Calendar 对象用于日期计算，这个对象的状态会在每次格式化和解析时被修改
+几个关键点：
 
-解决方案：
+- `DateFormat` 内部持有可变的 `Calendar`
+- 解析和格式化过程中会不断修改这些内部状态
+- 多线程共享同一个 `SimpleDateFormat` 实例时，状态会互相覆盖
 
-1. jdk1.8   DateTimeFormatter
+所以典型问题包括：
 
-2. 每次使用的时候，new 新的 SimpleDateFormat 对象 （不推荐）
+- 格式化结果错乱
+- 解析得到错误日期
+- 偶发异常，且不容易复现
 
----
+#### 3.1 推荐方案
 
-## 为什么 ConcurrentHashMap 不允许key为null
+1. **优先使用 `DateTimeFormatter`**
 
-> value 也不允许为null，HashTable 线程安全也是一样逻辑
+它是不可变的，天然线程安全，也是 Java 8 之后推荐的日期时间 API。
 
-在并发环境中，存在歧义
+2. **每次创建新的 `SimpleDateFormat` 实例**
 
-1、key null 不存在 map 中
+这种方式是安全的，但在高频场景下会增加对象创建成本。
 
-2、key null 存在，但是 value 是null
+3. **老系统里用 `ThreadLocal<SimpleDateFormat>` 过渡**
 
-2种场景下返回的都是 null
-
-总结：ConcurrentHashMap 为并发而生的，内部处理了所有线程安全问题，但为了清晰和安全，全面禁止null
-
----
-
-### 问题一：HashMap 允许null，不会有歧义吗
-
-会有歧义
-
-HashMap 是高性能的单线程工具，如果要在多线程使用，就要自己处理所有同步问题
-
-追求单线程下的极致性能，线程安全是使用者的责任
-
-这是2种不同的设计思路
-
----
-
-##  Java 中对象一定在堆上分配吗
-
-不一定，普遍做法是在 堆 上分配
-
-逃逸优化，HotSpot 默认启用该优化
-
-> 逃逸优化：对象仅在方法内部使用，未被外部引用或线程共享，可能进行优化
-
-处理方式：
-
-1. 栈上分配，随方法结束自动销毁，无需GC介入
-2. 标量替换，将对象拆解成基本类型（标量），存储在栈帧或寄存器，避免对象整体分配
-
----
-
-## AOP什么时候失效
-
-> @Transactional @Async 都是代理实现
-
-1、 内部方法调用失效
-
-内部调用通过 this 直接调用目标对象的方法，绕过了代理
-
-解决方案：使用 AopContext.currentProxy()调用，需要开启 exposeProxy 配置
-
-2、 非Spring管理的对象
-
-通过 new 关键字直接创建对象，而不是通过 Spring 容器获取
-
----
-
-## SpringBoot 自动装配原理
-
-老项目，应该都写过 xml 吧，注入bean，依赖配置 bean 等等
-
-SpringBoot 主要优化的就是这部分内容
-
-@EnableAutoConfiguration -> 加载 Spring.factories -> 条件筛选(@Conditional) -> 动态注册Bean
-
-启动类注解 @SpringBootApplication 包含了 @EnableAutoConfiguration
-
-**个人理解：先通过spi机制加载Spring.factories注册一些bean，使springboot具备自动装配的能力，再通过 @ComponentScan 扫描包路径等方式，加载其他的bean**
-
-```mermaid
-flowchart TD
-    A[启动类加载] --> B[SpringBootApplication]
-    B --> C[EnableAutoConfiguration]
-    C --> D[AutoConfigurationImportSelector]
-    D --> E[spring.factories加载]
-    E --> F[自动配置类筛选]
-    F --> G[条件注解校验]
-    G --> H[配置类实例化]
-    H --> I[Bean注册到容器]
-```
-
----
-
-## SPI 机制
-
-服务发现机制，动态加载第三方实现，无需硬编码依赖。通过配置文件做到 接口与实现 的解耦
-
-对扩展开放、对修改关闭
-
-在 jar 包的 META-INF/services 目录下查找以接口全限定命名的文件
-
-典型应用场景：
-
-1、 JDBC 驱动
+仅适合短期兼容，不建议在新代码里继续扩散。
 
 ```java
-com.mysql.cj.jdbc.Driver
-```
-
-2、 日志桥接
-
-```java
-ch.qos.logback.classic.servlet.LogbackServletContainerInitializer
-```
-
-3、 SpringBoot 自动配置
-
-spring.factories 文件
-
-```java
-# Logging Systems
-org.springframework.boot.logging.LoggingSystemFactory=\
-org.springframework.boot.logging.logback.LogbackLoggingSystem.Factory,\
-org.springframework.boot.logging.log4j2.Log4J2LoggingSystem.Factory,\
-org.springframework.boot.logging.java.JavaLoggingSystem.Factory
-
-# PropertySource Loaders
-org.springframework.boot.env.PropertySourceLoader=\
-org.springframework.boot.env.PropertiesPropertySourceLoader,\
-org.springframework.boot.env.YamlPropertySourceLoader
-
-...
-...
+DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+String text = LocalDateTime.now().format(formatter);
 ```
 
 ---
 
-## Spring 解决循环依赖
+### 4. 为什么 `ConcurrentHashMap` 不允许 `null`
 
-总结：三级缓存
+`ConcurrentHashMap` 不允许 `key` 为 `null`，也不允许 `value` 为 `null`。
 
-```java
-public class DefaultSingletonBeanRegistry {
-    
-    // 一级缓存：完整的单例Bean（已初始化完成）
-    // 职责：提供最终可用的Bean实例
-    private final Map<String, Object> singletonObjects = new ConcurrentHashMap<>(256);
-    
-    // 二级缓存：早期Bean引用（已创建但未初始化完成）
-    // 职责：保证在创建过程中引用的一致性，避免重复创建
-    private final Map<String, Object> earlySingletonObjects = new ConcurrentHashMap<>(16);
-    
-    // 三级缓存：Bean工厂
-    // 职责：延迟创建早期引用，支持复杂的代理逻辑
-    private final Map<String, ObjectFactory<?>> singletonFactories = new HashMap<>(16);
-}
+根本原因不是“实现不了”，而是：**在并发语义下，`null` 会让读取结果变得含糊。**
+
+假设 `map.get(key)` 返回 `null`，到底表示：
+
+1. 这个 `key` 根本不存在
+2. 这个 `key` 存在，但它映射的 `value` 就是 `null`
+
+在单线程 `HashMap` 里，你还可以马上补一个 `containsKey(key)` 来区分；但在并发场景下，这两个操作之间数据可能已经被别的线程改掉，语义就不稳定了。
+
+所以 `ConcurrentHashMap` 的设计选择是：**直接禁止 `null`，让 `null` 只表示“没查到”。**
+
+#### 4.1 为什么 `HashMap` 却允许 `null`
+
+因为 `HashMap` 的设计目标不是并发安全，而是通用、高性能、单线程语义下的 Map 实现。
+
+在单线程或外部已同步的前提下：
+
+- `null` 虽然也会带来歧义
+- 但调用方可以通过 `containsKey()` 和 `get()` 配合判断
+- 这种判断在顺序语义下是成立的
+
+所以这不是谁“更高级”，而是两者面向的使用场景不同。
+
+---
+
+### 5. Java 中对象一定在堆上分配吗
+
+不一定，但默认理解成“对象通常分配在堆上”是对的。
+
+更严谨的说法是：**从 Java 语言层面看，对象概念上属于堆分配；但在 HotSpot 等 JVM 优化下，一部分对象分配可能被优化掉，或者被拆解为标量，从而不再以普通堆对象的形式出现。**
+
+#### 5.1 常见优化思路
+
+1. **逃逸分析**
+
+判断对象是否逃出当前方法或当前线程。
+
+2. **标量替换**
+
+如果对象不会逃逸，JIT 可能直接把对象拆成若干基础字段使用，而不是创建真正的对象实例。
+
+3. **分配消除**
+
+极端情况下，连对象分配动作都可能被优化掉。
+
+#### 5.2 关于“栈上分配”的表述
+
+“栈上分配”常被用来解释逃逸分析后的优化结果，但它更像一种便于理解的说法，而不是稳定、可依赖的 Java 语义承诺。
+
+所以在学习或面试时，更稳妥的回答是：
+
+- 对象通常在堆上分配
+- JVM 可能通过逃逸分析、标量替换、分配消除等方式优化
+- 不要把“所有不逃逸对象都会稳定栈上分配”当成必然结论
+
+---
+
+## 三、HTTP 与服务器参数
+
+### 1. HTTP Referer
+
+`Referer` 是 HTTP 请求头字段，表示当前请求是从哪个页面跳转过来的。
+
+> 注意：标准里字段名拼写就是 `Referer`，虽然它看起来像 `Referrer` 的拼写错误，但这个历史拼写已经沿用至今。
+
+#### 1.1 常见用途
+
+1. **防盗链**
+
+资源服务器检查来源页面，限制图片、视频等静态资源被外站直接引用。
+
+2. **流量来源分析**
+
+统计用户是从哪个页面或外部站点进入当前页面的。
+
+3. **作为安全校验的辅助信息**
+
+例如用于辅助判断请求是否来自本站，但它不能单独承担安全边界。
+
+#### 1.2 局限性
+
+1. **可能为空**
+
+例如：
+
+- 用户直接输入 URL
+- 浏览器隐私策略拦截
+- 页面使用了 `Referrer-Policy`
+- 某些跨协议、跨站场景下浏览器主动裁剪
+
+2. **不可信，可能被伪造**
+
+因此它更适合做辅助判断，而不是唯一安全依据。
+
+3. **涉及隐私暴露**
+
+完整 `Referer` 可能泄露页面路径、查询参数等信息，因此现代浏览器会结合策略进行裁剪。
+
+#### 1.3 常见 `Referrer-Policy`
+
+```text
+Referrer-Policy: no-referrer
+Referrer-Policy: origin
+Referrer-Policy: same-origin
+Referrer-Policy: strict-origin-when-cross-origin
 ```
 
-```xml
-// 创建 ServiceA 的流程
-1. 创建 ServiceA 实例（构造函数调用）
-2. 将 ServiceA 的 ObjectFactory 放入三级缓存
-3. 开始属性注入，发现需要 ServiceB
-4. 暂停 ServiceA 的创建，开始创建 ServiceB
-
-// 创建 ServiceB 的流程  
-5. 创建 ServiceB 实例（构造函数调用）
-6. 将 ServiceB 的 ObjectFactory 放入三级缓存
-7. 开始属性注入，发现需要 ServiceA
-8. 从三级缓存中获取 ServiceA 的早期引用
-9. ServiceB 完成属性注入和初始化
-10. ServiceB 放入一级缓存
-
-// 回到 ServiceA 的创建
-11. 获取已完成的 ServiceB 实例
-12. ServiceA 完成属性注入和初始化
-13. ServiceA 放入一级缓存
-```
-
-从上面这个流程可以看出，循环依赖，其实只需要2层缓存对不对？那二级缓存是干嘛用的呢？
+其中 `strict-origin-when-cross-origin` 可以理解为现代浏览器较常见的默认策略：同源请求可带完整来源，跨站时倾向于只发送源信息，并在更不安全的降级场景下进一步收缩。
 
 ---
 
-###  问题一：Spring循环依赖有3级缓存，二级缓存干嘛的
+### 2. 服务器机器参数怎么配更合理
 
-总结：避免重复创建代理对象
+服务器参数配置没有放之四海而皆准的固定公式，真正要看的是：
 
-1、 C 需要 A 时，从三级缓存获取，调用 ObjectFactory 创建 A 的早期引用（可能是代理对象）
+- 机器总内存
+- 应用是单 JVM 还是多 JVM 共存
+- 是否跑在容器里
+- 是否有本地缓存、消息堆积、堆外内存占用
+- Full GC、Young GC、负载峰值表现
 
-2、 如果后续还有其他 Bean 也需要 A 的早期引用，会重复调用 ObjectFactory
+原始经验里“堆不要超过物理内存 70%”是一个常见起点，但更适合作为**初始估算**，不是绝对规则。
 
-3、 对于需要 AOP 代理的 Bean，每次都会创建新的代理实例
+#### 2.1 一般原则
 
-问题就在这，多次创建新的代理对象，违反了单例原则。同一个类，代理对象不一致。二级缓存就是解决这个问题
+1. **给操作系统留足空间**
 
-3级缓存完整流程
+除了 JVM 堆，还要考虑：
 
-```java
-// 以 A → B → C → A 的循环依赖为例，且A需要AOP代理
+- 元空间
+- 线程栈
+- 直接内存
+- 文件页缓存
+- 网络缓冲区
+- 其他进程占用
 
-// 步骤1: 开始创建A
-1. beforeSingletonCreation("serviceA") // 标记A正在创建
-2. instance = createBeanInstance("serviceA") // 实例化A
-3. addSingletonFactory("serviceA", () -> getEarlyBeanReference("serviceA", mbd, bean))
-   // 三级缓存: {serviceA: ObjectFactory}
-   // 二级缓存: {}
-   // 一级缓存: {}
+2. **不要只盯着 `-Xmx`**
 
-// 步骤2: A注入B，触发B的创建
-4. populateBean("serviceA") → 发现需要B
-5. getSingleton("serviceB") → 不存在，开始创建B
+JVM 实际占用不止堆，很多线上“明明 `-Xmx` 没超，机器还是 OOM”的问题，都和堆外、线程数、容器限制有关。
 
-// 步骤3: 开始创建B  
-6. beforeSingletonCreation("serviceB")
-7. instance = createBeanInstance("serviceB") 
-8. addSingletonFactory("serviceB", ...)
-   // 三级缓存: {
-   // serviceA: ObjectFactory, 
-   // serviceB: ObjectFactory
-   // }
+3. **先按经验值起步，再看监控修正**
 
-// 步骤4: B注入C，触发C的创建
-9. populateBean("serviceB") → 发现需要C
-10. getSingleton("serviceC") → 不存在，开始创建C
+没有 GC 日志、内存曲线和压测结果，单纯背参数意义不大。
 
-// 步骤5: 开始创建C
-11. beforeSingletonCreation("serviceC")
-12. instance = createBeanInstance("serviceC")
-13. addSingletonFactory("serviceC", ...)
-    // 三级缓存: {
-    // serviceA: ObjectFactory, 
-    // serviceB: ObjectFactory, 
-    // serviceC: ObjectFactory
-    // }
+#### 2.2 一个便于起步的经验值
 
-// 步骤6: C注入A，触发获取A的早期引用
-14. populateBean("serviceC") → 发现需要A
-15. getSingleton("serviceA") 
-    - 一级缓存: 无
-    - 二级缓存: 无  
-    - 三级缓存: 有ObjectFactory
-16. singletonObject = singletonFactory.getObject() // 创建A的代理对象
-17. earlySingletonObjects.put("serviceA", singletonObject) // 放入二级缓存
-18. singletonFactories.remove("serviceA") // 移除三级缓存
-    // 三级缓存: {
-    // serviceB: ObjectFactory, 
-    // serviceC: ObjectFactory
-    // }
+假设机器上主要只跑一个 Java 服务，可先这样估算：
 
-    // 二级缓存: {
-    // serviceA: ProxyA
-    // }
+| 机器规格 | 初始堆建议 | 说明 |
+| --- | --- | --- |
+| 2C4G | `-Xms2g -Xmx2g` 或 `-Xmx2.5g` 左右 | 留出较多空间给 OS、线程栈、元空间和文件缓存 |
+| 4C8G | `-Xms4g -Xmx4g` 到 `-Xmx5g` 左右 | 更适合中等规模 Spring Boot 服务起步 |
 
-    // 一级缓存: {}
+这只是起点，不是结论。若服务大量使用：
 
-// 步骤7: C完成创建
-19. initializeBean("serviceC")
-20. addSingleton("serviceC", ...) // 放入一级缓存
-    // 一级缓存: {
-    // serviceC: CompleteC
-    // }
+- `Netty`
+- 大量线程池
+- `NIO DirectBuffer`
+- 本地缓存
+- 大对象批处理
 
-// 步骤8: B完成创建  
-21. B从一级缓存获取C，完成注入
-22. initializeBean("serviceB")
-23. addSingleton("serviceB", ...)
-    // 一级缓存: {
-    // serviceB: CompleteB, 
-    // serviceC: CompleteC
-    // }
+那么实际可给堆的空间还要继续压缩。
 
-// 步骤9: A完成创建
-24. A从一级缓存获取B，完成属性注入
-25. 执行initializeBean("serviceA") - 初始化回调(@PostConstruct等)
-26. 在doCreateBean的最后阶段：
-    
-    // 检查是否有早期暴露的引用
-    Object earlySingletonReference = getSingleton(beanName, false);
-    if (earlySingletonReference != null) {
-        // 如果初始化后对象没有被增强，就使用早期暴露的代理对象
-        if (exposedObject == bean) {  // exposedObject是初始化后的对象，bean是原始对象
-            exposedObject = earlySingletonReference;  // 使用二级缓存中的代理对象
-        }
-    }
-    
-27. addSingleton("serviceA", exposedObject) // 将最终对象放入一级缓存
-    // 同时清理缓存：
-    // - 从 singletonFactories 移除 (三级缓存)
-    // - 从 earlySingletonObjects 移除 (二级缓存)  
-    // - 添加到 singletonObjects (一级缓存)
-
-// 最终状态：
-// 一级缓存: {
-// serviceA: ProxyA, 
-// serviceB: CompleteB, 
-// serviceC: CompleteC
-// }
-// 二级缓存: {}
-// 三级缓存: {}
-```
-
-看完这个过程，看起来没有问题，但有一个细节点？二级缓存解决的是 重复创建 的问题，但是，不经过二级缓存，直接放 一级缓存 是不是也合理？因为最终的实例bean，都在一级缓存，二级缓存看似有些多余啊
-
----
-
-### 问题二：代理对象，为什么不能直接放一级缓存？
-
-上面的依赖，是比较简单的依赖，所以有误解。如果多次依赖较复杂的情况
-
-没有 二级缓存
-```java
-// 创建流程：
-1. A开始创建，ObjectFactory放入三级缓存
-2. B需要A → 调用ObjectFactory创建代理Proxy1
-3. C需要A → 调用ObjectFactory创建代理Proxy2  
-4. D需要A → 调用ObjectFactory创建代理Proxy3
-5. 最终：B持有Proxy1，C持有Proxy2，D持有Proxy3
-6. 三个代理对象不一致！
-```
-
-有 二级缓存
-```java
-// 创建流程：
-1. A开始创建，ObjectFactory放入三级缓存  
-2. B需要A → 调用ObjectFactory创建代理Proxy1 → 放入二级缓存
-3. C需要A → 从二级缓存直接获取Proxy1
-4. D需要A → 从二级缓存直接获取Proxy1
-5. 最终：B、C、D都持有同一个Proxy1
-```
-
-是不是就清晰了？一级缓存，是最终态的实例Bean
-
-A还没有完成最终的实例化，但是中间很多其他类依赖，他们只能通过三级缓存，但是代理类三级缓存又会有重复创建的风险，所以需要一个中间态的缓存持有
-
-从最终结果来看，一级缓存中的A对象，其实是从二级缓存晋升上来的
-
----
-
-### 问题三：为什么三级缓存是 HashMap，其他两个是 ConcurrentHashMap ？
-
-总结：三级缓存所有操作，都在 synchronized (this.singletonObjects) 代码块中执行，没有必要上 ConcurrentHashMap
-
-一级和二级缓存因为可能在同步块外被访问（读取），所以需要线程安全的ConcurrentHashMap
-
-```java
-protected Object getSingleton(String beanName, boolean allowEarlyReference) {
-    // 一级缓存
-	Object singletonObject = this.singletonObjects.get(beanName);
-	if (singletonObject == null && isSingletonCurrentlyInCreation(beanName)) {
-        // 二级缓存
-		singletonObject = this.earlySingletonObjects.get(beanName);
-		if (singletonObject == null && allowEarlyReference) {
-            // 同步代码块
-			synchronized (this.singletonObjects) {
-                // 三级缓存
-                ObjectFactory<?> singletonFactory = this.singletonFactories.get(beanName);
-            }
-        }
-    }
-}
-```
-
----
-
-## 什么是 Spring
-
-IOC、AOP
-
----
-
-## 什么是 Spring MVC
-
-DispatcherServlet、HandlerMapping、ModelAndView
-
----
-
-## 什么是 SpringBoot
-
-配置、内嵌 servlet 容器、jar包独立运行
-
----
-
-## 什么是 SpringCloud
-
-微服务框架集合，注册中心、网关、限流、负载均衡... ...
-
----
-
-## 服务器 机器参数配置
-
-2核4G、4核8G
-
-堆内存：不要超过物理内存的70%，为操作系统保留足够内存（约1-2G），用于系统进程、文件缓存等
-
-新生代：占堆内存的1/3到1/2，确保对象有足够空间在年轻代被回收
-
-元空间：根据应用使用的类库数量调整，Spring Boot应用通常需要较大元空间
-
-```xml
-# 在4G物理内存的服务器上：
-总物理内存：4G
-分配给JVM堆内存：-Xmx3g
-留给操作系统的物理内存：4G - 3G = 1G（约25%）
-
-# 这1G用于：
-- 操作系统内核：~200-300MB
-- 系统进程：~100-200MB  
-- 文件缓存：剩余空间
-- 网络缓冲区等
-```
-
----
+#### 2.3 一个更完整的视角
 
 ```mermaid
 pie
-    title 2核4G服务器内存分配
-    "JVM堆内存" : 3072
-    "操作系统内核" : 300
-    "系统进程" : 200
-    "文件缓存/缓冲区" : 428
+    title 4G 机器的内存视角示意
+    "JVM 堆" : 2048
+    "元空间/线程栈/直接内存" : 512
+    "操作系统与系统进程" : 512
+    "文件缓存与网络缓冲" : 1024
 ```
 
-```mermaid
-pie
-    title 4核8G服务器内存分配
-    "JVM堆内存" : 6144
-    "操作系统内核" : 400
-    "系统进程" : 300
-    "文件缓存/缓冲区" : 1156
-```
+上图不是精确配比，而是为了强调：**JVM 堆只是总内存中的一部分，不是全部。**
 
 ---
 
-### Swap 空间和内存预留空间，有什么区别
+### 3. Swap 空间和预留内存有什么区别
 
-**总结：**
+这两个概念经常被混在一起，但它们根本不是一回事。
 
-1. 预留的物理内存，是保证操作系统正常运行的"工作空间"，必须保留
-2. Swap 空间，使用磁盘空间来模拟内存，在物理内存不足时提供缓冲
-3. 如果发现系统在频繁使用Swap，正确的解决方案是优化应用内存使用或增加物理内存，而不是调整Swap配置
+#### 3.1 预留内存
 
-```xml
-# 对于Java服务器，Swap配置：
-- 物理内存 ≤ 4G：Swap = 2倍物理内存
-- 物理内存 8G：Swap = 1倍物理内存  
-- 物理内存 ≥ 16G：Swap = 0.5倍物理内存或禁用
+预留内存指的是：**不要把物理内存全部分给应用，要给操作系统和运行时环境保留工作空间。**
 
-# 查看和设置Swap
-sudo swapon --show                    # 查看当前Swap
-sudo dd if=/dev/zero of=/swapfile bs=1M count=2048  # 创建2G Swap文件
-sudo mkswap /swapfile && sudo swapon /swapfile      # 启用Swap
+它是“主动不分配出去”的物理内存预算。
+
+#### 3.2 Swap 空间
+
+Swap 是磁盘上的交换空间，用来在物理内存紧张时临时承接不活跃的内存页。
+
+它的作用不是“代替内存”，而是“在内存不够时提供一个更慢的缓冲区”。
+
+#### 3.3 两者的区别
+
+| 项目 | 预留内存 | Swap |
+| --- | --- | --- |
+| 本质 | 物理内存预算 | 磁盘交换区 |
+| 目的 | 保证系统正常运行 | 缓冲物理内存不足 |
+| 性能 | 正常 | 明显慢于内存 |
+| 是否应依赖 | 应主动保留 | 不应把它当常态手段 |
+
+#### 3.4 实战建议
+
+1. **先保留物理内存，再谈 Swap**
+
+如果物理内存本身就压得很满，再大的 Swap 也救不了延迟抖动。
+
+2. **Java 服务频繁使用 Swap 通常不是好信号**
+
+这往往意味着：
+
+- 堆太大
+- 线程太多
+- 机器资源不够
+- 本地缓存或堆外内存失控
+
+3. **Swap 配置要看操作系统、部署方式和容器策略**
+
+传统物理机上常见“按物理内存倍数估算”的经验值，但在现代云主机、容器或低延迟服务场景下，更重要的是根据监控和故障恢复策略决定是否保留较小 Swap，甚至直接禁用。
+
+一个简化的内存交换过程如下：
+
+```text
+物理内存紧张
+-> 操作系统选择不活跃内存页
+-> 写入 Swap
+-> 释放物理内存
+-> 后续访问时再从磁盘换回
 ```
 
-```xml
-# 内存管理的基本流程：
-物理内存不足 → 找出不活跃的内存页 → 写入Swap空间 → 释放物理内存
-
-需要访问被换出的数据 → 从Swap读回内存 → (可能)把其他内存页换出
-```
-
-这个过程称为"页面交换"(Paging/Swapping)：
-
-换出(Swap Out)：内存 → 磁盘
-
-换入(Swap In)：磁盘 → 内存
+换出和换入都会带来明显性能损耗，所以对服务端 Java 应用来说，**可接受的状态是“几乎不用 Swap”，而不是“靠 Swap 顶住高峰”。**
