@@ -1,400 +1,650 @@
 ---
 layout:      post
-title:       "redis数据结构"
-subtitle:    "Redis"
+title:       "Redis 数据结构与底层实现"
+subtitle:    "从 RedisObject、SDS 到 dict、quicklist、listpack 与 skiplist"
 author:      "Ekko"
 header-img:  "img/bg/bg-redis-2.jpg"
 catalog:     true
 tags:
   - 学习笔记
+  - Redis
   - 缓存中间件
+  - 源码阅读
 ---
+
+> 这篇笔记聚焦 Redis 的“底层怎么存”。重点不是再背一遍五种数据类型，而是把逻辑类型、对象封装、底层编码和结构演化串起来，弄清楚 Redis 为什么既快又省内存。
+
+> 需要特别注意版本边界。很多旧资料大量提到 `ziplist`，而在 Redis 7.x 里，很多紧凑编码场景已经切换到 `listpack`。读源码和读博客时，先确认版本，再下结论。
+
+> 参考资料：
+>
+> [Redis Data Types](https://redis.io/docs/latest/develop/data-types/)
+>
+> [Memory optimization](https://redis.io/docs/latest/operate/oss_and_stack/management/optimization/memory-optimization/)
+>
+> [Redis source: server.h](https://github.com/redis/redis/blob/7.4/src/server.h)
+>
+> [Redis source: quicklist.h](https://github.com/redis/redis/blob/7.4/src/quicklist.h)
+>
+> [Redis source: listpack.c](https://github.com/redis/redis/blob/7.4/src/listpack.c)
 
 [TOC]
 
 ---
 
-## 1.RedisObject
+## 1. 先建立一张总图
 
-所有 Redis 键值对的统一封装，用于管理数据的类型、编码、引用计数等元信息
+学习 Redis 数据结构时，最容易混淆的有三层：
+
+1. **逻辑类型**：对外暴露给用户的 `String`、`Hash`、`List`、`Set`、`Sorted Set`
+2. **对象封装**：Redis 内部统一用对象模型保存元信息
+3. **底层编码**：真正存放数据的结构，比如 SDS、dict、quicklist、listpack、skiplist
+
+可以先把关系记成下面这张图：
+
+```mermaid
+graph TD
+    A[逻辑类型 String Hash List Set ZSet] --> B[RedisObject]
+    B --> C[SDS]
+    B --> D[dict]
+    B --> E[quicklist]
+    B --> F[listpack]
+    B --> G[skiplist]
+    B --> H[intset]
+```
+
+这张图想表达的不是“一种类型只对应一种结构”，而是：
+
+> Redis 对外提供的是统一的数据类型接口，对内会根据数据规模、元素特征和版本实现，选择不同的编码方式。
+
+所以，学习底层实现时，最好始终分清楚两件事：
+
+- 对外你在用什么逻辑类型
+- 对内 Redis 当前把它编码成了什么结构
+
+---
+
+## 2. RedisObject：统一对象层
+
+Redis 不会直接把用户值裸放在内存里，而是先包一层对象结构，用来记录元信息。
+
+可以把它理解成一个“数据外壳”，常见信息包括：
+
+- 逻辑类型
+- 当前编码方式
+- LRU/LFU 相关信息
+- 引用计数
+- 指向真实数据结构的指针
+
+一个简化后的理解模型如下：
 
 ```c
 typedef struct redisObject {
-    unsigned type:4;        // 数据类型（4位）
-    unsigned encoding:4;    // 编码方式（4位）
-    unsigned lru:LRU_BITS;  // LRU/LFU 信息（默认24位，用于缓存淘汰）
-    int refcount;           // 引用计数（用于内存回收）
-    void *ptr;              // 指向实际数据的指针（如SDS、dict、ziplist等）
+    unsigned type:4;
+    unsigned encoding:4;
+    unsigned lru_or_lfu;
+    int refcount;
+    void *ptr;
 } robj;
-
-// type 数据类型
-#define OBJ_STRING 0    // 字符串
-#define OBJ_LIST 1      // 列表
-#define OBJ_SET 2       // 集合
-#define OBJ_ZSET 3      // 有序集合
-#define OBJ_HASH 4      // 哈希
-
-// encoding 编码方式，表示当前对象实际存储的编码结构
-#define OBJ_ENCODING_RAW 0        // 原始字符串（SDS，长度>39字节）
-#define OBJ_ENCODING_EMBSTR 1     // 嵌入式字符串（SDS，长度<=39字节，与robj连续存储）
-#define OBJ_ENCODING_INT 2        // 整数（直接存储long，无需SDS）
-#define OBJ_ENCODING_HT 3         // 哈希表（dict，用于哈希/集合等）
-#define OBJ_ENCODING_ZIPMAP 4     // 压缩映射（已废弃，Redis 2.6后用ziplist替代）
-#define OBJ_ENCODING_LINKEDLIST 5 // 双向链表（已废弃，列表用ziplist或quicklist）
-#define OBJ_ENCODING_ZIPLIST 6    // 压缩列表（紧凑存储小数据，用于列表/哈希/有序集合）
-#define OBJ_ENCODING_INTSET 7     // 整数集合（存储整数值的集合，元素少且小）
-#define OBJ_ENCODING_SKIPLIST 8   // 跳表（与dict结合用于有序集合）
-#define OBJ_ENCODING_EMBSTR_RAW 9 // （内部临时使用，不对外暴露）
-#define OBJ_ENCODING_QUICKLIST 10 // 快速列表（Redis 3.2+ 列表的默认编码，结合ziplist和链表）
 ```
----
 
-## 2.SDS 简单动态字符串
+这里最关键的不是逐字段死记，而是理解它的职责：
+
+- `type` 决定“这在逻辑上是什么”
+- `encoding` 决定“这在物理上怎么存”
+- `ptr` 指向真正的数据结构
+
+例如同样是字符串类型，底层编码可能是：
+
+- `int`
+- `embstr`
+- `raw`
+
+也就是说：
+
+> 逻辑类型是用户视角，编码方式是实现视角。
+
+### 2.1 一份更接近源码的对象骨架
+
+如果只是理解概念，前面的简化结构已经够用；如果希望以后回头看源码时有抓手，可以再记住下面这类更接近真实实现的骨架：
 
 ```c
-struct __attribute__ ((__packed__)) sdshdrXX {
-    unsigned int len;     // 字符串实际长度（已使用字节数，不包含结尾的\0）
-    unsigned int alloc;   // 字符串总容量（已分配字节数，不包含结尾的\0）
-    unsigned char flags;  // 标志位（低3位表示SDS类型，高5位未使用）
-    char buf[];           // 柔性数组，存储字符串实际数据（结尾自动添加\0）
+typedef struct redisObject {
+    unsigned type:4;
+    unsigned encoding:4;
+    unsigned lru:LRU_BITS;
+    int refcount;
+    void *ptr;
+} robj;
+
+#define OBJ_STRING 0
+#define OBJ_LIST   1
+#define OBJ_SET    2
+#define OBJ_ZSET   3
+#define OBJ_HASH   4
+
+#define OBJ_ENCODING_RAW       0
+#define OBJ_ENCODING_EMBSTR    1
+#define OBJ_ENCODING_INT       2
+#define OBJ_ENCODING_HT        3
+#define OBJ_ENCODING_INTSET    7
+#define OBJ_ENCODING_SKIPLIST  8
+#define OBJ_ENCODING_QUICKLIST 10
+```
+
+这段代码不需要逐个常量硬背，但至少要记住两点：
+
+- `type` 描述逻辑类型
+- `encoding` 描述底层编码
+
+这样看到 `OBJECT ENCODING` 的结果时，脑子里才有对应关系。
+
+---
+
+## 3. SDS：Redis 为什么不用 C 原生字符串
+
+Redis 的字符串底层不是直接用 `char *`，而是使用 SDS，`Simple Dynamic String`。
+
+一个简化后的 SDS 头部大致如下：
+
+```c
+struct sdshdr {
+    unsigned int len;
+    unsigned int alloc;
+    unsigned char flags;
+    char buf[];
 };
 ```
 
+### 问题一：为什么不用 C 字符串
+
+原生 C 字符串的问题主要有四个：
+
+- 依赖 `\0` 结尾，不适合直接表达任意二进制数据
+- 求长度通常要遍历，时间复杂度是 `O(n)`
+- 容易发生缓冲区溢出
+- 频繁修改长度时，内存重分配成本高
+
+### 问题二：SDS 解决了什么问题
+
+#### 常数时间取长度
+
+SDS 直接把长度存在 `len` 字段里，拿长度不需要重新扫描字符串。
+
+#### 二进制安全
+
+SDS 以 `len` 为准，不依赖 `\0` 判断结束，所以可以保存图片、序列化内容、压缩数据等任意字节序列。
+
+#### 降低扩容次数
+
+SDS 会预留一定空闲空间，避免每次追加内容都重新分配内存。
+
+常见规则可以概括为：
+
+- 扩容后如果长度小于 `1MB`，通常按翻倍思路分配更多空闲空间
+- 扩容后如果长度已经较大，则额外预留固定上限的空闲空间，而不是无限翻倍
+
+#### 惰性释放
+
+当字符串缩短时，Redis 往往不会立刻把多余空间还给系统，而是留作后续复用。
+
+这里有一个常见笔记误区需要纠正：
+
+> 用来主动收缩 SDS 空闲空间的函数不是 `sdstrim`，而是 `sdsRemoveFreeSpace`；`sdstrim` 的语义更接近“按字符裁剪字符串两端内容”。
+
 ---
 
-### 问题一：为什么不用C原生字符串（char*数组）
+## 4. 紧凑编码：从 ziplist 到 listpack
 
-* 不能存储二进制数据：C 字符串以 \0 作为结束标志，若内容包含 \0（如图片、音频），会被误认为字符串结束
-* 长度获取低效：需要遍历整个字符串直到 \0，时间复杂度为 O(n)
-* 内存重分配频繁：每次修改字符串长度（增 / 减）都需要重新分配内存，效率低下
+### 4.1 为什么 Redis 需要紧凑编码
 
-**思考**
+很多 Redis 数据并不大，例如：
 
-先提几个重要的点：预分配、惰性释放优化、小于1M，2倍空间扩容、大于1M，空闲空间给1M
+- 字段很少的 Hash
+- 元素很少的 ZSet
+- 很短的 List 节点
+- 只包含小整数的集合
 
-* **常数时间获取长度：** 长度用 len 字段，直接获取。类似 ArrayList 中的 size 字段
-* **杜绝缓冲区溢出：** 修改字符串（如拼接 sdscat）时，SDS 会先检查 alloc - len 是否足够。若足够，直接使用空闲空间；若不足，自动扩容（分配足够内存）后再修改，避免缓冲区溢出。
-* **减少内存重分配次数：** 
-    1. 预分配：字符串增长时，除了分配必要空间，还会额外分配空闲空间（减少后续增长的重分配）。
-        * 若增长后 len < 1MB，空闲空间 = len（总容量 alloc = 2*len）
-        * 若增长后 len >= 1MB，空闲空间固定为 1MB（总容量 alloc = len + 1MB）
-    2. 惰性释放：字符串缩短时，不立即释放多余空间，而是保留为空闲空间（alloc 不变，len 减小），供后续增长使用。若需手动释放，可调用 sdstrim 函数
-* **二进制安全：** SDS 用 len 标识字符串结束，而非 \0，因此可以存储任意二进制数据（如图片、视频、包含 \0 的数据）。例如，即使 buf 中包含 \0，len 仍会记录完整长度，保证数据正确读取
+如果这类小对象一上来就用标准哈希表、标准链表，指针开销会很重，内存利用率并不划算。
 
----
+所以 Redis 会在“小对象阶段”优先使用更紧凑的编码方式。
 
-## 3.ZipList 压缩列表
+### 4.2 ziplist 是什么
 
-误区：名字叫列表，但其实物理结构和数组没区别。只是逻辑功能上模拟了链表的核心特性
-比如：
-1. 元素按顺序排列
-2. 支持从任意节点双向遍历（向前 / 向后访问元素）
-3. 支持动态插入 / 删除元素（不依赖固定大小的内存块）
+`ziplist` 可以理解成一段连续内存上的紧凑结构。它历史上被广泛用于：
 
----
+- 小型 Hash
+- 小型 ZSet
+- 早期 List 节点
 
-ZipList没有具体的结构体，以宏定义的方式实现
+它的优点很明显：
+
+- 连续内存，节省指针开销
+- 小数据场景下非常省空间
+
+但它也有典型缺点：
+
+- 中间插入、删除可能触发大块内存移动
+- 某些情况下可能出现连锁更新
+- 实现和维护复杂度较高
+
+### 4.3 一段经典的 ziplist 骨架
+
+虽然现代 Redis 更常谈 `listpack`，但很多资料和历史源码仍然会提到 `ziplist`。如果完全不看它的结构，后面读旧资料会很难对上号。
+
 ```c
-/* ziplist 的整体结构：[zlbytes][zltail][zllen][entries][zlend] */
-
-// 1. zlbytes：4字节，总字节数（包括自身）
+/* ziplist: [zlbytes][zltail][zllen][entries][zlend] */
 #define ZIPLIST_BYTES(zl)       (*((uint32_t*)(zl)))
-
-// 2. zltail：4字节，尾元素（最后一个entry）的偏移量（从ziplist起始地址开始算）
 #define ZIPLIST_TAIL(zl)        (*((uint32_t*)((zl) + 4)))
-
-// 3. zllen：2字节，元素个数（entry数量）
 #define ZIPLIST_LENGTH(zl)      (*((uint16_t*)((zl) + 8)))
-
-// 4. 头部总大小：zlbytes(4) + zltail(4) + zllen(2) = 10字节
 #define ZIPLIST_HEADER_SIZE     10
-
-// 5. 第一个entry的起始地址：头部之后的第一个字节
 #define ZIPLIST_ENTRY_HEAD(zl)  ((zl) + ZIPLIST_HEADER_SIZE)
-
-// 6. 尾元素（最后一个entry）的起始地址：zl + zltail（通过zltail偏移量计算）
 #define ZIPLIST_ENTRY_TAIL(zl)  ((zl) + intrev32ifbe(ZIPLIST_TAIL(zl)))
-
-// 7. zlend：1字节，结束标识（固定为0xFF），位于整个ziplist的最后一个字节
 #define ZIPLIST_ENTRY_END(zl)   ((zl) + intrev32ifbe(ZIPLIST_BYTES(zl)) - 1)
 ```
 
+再配合一个 entry 视角去看会更好理解：
+
 ```c
-+-----------------------+-----------------------+-----------------------+
-| previous_entry_length | encoding              | data                  |
-+-----------------------+-----------------------+-----------------------+
-
-1. previous_entry_length（前一个元素的长度）
-作用：记录前一个 entry 的总字节数，用于双向遍历（从后往前找元素）。
-2. encoding（编码字段）
-作用：标识当前 entry 的 data 部分是字符串还是整数，以及 data 的长度
-3. data（实际数据）
-
 typedef struct {
-    unsigned int prevlen;  // 前一个 entry 的长度
-    unsigned int len;      // 当前 entry 的数据长度（字符串长度或整数字节数）
-    unsigned int encoding; // 编码类型（字符串/整数）
-    unsigned char *p;      // entry 的起始地址
+    unsigned int prevlen;
+    unsigned int len;
+    unsigned int encoding;
+    unsigned char *p;
 } zipEntry;
 ```
 
-创建空的ZipList
-```c
-unsigned char *ziplistNew(void) {
-    // 空ziplist的总长度：头部10字节 + zlend 1字节 = 11字节
-    unsigned int bytes = ZIPLIST_HEADER_SIZE + 1; 
-    unsigned char *zl = zmalloc(bytes);  // 分配11字节的连续内存
+只要记住下面这句话就够了：
 
-    // 初始化zlbytes：总字节数11（转换为小端字节序存储）
-    ZIPLIST_BYTES(zl) = intrev32ifbe(bytes); 
+> ziplist 不是“一个个独立节点”，而是“连续内存 + 变长 entry + 前向长度信息”。
 
-    // 初始化zltail：尾元素偏移量为10（空列表中，尾元素位置就是头部结束处）
-    ZIPLIST_TAIL(zl) = intrev32ifbe(ZIPLIST_HEADER_SIZE); 
+### 问题一：为什么不用普通双向链表来表示这类小对象
 
-    // 初始化zllen：元素个数0
-    ZIPLIST_LENGTH(zl) = 0; 
+如果把每个元素都拆成传统链表节点，问题会很快暴露出来：
 
-    // 初始化zlend：最后一个字节设为0xFF
-    zl[bytes - 1] = ZIP_END; 
+- 每个节点都要带前后指针
+- 对短字符串、小整数这类小元素来说，指针开销甚至可能比数据本身还大
+- 节点分散在不同内存区域，不利于 CPU 缓存命中
 
-    return zl;
-}
+也就是说，在“小对象很多、元素又很短”的场景下，普通双向链表的表达能力虽然足够，但空间效率并不划算。
+
+### 问题二：ziplist 和普通数组到底差在哪
+
+它们都使用连续内存，这也是很多人第一次看到 ziplist 时容易产生误解的原因。
+
+真正的区别在于：
+
+- 数组通常要求元素定长，ziplist 的 entry 是变长的
+- ziplist 的每个元素除了数据本身，还会带前向长度、编码等元信息
+- ziplist 的目标不是做通用数组，而是为 Redis 的小对象场景节省内存
+
+所以更准确地说，ziplist 是“连续内存上的紧凑编码结构”，而不是一个普通数组的别名。
+
+### 4.4 listpack 为什么取代了 ziplist
+
+在现代 Redis 中，很多原来由 `ziplist` 承担的紧凑存储场景已经转向 `listpack`。
+
+可以把 `listpack` 理解成 Redis 对紧凑编码的升级版本，目标是：
+
+- 继续保留高内存利用率
+- 降低实现复杂度
+- 减少 ziplist 的一些历史包袱
+
+因此阅读资料时，最好带着版本意识：
+
+- **旧文章** 常写 ziplist
+- **新版本 Redis** 更常看到 listpack
+
+### 问题三：为什么后来又从 ziplist 走向 listpack
+
+核心原因不是“ziplist 不能用”，而是它的历史包袱越来越明显：
+
+- 实现复杂
+- 某些场景下有连锁更新成本
+- 维护和演进都不够轻松
+
+`listpack` 可以理解成 Redis 在紧凑编码方向上的一次重新整理：保留高内存利用率，同时尽量让实现更简单、行为更可控。
+
+### 4.5 什么时候会从紧凑编码升级成普通结构
+
+Redis 的策略不是“一种类型只固定一种结构”，而是会随着规模变化自动升级。
+
+例如官方文档里就给出了这类阈值配置：
+
+```conf
+# Redis >= 7.0
+hash-max-listpack-entries 512
+hash-max-listpack-value 64
+zset-max-listpack-entries 128
+zset-max-listpack-value 64
 ```
 
----
+也就是说，小对象可以先用 `listpack` 节省内存；一旦元素数量或元素大小超过阈值，就会自动转成更适合大规模操作的普通结构。
 
-### 问题一：为什么不用普通的双向链表
-* 每个节点包含 prev/next 指针（8 字节 ×2=16 字节），对于小数据（如整数、短字符串），指针开销甚至超过数据本身，内存浪费严重
-* 节点分散存储，不利用 CPU 缓存（局部性差）
+这正是 Redis 的典型设计思路：
 
-**思考**
-
-* **资源浪费：** 没有指针开销，通过时间换空间
-* **类似数组：** 由连续的一块内存组成的顺序数据结构
+> 小对象优先省内存，大对象优先保性能。
 
 ---
 
-### 问题二：和数组什么区别
+## 5. dict：Redis 的哈希表
 
-ziplist 只是物理上是连续内存
+Redis 中很多能力都依赖哈希表，例如：
 
-* **元素大小不固定：** 数组要求所有元素类型 / 大小相同（如 int[10]），但 ziplist 的 entry 大小由元素内容动态决定（字符串长度、整数类型不同，entry 大小不同）
-* **编码复杂：** 数组元素直接存储值，ziplist 的 entry 包含前向长度、编码信息等元数据，用于实现双向遍历和动态操作
-* **功能定位：** 数组是通用的连续存储结构，ziplist 则是为 “小数据有序集合” 设计的专用结构，侧重内存效率和链表式操作，因此更贴近 “列表” 的逻辑功能
+- 整个数据库的 key 空间
+- Hash 类型的常规编码
+- Set 的常规编码
+- ZSet 辅助成员查找
 
----
-
-### 问题三：如何实现动态插入、删除
-
-先说下普通链表：创建新节点、删除新节点，都是改变 头尾指针 进行串联。所以在物理层面，并不关心内存是否连续
-
-**插入流程**
-
-1. 定位前向长度
-2. 编码新元素
-3. 内存重分配
-4. 移动数据
-5. 写入新元素
-6. 更新元信息
-7. 处理连锁更新：更新每个Entry
-
-**删除流程**
-
-1. 计算删除长度
-2. 移动数据：后面的数据往前移，覆盖被删除的 entry
-3. 内存收缩
-4. 更新元数据
-5. 处理连锁更新
-
-总结：和数组的操作极其相似。区别在于：
-* 数组是通过索引快速定位，而zipList是通过头部或者尾部，计算编码找到元素的位置。
-* 数组中，每个元素占用的空间相同，无法优化。比如 int arr[5]，存1和100000都是4个字节。zipList动态决定，存1用1个字节，用100000用2个字节。内存利用率高
-
----
-
-## 4.Dict 哈希表
-
-哈希表节点（dictEntry）：存储单个键值对
+一个哈希表节点可以简化理解成：
 
 ```c
 typedef struct dictEntry {
-    void *key;                  // 键（如字符串对象SDS）
-    union {                     // 值（支持多种类型，节省内存）
-        void *val;              // 通用指针（如指向redisObject）
-        uint64_t u64;           // 无符号整数（小整数优化）
-        int64_t s64;            // 有符号整数
-        double d;               // 浮点数
+    void *key;
+    union {
+        void *val;
+        uint64_t u64;
+        int64_t s64;
+        double d;
     } v;
-    struct dictEntry *next;     // 下一个节点的指针（解决哈希冲突的链表）
+    struct dictEntry *next;
 } dictEntry;
 ```
 
-哈希表（dictht）：管理哈希桶数组
+哈希表本体则维护桶数组、容量和已使用数量。
+
+### 5.1 再看一眼 dict 的完整骨架
+
+对学习来说，`dictEntry` 只是第一层，最好再把 `dictht` 和 `dict` 也一起放进脑子里：
 
 ```c
 typedef struct dictht {
-    dictEntry **table;          // 哈希桶数组（存储dictEntry指针）
-    unsigned long size;         // 数组容量（必须是2的幂，如4、8、16...）
-    unsigned long sizemask;     // 掩码（size-1，用于计算数组索引）
-    unsigned long used;         // 已存储的节点数量（key总数）
+    dictEntry **table;
+    unsigned long size;
+    unsigned long sizemask;
+    unsigned long used;
 } dictht;
-```
 
-哈希表管理结构（dict）：协调哈希表的扩容 / 缩容
-
-```c
 typedef struct dict {
-    dictType *type;             // 类型特定函数（哈希、复制、比较、销毁键值对）
-    void *privdata;             // 类型函数的私有数据（传给type函数的参数）
-    dictht ht[2];               // 两个哈希表（ht[0]正常使用，ht[1]用于扩容/缩容）
-    long rehashidx;             // 重哈希索引（-1表示未在重哈希，否则表示当前迁移的桶索引）
-    unsigned long iterators;    // 当前正在使用的迭代器数量（防止重哈希时迭代器失效）
+    dictType *type;
+    void *privdata;
+    dictht ht[2];
+    long rehashidx;
+    unsigned long iterators;
 } dict;
 ```
 
+这组结构最值得记的不是字段名，而是 `ht[2]` 这个设计。它几乎就是“渐进式 rehash”这件事的结构基础。
+
+### 5.2 Redis dict 和 Java HashMap 有什么不同
+
+最值得记的不是字段名，而是两点实现思路：
+
+#### 渐进式 rehash
+
+Redis 扩容时不会强行一次性搬完所有数据，而是把迁移过程拆散到后续多次操作里逐步完成。
+
+这样做的价值是：
+
+- 避免一次性迁移引起明显卡顿
+- 更适合单线程命令执行模型
+
+#### 链地址法解决冲突
+
+Redis 的冲突节点通常仍然通过链式方式组织，不会像 Java 8 之后那样在高冲突桶上树化成红黑树。
+
+这也意味着 Redis 更依赖：
+
+- 合理的负载因子
+- 及时扩容
+- 渐进式 rehash 维持桶分布
+
+### 5.3 为什么链表长度不会无限增长
+
+因为 Redis 会随着负载因子上升触发扩容，把原本集中在少数桶里的节点打散到更多桶里。
+
+核心逻辑不是“单链表本身很强”，而是：
+
+> 通过动态调整哈希桶规模，尽量不要让冲突链长期过长。
+
 ---
 
-### 问题一：和Java HashMap区别在哪
+## 6. quicklist：为什么 List 不直接用普通链表
 
-1. dict 用两个哈希表（ht[0] 和 ht[1]）实现渐进式扩容，避免一次性迁移的性能波动。当哈希表需要扩容时，若直接将 ht[0] 中的所有数据一次性迁移到 ht[1]，在数据量大的场景（如百万级键值对），会占用大量 CPU 时间，导致 Redis 无法处理其他命令，产生明显的响应延迟。渐进式扩容将迁移工作分散到多次哈希表操作中（如每次查询、插入、删除时顺带迁移一小部分数据），避免单次操作的耗时过长
-2. dict 冲突节点始终以 **单链表** 存储，不支持红黑树
-3. HashMap 扩容时直接分配新数组（容量翻倍），并一次性将所有节点从旧数组迁移到新数组
-4. dict 支持缩容，当 used / size < 0.1 时触发（删除键后可能触发），释放空闲空间
+现代 Redis 的 `List` 逻辑类型，核心底层结构是 `quicklist`。
 
----
+可以把 quicklist 理解成：
 
-### 问题二：dict 单链表存储，怎么保证长度不会出现无限增长
-
-**核心逻辑是：** 通过动态调整哈希桶数组容量，将链表长度维持在合理范围，同时从根源减少冲突集中的可能性
-
-**扩容机制强制分散链表节点：** 通过扩容（哈希桶数组容量翻倍）将原本集中在单个桶的冲突节点，分散到更多桶中，从而缩短链表长度
-
-**扩容的触发条件：** 由 负载因子 决定
-
-* 负载因子 = 已存储节点数（used） / 哈希桶数组容量（size）
-* 默认负载因子阈值为 1（即当节点数超过桶容量时，触发扩容）
-* 特殊场景（如 BGSAVE 持久化时），阈值临时提高到 5（避免扩容影响持久化性能，但仍会在后续触发扩容）
-
-当负载因子超过阈值时，dict 启动渐进式扩容，将桶容量翻倍（始终为 2 的幂）
-
----
-
-## 5.QuickList 快速列表
-
-总结：zipList压缩列表，上面再套一层普通链表
+> 一个双向链表，但链表每个节点里放的不是单个元素，而是一段紧凑存储的数据块，现代版本里通常是 `listpack`。
 
 ![quickList.png](/asserts/images/2025-10-17-redis数据结构/quickList.png)
 
-```c
-typedef struct quicklist {
-    quicklistNode *head;  // 头节点指针
-    quicklistNode *tail;  // 尾节点指针
-    unsigned long count;  // 所有节点中元素的总数量（整个列表的长度）
-    unsigned int len;     // 链表的节点数量（quicklistNode 的个数）
-    int fill : QL_FILL_BITS;  // 每个节点的 ziplist 最大填充限制（由配置决定）
-    unsigned int compress : QL_COMP_BITS;  // 两端节点的压缩深度（由配置决定）
-    unsigned int bookmark_count: QL_BM_BITS;  // 书签数量（用于快速定位）
-    quicklistBookmark bookmarks[];  // 书签数组（优化遍历性能）
-} quicklist;
-```
+如果想把 quicklist 真正记牢，建议至少扫一眼它的两层结构：
 
 ```c
+typedef struct quicklist {
+    quicklistNode *head;
+    quicklistNode *tail;
+    unsigned long count;
+    unsigned int len;
+    int fill : QL_FILL_BITS;
+    unsigned int compress : QL_COMP_BITS;
+} quicklist;
+
 typedef struct quicklistNode {
-    struct quicklistNode *prev; //上一个node节点
-    struct quicklistNode *next; //下一个node
-    unsigned char *zl;            //保存的数据 压缩前ziplist 压缩后压缩的数据
-    unsigned int sz;             /* ziplist size in bytes */
-    unsigned int count : 16;     /* count of items in ziplist */
-    unsigned int encoding : 2;   /* RAW==1 or LZF==2 */
-    unsigned int container : 2;  /* NONE==1 or ZIPLIST==2 */
-    unsigned int recompress : 1; /* was this node previous compressed? */
-    unsigned int attempted_compress : 1; /* node can't compress; too small */
-    unsigned int extra : 10; /* more bits to steal for future usage */
+    struct quicklistNode *prev;
+    struct quicklistNode *next;
+    unsigned char *entry;
+    size_t sz;
+    unsigned int count : 16;
+    unsigned int encoding : 2;
+    unsigned int container : 2;
 } quicklistNode;
 ```
 
----
+这段代码的记忆重点是：
 
-### 问题一：和Java LinkedList 链表有什么区别
+- `quicklist` 负责整条链
+- `quicklistNode` 负责每个分段块
+- 每个节点里不是单个元素，而是一段紧凑数据
 
-LinkedList，每个元素节点，都有头尾指针的内存开销
-zipList讲过，紧凑型内存，且逻辑功能上模拟链表
-redis的quickList这种批量存储，减少指针开销
+示意图如下：
 
-* java LinkedList 100个数据，对应100个节点，每个节点都有头尾指针，那么就是200个头尾指针
-* redis quickList 100个数据，假设每个Node节点中的zipList存10个紧凑型，那么只需要10个链表节点，一共才20个头尾指针
-
----
-
-### 问题二：为什么不直接用 zipList
-
-zipList 物理结构和数组一样，只是在逻辑功能上是链表。数组的典型问题在于，每次动态删除插入，要移动数据。数据量越大，效率越慢
-
-**分段式理念**，把一个大的链表，分成10个小的 zipList，动态删除插入，只需要移动小的zipList即可
-
-quickList的每个节点大小可配置，list-max-ziplist-size 限制每个 ziplist 的大小，避免单个ziplist 过长导致插入 / 删除性能下降
-
----
-
-### 问题三：如果往中间插元素，超过zipList大小怎么办
-
-**头部 / 尾部（高频场景）：** 
-首尾节点的 ziplist 未达配置的大小限制（fill），直接插入
-
-**插入到中间位置（低频场景）**
-* 定位目标元素所在的 quicklistNode（需遍历节点，找到包含目标位置的节点）
-* 检查该节点的 ziplist 是否有空间
-    1. 若有空间：直接插入到 ziplist 的对应位置
-    2. 若空间不足：将该节点的 ziplist 分裂为两个 ziplist，新建一个 quicklistNode 存储后半部分，再插入新元素到前半部分的 ziplist 中
-
-总结：插入超过zipList大小限制，节点分裂，新建一个节点。删除导致zipList太小，合并节点
-
----
-
-## 6.SkipList 跳表
-
-**通用的有序数据结构**
-
-跳表节点（zskiplistNode）
-```c
-typedef struct zskiplistNode {
-    sds ele;                // 有序集合的成员（字符串，如"user1"）
-    double score;           // 分值（排序的依据，如100.0）
-    struct zskiplistNode *backward;  // 后退指针（仅用于从后向前遍历，指向当前节点的前一个节点）
-    struct zskiplistLevel {
-        struct zskiplistNode *forward;  // 同一层级的前进指针（指向该层的下一个节点）
-        unsigned long span;             // 跨度（当前节点到下一个节点之间的元素个数，用于计算排名）
-    } level[];              // 柔性数组，存储各层级的索引信息（层级数不固定）
-} zskiplistNode;
+```text
+quicklist
+  |
+  +-- node1 -> [a, b, c, d]
+  +-- node2 -> [e, f, g]
+  +-- node3 -> [h, i]
 ```
 
-跳表管理结构（zskiplist）
-```c
-typedef struct zskiplist {
-    struct zskiplistNode *header, *tail;  // 头节点（哨兵，不存数据）和尾节点
-    unsigned long length;                 // 跳表中的节点总数（元素个数）
-    int level;                            // 跳表当前的最大层级（所有节点的最高层级）
-} zskiplist;
+### 问题一：为什么不用普通双向链表
+
+如果每个元素单独做成链表节点，会有明显问题：
+
+- 每个节点都要带前后指针
+- 小元素场景下，指针开销甚至比数据本身还大
+- 节点离散分布，不利于 CPU 缓存局部性
+
+### 问题二：为什么不直接只用一个大 listpack
+
+如果整个列表都塞进一个巨大的连续内存块，又会出现另一类问题：
+
+- 中间插入、删除时移动成本高
+- 数据越大，重分配和移动越重
+
+quicklist 的思路正好折中：
+
+- 链表层负责分段组织
+- 每段内部用紧凑结构节省内存
+
+这相当于把“一个很大的连续数组”拆成“多个较小的连续块”。
+
+### 问题三：往中间插入元素时会发生什么
+
+大致流程可以这样理解：
+
+1. 先定位目标下标落在哪个 quicklist 节点
+2. 检查该节点内部的 listpack 是否还有空间
+3. 如果能放下，直接插入
+4. 如果放不下，可能触发节点分裂，拆成两个节点后再插入
+
+所以 quicklist 不是完全避免移动，而是把移动代价控制在较小的数据块内。
+
+### 6.4 两个很实用的配置
+
+```conf
+list-max-listpack-size -2
+list-compress-depth 0
 ```
+
+这两个配置分别控制：
+
+- 每个 quicklist 节点内部数据块的大小
+- 两端保留多少层不压缩，中间节点能否压缩
+
+如果业务主要在头尾操作，比如队列场景，这类配置会直接影响内存和延迟表现。
+
+如果你看的旧资料还是 Redis 早期版本，也会见到旧配置名：
+
+```conf
+list-max-ziplist-size
+```
+
+这不一定代表资料错误，很多时候只是版本背景不同。
+
+---
+
+## 7. skiplist：有序集合为什么常用跳表
+
+Redis 的有序集合在常规编码下，通常不是只靠一种结构完成所有需求，而是组合使用：
+
+- `dict`：按 member 快速查找分数
+- `skiplist`：按 score 维持有序结构
+
+这也是 `Sorted Set` 能同时兼顾“按成员查”和“按分数排序查”的关键原因。
 
 ![skipList.png](/asserts/images/2025-10-17-redis数据结构/skipList.png)
 
-**总结：** 其实就是一个链表。链表节点类型 zskiplistNode ，通过 backward 反向查找。通过zskiplistLevel 结构中的 forward 正向查询。 zskiplistLevel 结构是跳越查询的关键（也就是多层索引指针）
+如果想把这部分学得更扎实，建议把跳表节点和跳表本体一起看：
 
-底层： zskiplistLevel[0].forward = 节点20
-第二层： zskiplistLevel[1].forward = 节点30
-第三层： zskiplistLevel[2].forward = NULL
+```c
+typedef struct zskiplistNode {
+    sds ele;
+    double score;
+    struct zskiplistNode *backward;
+    struct zskiplistLevel {
+        struct zskiplistNode *forward;
+        unsigned long span;
+    } level[];
+} zskiplistNode;
 
----
+typedef struct zskiplist {
+    struct zskiplistNode *header, *tail;
+    unsigned long length;
+    int level;
+} zskiplist;
+```
 
-### 问题一：相比红黑树，有什么优势
+这段结构里最值得记住的字段有三个：
+
+- `backward`：支持反向遍历
+- `forward`：每层向前跳
+- `span`：辅助排名计算
+
+### 问题一：跳表节点怎么理解
+
+跳表底层仍然可以看成链表体系，只不过它在上层额外加了多级索引。
+
+- 底层链表保证完整顺序
+- 高层索引负责跳跃式查找
+- `backward` 指针用于反向遍历
+- `span` 常用于排名计算
+
+因此跳表不是“完全不同于链表的神秘结构”，而是：
+
+> 在有序链表之上，叠加多层稀疏索引。
+
+### 问题二：为什么 Redis 选择跳表，而不是红黑树
+
+常见原因有三类：
+
+- 实现相对直观
+- 范围查询和顺序遍历语义自然
+- 在工程实现上更容易结合概率分层做维护
+
+不是说跳表在理论上全面碾压红黑树，而是它在 Redis 这个场景下，足够高效且实现成本合适。
 
 ![跳表红黑树对比.png](/asserts/images/2025-10-17-redis数据结构/跳表红黑树对比.png)
 
-### 问题二：skipList 查找步骤
+### 问题三：查找过程怎么走
 
-**前提：** 跳表的有序性，跳表中的所有节点按 score（分值）升序排列
+查找时可以这样理解：
 
-**核心逻辑：** 从最高层级的索引开始，利用高层指针 “跳跃” 过大量无关节点，逐步降低层级，最终在底层链表中精准定位目标
+1. 从最高层开始
+2. 先在当前层尽量向前跳
+3. 一旦再跳就会越界，下降一层
+4. 重复这个过程，直到落到底层链表定位目标
 
-从跳表的 头节点header 开始（头节点是哨兵，不存实际数据）
+所以跳表的核心不是“每层都很复杂”，而是利用高层索引先跳过大量无关节点。
+
+---
+
+## 8. 五种逻辑类型和底层编码怎么对应
+
+把前面的内容收束一下，最常见的映射关系可以先记成这张表。
+
+| 逻辑类型 | 常见编码/结构 | 说明 |
+| --- | --- | --- |
+| `String` | `int` / `embstr` / `raw` | 短字符串、小整数会走更轻量编码 |
+| `Hash` | `listpack` 或 `dict` | 小对象重省内存，大对象重更新效率 |
+| `List` | `quicklist` | quicklist 节点内部一般是 listpack |
+| `Set` | `intset` 或 `dict` | 全是整数且规模小会更紧凑 |
+| `Sorted Set` | `listpack` 或 `skiplist + dict` | 小对象走紧凑编码，大对象走组合结构 |
+
+需要特别提醒的是：这张表是“常见情况”，不是“一成不变的永恒真理”。
+
+Redis 的内部编码会随着版本迭代继续演化，所以分析问题时最好同时确认：
+
+- Redis 版本
+- 当前对象编码
+- 数据规模
+
+如果线上要确认某个 key 当前到底是什么编码，直接用：
+
+```shell
+OBJECT ENCODING mykey
+```
+
+这往往比背博客更靠谱。
+
+---
+
+## 9. 学数据结构时最值得抓住的三条主线
+
+### 9.1 逻辑类型和底层结构不是一回事
+
+看到 `Hash`，不要立刻等同于“哈希表”；看到 `List`，也不要立刻等同于“普通双向链表”。
+
+Redis 的强项恰恰在于：
+
+- 对外接口稳定
+- 对内编码可按场景变化
+
+### 9.2 Redis 一直在做空间和时间的权衡
+
+小对象阶段，Redis 优先用紧凑编码节省内存；数据一大，再切到更适合增删查改的结构。
+
+这是一条贯穿 Redis 内部实现的总原则。
+
+### 9.3 读源码时先看版本，再看实现
+
+如果一篇文章还在用大量 `ziplist` 解释所有新版本行为，不一定是错，可能只是它讲的是历史实现。
+
+真正稳妥的阅读方式是：
+
+- 先确认 Redis 版本
+- 再确认当前源码中的结构和配置项
+- 最后再把旧资料放进版本上下文里理解
+
+这样看 Redis，很多“怎么这里又换结构了”的困惑就会自然消失。
