@@ -137,8 +137,9 @@ flowchart TD
 1. `main` 方法本身非常薄，只是创建 `SpringApplication` 并转入实例 `run` 方法。
 2. `SpringApplication` 构造阶段完成应用类型推断、初始化器与监听器装载、主启动类推断。
 3. `run` 方法前半段负责准备 `Environment` 和 `ApplicationContext`，后半段把控制权交给 `refresh()` 完成容器真正启动。
-4. Bean 定义加载、后置处理器执行、单例 Bean 实例化、生命周期回调、`ContextRefreshedEvent` 发布，都集中发生在 `ApplicationContext.refresh()` 主链路中。
-5. 排查启动问题时，通常可以优先按 `prepareEnvironment`、`prepareContext`、`refreshContext`、`finishRefresh` 这四个阶段来切分问题范围。
+4. 第三方组件接入 Spring 容器，通常走的是 `starter` 依赖触发自动配置的路径：先通过 `META-INF/spring.factories`（新版本是 `AutoConfiguration.imports`）暴露自动配置类，再在配置类解析阶段注册成 `BeanDefinition`，最后在 `refresh()` 过程中实例化为真正的 Bean。
+5. Bean 定义加载、后置处理器执行、单例 Bean 实例化、生命周期回调、`ContextRefreshedEvent` 发布，都集中发生在 `ApplicationContext.refresh()` 主链路中。
+6. 排查启动问题时，通常可以优先按 `prepareEnvironment`、`prepareContext`、`refreshContext`、`finishRefresh` 这四个阶段来切分问题范围。
 
 ---
 
