@@ -1,18 +1,97 @@
 ---
 layout:      post
-title:       "SpringBoot启动流程"
-subtitle:    "SpringBoot启动流程"
+title:       "Spring Boot 启动流程"
+subtitle:    "基于 Spring Boot 2.x 源码梳理从 SpringApplication.run 到 ApplicationContext.refresh 的主链路"
 author:      "Ekko"
 header-img:  "img/bg/bg-20240706.png"
 catalog:     true
 tags:
   - 学习笔记
   - SpringBoot
+  - 源码分析
+  - Spring
 ---
 
-> 参考资料 [SpringBoot启动流程](https://www.cnblogs.com/hefeng2014/p/17770183.html)
+> 这篇笔记聚焦 `SpringApplication.run(...)` 背后的启动主链路，核心是把“谁在创建环境、谁在装配容器、谁在触发刷新、谁在发布启动事件”串成一条完整执行链，方便在阅读源码、排查启动异常或理解自动装配入口时快速定位。
+
+> 文中的代码片段与类名主要对应 Spring Boot 2.x 时代实现，尤其包含 `spring.factories`、`ConfigFileApplicationListener` 等机制；如果切到 Spring Boot 2.4+ 或 3.x，需要把配置加载流程与部分事件时序差异单独看待。
+
+> 参考资料：
+>
+> [Spring Boot 2.1.18 Reference Documentation](https://docs.spring.io/spring-boot/docs/2.1.18.RELEASE/reference/htmlsingle/)
+>
+> [SpringApplication.java](https://github.com/spring-projects/spring-boot/blob/v2.1.18.RELEASE/spring-boot-project/spring-boot/src/main/java/org/springframework/boot/SpringApplication.java)
+>
+> [EventPublishingRunListener.java](https://github.com/spring-projects/spring-boot/blob/v2.1.18.RELEASE/spring-boot-project/spring-boot/src/main/java/org/springframework/boot/context/event/EventPublishingRunListener.java)
+>
+> [AbstractApplicationContext.java](https://github.com/spring-projects/spring-framework/blob/v5.1.19.RELEASE/spring-context/src/main/java/org/springframework/context/support/AbstractApplicationContext.java)
+>
+> [SpringBoot启动流程](https://www.cnblogs.com/hefeng2014/p/17770183.html)
 
 [TOC]
+
+---
+
+## 启动总览
+
+### 一图概览
+
+```mermaid
+flowchart TD
+    A[main 方法] --> B[SpringApplication.run]
+    B --> C[创建 SpringApplication]
+    C --> C1[推断 WebApplicationType]
+    C --> C2[加载 ApplicationContextInitializer]
+    C --> C3[加载 ApplicationListener]
+    C --> C4[推断 mainApplicationClass]
+    B --> D[run args]
+    D --> D1[configureHeadlessProperty]
+    D --> D2[getRunListeners and starting]
+    D --> E[prepareEnvironment]
+    E --> E1[创建 Environment]
+    E --> E2[绑定 spring.main]
+    E --> E3[发布 environmentPrepared]
+    D --> F[createApplicationContext]
+    D --> G[prepareContext]
+    G --> G1[postProcessApplicationContext]
+    G --> G2[applyInitializers]
+    G --> G3[load sources]
+    D --> H[refreshContext]
+    H --> H1[prepareRefresh]
+    H --> H2[obtainFreshBeanFactory]
+    H --> H3[invokeBeanFactoryPostProcessors]
+    H --> H4[registerBeanPostProcessors]
+    H --> H5[finishBeanFactoryInitialization]
+    H --> H6[finishRefresh]
+    D --> I[afterRefresh]
+    D --> J[started]
+    D --> K[callRunners]
+    D --> L[running]
+```
+
+### 快速结论
+
+1. `main` 方法本身非常薄，只是创建 `SpringApplication` 并转入实例 `run` 方法。
+2. `SpringApplication` 构造阶段完成应用类型推断、初始化器与监听器装载、主启动类推断。
+3. `run` 方法前半段负责准备 `Environment` 和 `ApplicationContext`，后半段把控制权交给 `refresh()` 完成容器真正启动。
+4. Bean 定义加载、后置处理器执行、单例 Bean 实例化、生命周期回调、`ContextRefreshedEvent` 发布，都集中发生在 `ApplicationContext.refresh()` 主链路中。
+5. 排查启动问题时，通常可以优先按 `prepareEnvironment`、`prepareContext`、`refreshContext`、`finishRefresh` 这四个阶段来切分问题范围。
+
+---
+
+## 总结
+
+1. `SpringApplication` 构造阶段解决的是“把启动所需的扩展点和应用形态准备好”。
+2. `run()` 主线解决的是“把环境、容器和启动事件按顺序串起来”。
+3. `prepareContext()` 之前，容器还处于准备阶段；真正让 BeanFactory 和 Bean 生命周期全面运转起来的核心入口仍然是 `refresh()`。
+4. `refresh()` 内部又可以拆成 BeanFactory 准备、后置处理器执行、监听器注册、单例 Bean 初始化、生命周期完成这几个关键阶段。
+5. 如果需要排查启动失败，优先判断问题落在环境构建、配置绑定、Bean 定义注册、Bean 创建还是刷新收尾阶段，通常能更快缩小范围。
+
+---
+
+### 阅读顺序
+
+如果只是想先建立整体认知，可以先看 `SpringApplication` 的构造过程，再看 `run()` 主链路，最后把重点放到 `applicationContext.refresh()`；前两部分解决“启动入口在哪里”，后一部分解决“容器到底是怎么活起来的”。
 
 ### SPI（Service provider interface） 
 
@@ -68,8 +147,7 @@ public SpringApplication(ResourceLoader resourceLoader, Class<?>... primarySourc
     // 保存 主启动类
     this.primarySources = new LinkedHashSet(Arrays.asList(primarySources));
     
-    // 判断当前应用环境，从classpath下判断当前SpringBoot应用应该使用哪种环境启动
-    // servlet 同步阻塞、reactivi 异步非阻塞
+    // 判断当前应用环境，从 classpath 推断当前应用是 Servlet Web、Reactive Web 还是非 Web
     this.webApplicationType = WebApplicationType.deduceFromClasspath();
     
     // 设置初始化器(会将一组类型为ApplicationContextInitializer的初始化器放入SpringApplication中)
@@ -89,15 +167,15 @@ public SpringApplication(ResourceLoader resourceLoader, Class<?>... primarySourc
 this.setInitializers(this.getSpringFactoriesInstances(ApplicationContextInitializer.class));
 ```
 
-SpringApplication构造器中，会加载ApplicationContextInitializer列表，ApplicationContextInitializer的作用是用于在刷新容器之前初始化Spring ConfigurableApplicationContext 的回调接口，我们也可以实现 ApplicationContextInitializer接口 来在容器刷新之前做一些我们的初始化逻辑
+SpringApplication 构造器中会加载 `ApplicationContextInitializer` 列表。它本质上是一个在 `refresh()` 之前初始化 `ConfigurableApplicationContext` 的回调接口，项目也可以自定义该扩展点，在容器刷新前补充属性源、激活 profile 或注册附加组件。
 
-比如 NacosBootStrapContextInitializer 会去加载 bootstrap.properties 配置
+在 Spring Cloud / Nacos 的部分旧版启动链路里，也会借助这个阶段参与更早期的配置准备。
 
 ---
 
 this.getSpringFactoriesInstances() 内部
 
-通过SPI机制从META-INFO下的spring.factories加载所有类型为ApplicationContextInitializer并且创建对应的实例返回
+通过 SPI 机制从 `META-INF/spring.factories` 中加载所有类型为 `ApplicationContextInitializer` 的实现类，并创建对应实例返回。
 
 ```java
 private <T> Collection<T> getSpringFactoriesInstances(Class<T> type, Class<?>[] parameterTypes, Object... args) {
@@ -139,9 +217,9 @@ private static Map<String, List<String>> loadSpringFactories(@Nullable ClassLoad
 
 #### 2.2 ApplicationListener 监听器
 
-和 ApplicationContextInitializer 加载一致，也是通过SPI机制从META-INFO下的spring.factories
+和 `ApplicationContextInitializer` 的加载方式一致，也是通过 SPI 机制从 `META-INF/spring.factories` 中读取。
 
-spring配置的内部监听器
+下面这组监听器是 Spring Boot 2.x 中通过 `spring.factories` 注册的内部监听器，不同小版本可能略有差异；到 Spring Boot 2.4+ 后，配置文件处理入口已经逐步迁移到 `ConfigData` 体系。
 
 1. ClearCachesApplicationListener：应用上下文加载完成后对缓存做清除工作
 2. ParentContextCloserApplicationListener：监听双亲应用上下文的关闭事件并往自己的子应用上下文中传播
@@ -157,11 +235,11 @@ spring配置的内部监听器
 
 ---
 
-### 3、SpringApplicaion.run方法
+### 3、SpringApplication.run方法
 
 ```java
 public ConfigurableApplicationContext run(String... args) {
-    // 创建 创建时间性能监控器
+    // 创建启动耗时监控器
     StopWatch stopWatch = new StopWatch();
     stopWatch.start();
 
@@ -214,7 +292,7 @@ public ConfigurableApplicationContext run(String... args) {
             (new StartupInfoLogger(this.mainApplicationClass)).logStarted(this.getApplicationLog(), stopWatch);
         }
 
-        // 发布started时间
+        // 发布 started 事件
         listeners.started(context);
         
         // 运行器回调
@@ -314,7 +392,7 @@ private ConfigurableEnvironment prepareEnvironment(
 
 ##### 3.6.1 getOrCreateEnvironment 创建运行时环境
 
-默认SpringBoot环境下会创建StandardServletEnvironment
+对于普通的 Servlet Web 应用，默认会创建 `StandardServletEnvironment`；Reactive 与非 Web 应用则会走各自对应的环境实现。
 
 ```java
 private ConfigurableEnvironment getOrCreateEnvironment() {
@@ -560,7 +638,7 @@ public int load() {
     return count;
 }
 
-// 根据传入的source类型，来决定用哪种方式加载，这里我们的主启动类是属于Class （Application.class）类型，所以继续调用重载的lead方法
+// 根据传入的 source 类型决定采用哪种加载方式；这里主启动类属于 Class（Application.class）类型，所以继续调用重载的 load 方法
 private int load(Object source) {
     Assert.notNull(source, "Source must not be null");
     if (source instanceof Class<?>) {
@@ -695,7 +773,7 @@ protected void afterRefresh(ConfigurableApplicationContext context, ApplicationA
 ####  3.12 listeners.started 发布started事件
 
 ```java
-// 发布ApplicationReadyEvent事件
+// 发布 ApplicationStartedEvent 事件
 @Override
 public void started(ConfigurableApplicationContext context) {
     context.publishEvent(new ApplicationStartedEvent(this.application, this.args, context));
@@ -3128,3 +3206,5 @@ protected void finishRefresh() {
     LiveBeansView.registerApplicationContext(this);
 }
 ```
+
+---
