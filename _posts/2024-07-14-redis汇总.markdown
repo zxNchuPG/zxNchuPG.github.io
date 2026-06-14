@@ -13,17 +13,17 @@ tags:
   - 高并发
 ---
 > 这篇笔记的目标，是把 Redis 的常见面试问题和工程实践放到一张图里理解：它是什么、适合存什么、事务和 Lua 的边界在哪里、集群和内存管理要关注什么。
->
+
 > 内容以概念梳理和关键差异辨析为主，尽量保留原始笔记骨架；像缓存一致性、分布式锁安全性、热点 key 治理这类主题这里只做延伸提示，适合后续再拆成独立专题深入。
->
+
 > 参考资料：
->
+
 > [Redis Documentation](https://redis.io/docs/latest/)
->
+
 > [Redis Transactions](https://redis.io/docs/latest/develop/using-commands/transactions/)
->
+
 > [Redis Cluster Specification](https://redis.io/docs/latest/operate/oss_and_stack/reference/cluster-spec/)
->
+
 > [看完这20道Redis面试题，阿里面试可以约起来了](https://github.com/CoderLeixiaoshuai/java-eight-part/blob/master/docs/redis/%E7%9C%8B%E5%AE%8C%E8%BF%9920%E9%81%93Redis%E9%9D%A2%E8%AF%95%E9%A2%98%EF%BC%8C%E9%98%BF%E9%87%8C%E9%9D%A2%E8%AF%95%E5%8F%AF%E4%BB%A5%E7%BA%A6%E8%B5%B7%E6%9D%A5%E4%BA%86.md)
 
 [TOC]

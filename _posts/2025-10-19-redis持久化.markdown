@@ -16,11 +16,11 @@ tags:
 > 内容以 Redis Open Source 的通用机制为主，尽量保留原始笔记结构，同时补上容易混淆的版本差异，尤其是 Redis 7.0 之后的 multi-part AOF，以及复制里 replication id、offset、backlog 的配合关系。
 
 > 参考资料：
->
+
 > [Redis persistence](https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/)
->
+
 > [Redis replication](https://redis.io/docs/latest/operate/oss_and_stack/management/replication/)
->
+
 > [BGREWRITEAOF](https://redis.io/commands/bgrewriteaof)
 
 [TOC]

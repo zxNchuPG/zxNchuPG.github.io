@@ -16,13 +16,13 @@ tags:
 > 文章内容以经典对象模型为主，同时补充 Redis 6.x、7.x 之后的实现差异，避免把历史结构和当前版本实现混在一起。阅读时可以把它当作一篇“整体视图 + 高频考点 + 版本纠偏”的复习笔记，而不是逐文件源码精读。
 
 > 参考资料：
->
-> [OBJECT ENCODING | Redis](https://redis.io/docs/latest/commands/object-encoding/)
->
-> [Memory optimization | Redis](https://redis.io/docs/latest/operate/oss_and_stack/management/optimization/memory-optimization/)
->
+
+> [OBJECT ENCODING Redis](https://redis.io/docs/latest/commands/object-encoding/)
+
+> [Memory optimization Redis](https://redis.io/docs/latest/operate/oss_and_stack/management/optimization/memory-optimization/)
+
 > [redis/redis-doc: object-encoding.md](https://github.com/redis/redis-doc/blob/master/commands/object-encoding.md)
->
+
 > [redis/redis](https://github.com/redis/redis)
 
 [TOC]
