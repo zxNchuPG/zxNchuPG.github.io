@@ -37,36 +37,117 @@ tags:
 ### 一图概览
 
 ```mermaid
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontSize": "18px"
+  },
+  "flowchart": {
+    "useMaxWidth": true,
+    "htmlLabels": true,
+    "nodeSpacing": 40,
+    "rankSpacing": 60,
+    "curve": "basis"
+  }
+}}%%
 flowchart TD
     A[main 方法] --> B[SpringApplication.run]
-    B --> C[创建 SpringApplication]
-    C --> C1[推断 WebApplicationType]
-    C --> C2[加载 ApplicationContextInitializer]
-    C --> C3[加载 ApplicationListener]
-    C --> C4[推断 mainApplicationClass]
-    B --> D[run args]
-    D --> D1[configureHeadlessProperty]
-    D --> D2[getRunListeners and starting]
-    D --> E[prepareEnvironment]
-    E --> E1[创建 Environment]
-    E --> E2[绑定 spring.main]
-    E --> E3[发布 environmentPrepared]
-    D --> F[createApplicationContext]
-    D --> G[prepareContext]
-    G --> G1[postProcessApplicationContext]
-    G --> G2[applyInitializers]
-    G --> G3[load sources]
-    D --> H[refreshContext]
-    H --> H1[prepareRefresh]
-    H --> H2[obtainFreshBeanFactory]
-    H --> H3[invokeBeanFactoryPostProcessors]
-    H --> H4[registerBeanPostProcessors]
-    H --> H5[finishBeanFactoryInitialization]
-    H --> H6[finishRefresh]
-    D --> I[afterRefresh]
-    D --> J[started]
-    D --> K[callRunners]
-    D --> L[running]
+    B --> C[创建<br/>SpringApplication]
+    C --> C1[推断<br/>应用类型]
+    C --> C2[加载<br/>初始化器]
+    C --> C3[加载<br/>监听器]
+    C --> C4[推断<br/>主启动类]
+
+    B --> D[run 主流程]
+    D --> D1[准备<br/>运行环境]
+    D1 --> D11[创建<br/>Environment]
+    D1 --> D12[绑定<br/>spring.main]
+    D1 --> D13[发布<br/>environmentPrepared]
+
+    D --> D2[创建<br/>ApplicationContext]
+    D --> D3[初始化<br/>上下文]
+    D3 --> D31[postProcess<br/>ApplicationContext]
+    D3 --> D32[apply<br/>Initializers]
+    D3 --> D33[load<br/>sources]
+
+    D --> D4[refreshContext]
+    D --> D5[afterRefresh]
+    D --> D6[started]
+    D --> D7[callRunners]
+    D --> D8[running]
+```
+
+```mermaid
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontSize": "20px"
+  },
+  "flowchart": {
+    "useMaxWidth": true,
+    "htmlLabels": true,
+    "nodeSpacing": 40,
+    "rankSpacing": 85,
+    "curve": "basis"
+  }
+}}%%
+flowchart TD
+    R[refreshContext]
+    R --> R1[prepareRefresh]
+    R1 --> R2[obtainFreshBeanFactory]
+    R2 --> R3[prepareBeanFactory]
+    R3 --> R4[invokeBeanFactoryPostProcessors]
+    R4 --> R5[registerBeanPostProcessors]
+    R5 --> R6[initMessageSource]
+    R6 --> R7[initApplicationEventMulticaster]
+    R7 --> R8[onRefresh]
+    R8 --> R9[registerListeners]
+    R9 --> R10[finishBeanFactory<br/>Initialization]
+    R10 --> R11[finishRefresh]
+
+    subgraph S1[阶段 1：准备刷新]
+        direction TB
+        R1a[记录<br/>启动时间]
+        R1b[校验<br/>必需属性]
+        R1c[初始化<br/>早期事件集合]
+        R1 --> R1a
+        R1 --> R1b
+        R1 --> R1c
+    end
+
+    subgraph S2[阶段 2：刷新 BeanFactory]
+        direction TB
+        R2a[创建或刷新<br/>BeanFactory]
+        R2b[加载<br/>BeanDefinition]
+        R2 --> R2a
+        R2 --> R2b
+    end
+
+    subgraph S3[阶段 3：准备容器能力]
+        direction TB
+        R3a[注册<br/>基础组件]
+        R3b[准备类加载器<br/>与环境能力]
+        R3 --> R3a
+        R3 --> R3b
+    end
+
+    subgraph S4[阶段 4：执行后置处理器]
+        direction TB
+        R4a[执行 BeanDefinitionRegistry<br/>PostProcessor]
+        R4b[执行 BeanFactory<br/>PostProcessor]
+        R4 --> R4a
+        R4 --> R4b
+    end
+
+    subgraph S5[阶段 5：完成刷新]
+        direction TB
+        R10a[实例化非懒加载<br/>单例 Bean]
+        R11a[初始化<br/>LifecycleProcessor]
+        R11b[发布<br/>ContextRefreshedEvent]
+        R10 --> R10a
+        R11 --> R11a
+        R11 --> R11b
+    end
 ```
 
 ### 快速结论
