@@ -191,13 +191,13 @@ SpringBoot 主要优化的就是这部分内容
 
 ```mermaid
 flowchart TD
-    A[启动类] --> B[@SpringBootApplication]
-    B --> C[@EnableAutoConfiguration]
-    C --> D[AutoConfigurationImportSelector]
-    D --> E[读取自动配置候选项]
-    E --> F[@Conditional 条件过滤]
-    F --> G[导入满足条件的配置类]
-    G --> H[注册 BeanDefinition]
+    A["启动类"] --> B["@SpringBootApplication"]
+    B --> C["@EnableAutoConfiguration"]
+    C --> D["AutoConfigurationImportSelector"]
+    D --> E["读取自动配置候选项"]
+    E --> F["@Conditional 条件过滤"]
+    F --> G["导入满足条件的配置类"]
+    G --> H["注册 BeanDefinition"]
 ```
 
 #### 3.2 `spring.factories` 和 `AutoConfiguration.imports` 的区别
