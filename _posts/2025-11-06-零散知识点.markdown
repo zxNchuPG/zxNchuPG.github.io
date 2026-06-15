@@ -221,7 +221,223 @@ flowchart TD
 
 一个更准确的理解方式是：**Spring Boot 不是“自动帮你创建所有 Bean”，而是“自动导入一批带条件的配置类”。**
 
-#### 3.4 和 `@ComponentScan` 的关系
+#### 3.4 源码案例：Dubbo、Nacos、Sentinel 是怎么自动装配进来的
+
+只看概念，自动装配很容易停留在“Spring Boot 会帮我配好”这句话上。真正到项目里排查问题，还是得回到一条固定链路：
+
+1. 先看你引入了哪个 starter
+2. 再看这个 starter 在 `META-INF/spring.factories` 或 `AutoConfiguration.imports` 里声明了哪些自动配置类
+3. 再看这些自动配置类上的条件注解
+4. 最后顺着 `@Bean`、`BeanPostProcessor`、`ImportSelector` 去看它到底往容器里放了什么
+
+很多中间件“为什么一加依赖就能用”，本质上就是走了这条链。
+
+下面几段源码我做了**保留主干逻辑后的简化**，阅读时重点看“入口类、条件注解、注册了什么 Bean”，不要纠结每个版本的细枝末节差异。
+
+##### 3.4.1 Dubbo：把 RPC 基础设施 Bean 和注解处理器自动放进容器
+
+当你引入 `dubbo-spring-boot-starter` 之后，Dubbo 会通过自动配置把自己的配置类导入进来。它的自动配置声明里，能看到类似下面这些类：
+
+```properties
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
+org.apache.dubbo.spring.boot.autoconfigure.DubboAutoConfiguration,\
+org.apache.dubbo.spring.boot.autoconfigure.DubboListenerAutoConfiguration,\
+org.apache.dubbo.spring.boot.autoconfigure.DubboRelaxedBinding2AutoConfiguration,\
+org.apache.dubbo.spring.boot.autoconfigure.DubboTripleAutoConfiguration
+```
+
+这一步的含义不是“直接把所有 Dubbo Bean 全 new 出来”，而是先把 `DubboAutoConfiguration` 这些配置类交给 Spring。
+
+然后继续看 `DubboAutoConfiguration`，你会看到一个很典型的自动装配写法：
+
+```java
+@ConditionalOnProperty(prefix = DUBBO_PREFIX, name = "enabled", matchIfMissing = true)
+@Configuration
+@EnableDubboConfig
+public class DubboAutoConfiguration {
+
+    @ConditionalOnProperty(prefix = DUBBO_SCAN_PREFIX, name = BASE_PACKAGES_PROPERTY_NAME)
+    @ConditionalOnBean(name = BASE_PACKAGES_BEAN_NAME)
+    @Bean
+    public static ServiceAnnotationPostProcessor serviceAnnotationBeanProcessor(
+            @Qualifier(BASE_PACKAGES_BEAN_NAME) Set<String> packagesToScan) {
+        return new ServiceAnnotationPostProcessor(packagesToScan);
+    }
+}
+```
+
+这里有两个很关键的点：
+
+- `@EnableDubboConfig` 会把 Dubbo 自己那套配置绑定能力打开
+- `ServiceAnnotationPostProcessor` 会去处理 `@DubboService`
+
+也就是说，`@DubboService` 之所以能生效，不是靠普通的 `@ComponentScan` 扫一下就完事，而是因为 **Dubbo 先通过 Spring Boot 自动装配，把注解处理器注册进了容器**。后面 Spring 在创建 Bean 的过程中，这个后处理器才有机会识别 `@DubboService`、导出服务；`@DubboReference` 也类似，会依赖对应的注解处理器去注入代理对象。
+
+可以把它简化理解成：
+
+```text
+引入 Dubbo starter
+-> Spring Boot 发现 DubboAutoConfiguration
+-> 注册 Dubbo 的配置类和注解处理器
+-> 扫描到 @DubboService / @DubboReference
+-> 导出服务 / 注入远程代理
+```
+
+##### 3.4.2 Nacos：把注册中心客户端和自动注册流程装配进来
+
+以 `spring-cloud-starter-alibaba-nacos-discovery` 为例，自动装配的重点不是“扫描到一个 Nacos 组件”，而是把服务注册这条链上的几个核心 Bean 准备好。
+
+`NacosServiceAutoConfiguration` 很直白：
+
+```java
+@Configuration(proxyBeanMethods = false)
+@ConditionalOnDiscoveryEnabled
+@ConditionalOnNacosDiscoveryEnabled
+public class NacosServiceAutoConfiguration {
+
+    @Bean
+    public NacosServiceManager nacosServiceManager() {
+        return new NacosServiceManager();
+    }
+}
+```
+
+它先把 `NacosServiceManager` 放进容器，作为后续与 Nacos 服务端交互的基础组件。
+
+再往下看 `NacosServiceRegistryAutoConfiguration`，基本就能看到服务注册主链路了：
+
+```java
+@Configuration(proxyBeanMethods = false)
+@ConditionalOnNacosDiscoveryEnabled
+@ConditionalOnProperty(
+        value = "spring.cloud.service-registry.auto-registration.enabled",
+        matchIfMissing = true)
+public class NacosServiceRegistryAutoConfiguration {
+
+    @Bean
+    public NacosServiceRegistry nacosServiceRegistry(...) {
+        return new NacosServiceRegistry(...);
+    }
+
+    @Bean
+    public NacosRegistration nacosRegistration(...) {
+        return new NacosRegistration(...);
+    }
+
+    @Bean
+    public NacosAutoServiceRegistration nacosAutoServiceRegistration(...) {
+        return new NacosAutoServiceRegistration(...);
+    }
+}
+```
+
+这几个 Bean 的职责可以这么记：
+
+- `NacosServiceRegistry`：真正执行注册/下线动作
+- `NacosRegistration`：封装当前服务实例的信息，比如服务名、IP、端口、metadata
+- `NacosAutoServiceRegistration`：在应用启动完成后触发自动注册
+
+所以，Nacos 自动装配的本质不是“Spring 帮你连上 Nacos 就结束了”，而是：
+
+```text
+引入 Nacos Discovery starter
+-> 自动配置类生效
+-> 注册 NacosServiceManager / NacosServiceRegistry / NacosRegistration
+-> 注册 NacosAutoServiceRegistration
+-> Web 容器启动完成后触发服务注册
+```
+
+这也是为什么有时候你明明配了 `server-addr`，但服务还是没注册上去，要优先排查的不是“扫描没扫到”，而是：
+
+- 自动配置条件是否成立
+- `spring.cloud.nacos.discovery.enabled` 是否开启
+- `spring.cloud.service-registry.auto-registration.enabled` 是否被关闭
+- 当前环境里 `NacosRegistration` 和 `NacosAutoServiceRegistration` 有没有真正进容器
+
+##### 3.4.3 Sentinel：把限流拦截器、资源切面、规则数据源能力装配进来
+
+Sentinel 的例子特别适合理解“自动装配导入的是基础设施，不是业务规则本身”。
+
+老一些、也更常见的 Spring Cloud Alibaba 版本里，`spring.factories` 里会声明：
+
+```properties
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
+com.alibaba.cloud.sentinel.SentinelWebAutoConfiguration,\
+com.alibaba.cloud.sentinel.SentinelWebFluxAutoConfiguration,\
+com.alibaba.cloud.sentinel.endpoint.SentinelEndpointAutoConfiguration,\
+com.alibaba.cloud.sentinel.custom.SentinelAutoConfiguration,\
+com.alibaba.cloud.sentinel.feign.SentinelFeignAutoConfiguration
+```
+
+这里最值得先看的有两个类。
+
+第一个是 `SentinelWebAutoConfiguration`，它负责把 Web 限流需要的拦截器装配进去：
+
+```java
+@Configuration(proxyBeanMethods = false)
+@ConditionalOnWebApplication(type = Type.SERVLET)
+@ConditionalOnProperty(name = "spring.cloud.sentinel.enabled", matchIfMissing = true)
+@ConditionalOnClass(SentinelWebInterceptor.class)
+@EnableConfigurationProperties(SentinelProperties.class)
+public class SentinelWebAutoConfiguration implements WebMvcConfigurer {
+
+    @Bean
+    @ConditionalOnProperty(name = "spring.cloud.sentinel.filter.enabled", matchIfMissing = true)
+    public SentinelWebInterceptor sentinelWebInterceptor(
+            SentinelWebMvcConfig sentinelWebMvcConfig) {
+        return new SentinelWebInterceptor(sentinelWebMvcConfig);
+    }
+
+    @Bean
+    public SentinelWebMvcConfig sentinelWebMvcConfig() {
+        SentinelWebMvcConfig config = new SentinelWebMvcConfig();
+        return config;
+    }
+}
+```
+
+这段代码说明：当应用是 Web 应用、类路径里有 `SentinelWebInterceptor`、并且相关配置打开时，Spring Boot 会自动把限流拦截器注册进去。后面请求进来，才会经过 Sentinel 的资源统计、规则判断、限流处理。
+
+第二个是 `SentinelAutoConfiguration`，它负责把注解切面和规则处理能力准备好：
+
+```java
+@Configuration(proxyBeanMethods = false)
+@ConditionalOnProperty(name = "spring.cloud.sentinel.enabled", matchIfMissing = true)
+@EnableConfigurationProperties(SentinelProperties.class)
+public class SentinelAutoConfiguration {
+
+    @Bean
+    @ConditionalOnMissingBean
+    public SentinelResourceAspect sentinelResourceAspect() {
+        return new SentinelResourceAspect();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public SentinelDataSourceHandler sentinelDataSourceHandler(...) {
+        return new SentinelDataSourceHandler(...);
+    }
+}
+```
+
+这就解释了两个常见问题：
+
+- `@SentinelResource` 为什么会生效：因为自动装配注册了 `SentinelResourceAspect`
+- 配置的规则数据源为什么会被识别：因为自动装配注册了相应的数据源处理组件
+
+所以 Sentinel 限流的完整理解应该是：
+
+```text
+引入 Sentinel starter
+-> 自动装配导入 Web 配置类、切面配置类、Feign/Endpoint 配置类
+-> 注册 SentinelWebInterceptor / SentinelResourceAspect / 数据源处理器
+-> 请求或方法调用进入 Sentinel 保护链路
+-> 按 FlowRule、DegradeRule 等规则决定是否放行
+```
+
+注意这里 Spring Boot 自动装配解决的是“把 Sentinel 接入 Spring 容器”，真正的限流判断还是发生在 Sentinel 自己的运行时链路里，比如 `ProcessorSlotChain`、`FlowSlot` 等组件中。
+
+#### 3.5 和 `@ComponentScan` 的关系
 
 这两者经常被混为一谈，但职责不同：
 
