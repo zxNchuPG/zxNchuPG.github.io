@@ -37,7 +37,8 @@ anchorjs: true                          # 如果你想自定义锚. check out li
 # from PR#40, to support local preview for Jekyll 3.0
 # 确保你安装了这个gem
 # `$ gem install jekyll-paginate`
-plugins: [jekyll-paginate]
+plugins:
+  - jekyll-paginate
 
 
 
@@ -55,14 +56,7 @@ kramdown:
       line_numbers: true
       start_line: 1
 
-# 新增：声明启用 jekyll-mermaid 插件
-plugins:
-  - jekyll-mermaid  # 关键：让 Jekyll 加载 Mermaid 插件
-
-# 可选：配置 Mermaid 主题（插件支持的额外设置）
-mermaid:
-  theme: default  # 可选 dark/forest/neutral 等
-  start_on_load: true
+# Mermaid 由前端脚本在浏览器中渲染，避免依赖 GitHub Pages 不支持的插件
 
 # Disqus 设置
 # disqus_username: hux

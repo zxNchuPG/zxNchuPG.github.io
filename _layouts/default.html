@@ -14,11 +14,51 @@
 
 
     <script type="module">
-import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.0.2/+esm';
-mermaid.initialize({ startOnLoad: false });
-await mermaid.run({
-  querySelector: '.language-mermaid',
-});
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+
+const renderMermaidDiagrams = async () => {
+    const codeBlocks = document.querySelectorAll("div.language-mermaid");
+
+    codeBlocks.forEach((block) => {
+        if (block.dataset.mermaidProcessed === "true") {
+            return;
+        }
+
+        const code = block.querySelector("code");
+        const source = code ? code.textContent.trim() : "";
+
+        if (!source) {
+            return;
+        }
+
+        const diagram = document.createElement("pre");
+        diagram.className = "mermaid";
+        diagram.textContent = source;
+
+        block.replaceWith(diagram);
+    });
+
+    mermaid.initialize({
+        startOnLoad: false,
+        theme: "default"
+    });
+
+    await mermaid.run({
+        querySelector: ".mermaid"
+    });
+};
+
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => {
+        renderMermaidDiagrams().catch((error) => {
+            console.error("Failed to render Mermaid diagrams.", error);
+        });
+    });
+} else {
+    renderMermaidDiagrams().catch((error) => {
+        console.error("Failed to render Mermaid diagrams.", error);
+    });
+}
 </script>
     
 <!-- Image to hack wechat -->
