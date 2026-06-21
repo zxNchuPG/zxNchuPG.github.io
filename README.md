@@ -17,3 +17,7 @@
 # 致谢
 
 本博客模板动画来源于黄玄，更多详细的信息请查看->[黄玄的模板](https://github.com/Huxpro/huxpro.github.io)
+
+# 启动
+
+`brew install ruby@3.3` 安装 Ruby，最后 `bundle install` + `bundle exec jekyll serve --livereload`
