@@ -16,43 +16,17 @@ tags:
 
 > 目标不是把命令全背一遍，而是建立一套排障脑图: 什么时候看全局，什么时候看线程，什么时候看类加载，什么时候去观察方法入参/返回值，什么时候该停手，不要在线上乱增强。
  
-> [Arthas 官方仓库](https://github.com/alibaba/arthas)
+> [Arthas 官方仓库](https://github.com/alibaba/arthas) 、 [Arthas 官方文档](https://arthas.aliyun.com/doc/)
  
-> [Arthas 官方文档](https://arthas.aliyun.com/doc/)
+> [快速入门](https://arthas.aliyun.com/doc/quick-start.html) 、 [命令列表](https://arthas.aliyun.com/doc/commands.html) 、 [鉴权说明](https://arthas.aliyun.com/doc/auth.html) 、 [进阶使用](https://arthas.aliyun.com/doc/advanced-use.html)
  
-> [快速入门](https://arthas.aliyun.com/doc/quick-start.html)
- 
-> [命令列表](https://arthas.aliyun.com/doc/commands.html)
- 
-> [鉴权说明](https://arthas.aliyun.com/doc/auth.html)
+> **全局 & 监控**：[dashboard](https://arthas.aliyun.com/doc/dashboard.html) 、 [thread](https://arthas.aliyun.com/doc/thread.html) 、 [monitor](https://arthas.aliyun.com/doc/monitor.html)
 
-> [进阶使用](https://arthas.aliyun.com/doc/advanced-use.html)
- 
-> [dashboard](https://arthas.aliyun.com/doc/dashboard.html)
- 
-> [thread](https://arthas.aliyun.com/doc/thread.html)
- 
-> [classloader](https://arthas.aliyun.com/doc/classloader.html)
- 
-> [jad](https://arthas.aliyun.com/doc/jad.html)
- 
-> [monitor](https://arthas.aliyun.com/doc/monitor.html)
- 
-> [watch](https://arthas.aliyun.com/doc/watch.html)
- 
-> [trace](https://arthas.aliyun.com/doc/trace.html)
- 
-> [tt](https://arthas.aliyun.com/doc/tt.html)
- 
-> [ognl](https://arthas.aliyun.com/doc/ognl.html)
- 
-> [vmtool](https://arthas.aliyun.com/doc/vmtool.html)
- 
-> [profiler](https://arthas.aliyun.com/doc/profiler.html)
- 
-> [retransform](https://arthas.aliyun.com/doc/retransform.html)
- 
-> [redefine](https://arthas.aliyun.com/doc/redefine.html)`
+> **类 & 反编译**：[classloader](https://arthas.aliyun.com/doc/classloader.html) 、 [jad](https://arthas.aliyun.com/doc/jad.html)
+
+> **方法观察**：[watch](https://arthas.aliyun.com/doc/watch.html) 、 [trace](https://arthas.aliyun.com/doc/trace.html) 、 [tt](https://arthas.aliyun.com/doc/tt.html)
+
+> **高级增强**：[ognl](https://arthas.aliyun.com/doc/ognl.html) 、 [vmtool](https://arthas.aliyun.com/doc/vmtool.html) 、 [profiler](https://arthas.aliyun.com/doc/profiler.html) 、 [retransform](https://arthas.aliyun.com/doc/retransform.html) 、 [redefine](https://arthas.aliyun.com/doc/redefine.html)
 
 [TOC]
 
