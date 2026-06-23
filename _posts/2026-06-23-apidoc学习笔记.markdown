@@ -19,13 +19,13 @@ tags:
 
 > 参考资料：
 
-> apidoc 官方资料：[APIDOC Official Site](https://apidocjs.com/) | [APIDOC Params](https://apidocjs.com/#params)
+> apidoc 官方资料：[APIDOC Official Site](https://apidocjs.com/) 、 [APIDOC Params](https://apidocjs.com/#params)
 
-> Spring / Dubbo 资料：[Spring Boot Reference Documentation](https://docs.spring.io/spring-boot/docs/2.7.18/reference/htmlsingle/) | [Apache Dubbo Spring Boot](https://dubbo.apache.org/en/overview/mannual/java-sdk/tasks/develop/springboot/) | [Apache Dubbo Lightweight Java SDK](https://dubbo.apache.org/en/overview/mannual/java-sdk/tasks/framework/lightweight-rpc/)
+> Spring / Dubbo 资料：[Spring Boot Reference Documentation](https://docs.spring.io/spring-boot/docs/2.7.18/reference/htmlsingle/) 、 [Apache Dubbo Spring Boot](https://dubbo.apache.org/en/overview/mannual/java-sdk/tasks/develop/springboot/) 、 [Apache Dubbo Lightweight Java SDK](https://dubbo.apache.org/en/overview/mannual/java-sdk/tasks/framework/lightweight-rpc/)
 
 > JetBrains / IDEA 插件：[apiDoc Plugin for IntelliJ IDEA](https://plugins.jetbrains.com/plugin/11580-apidoc/versions/stable/106736)
 
-> Jenkins 资料：[Jenkins Pipeline Syntax](https://www.jenkins.io/doc/book/pipeline/syntax/) | [Jenkins archiveArtifacts Step](https://www.jenkins.io/doc/pipeline/steps/core/#archiveartifacts-archive-the-artifacts) | [Jenkins HTML Publisher Plugin](https://www.jenkins.io/doc/pipeline/steps/htmlpublisher/)
+> Jenkins 资料：[Jenkins Pipeline Syntax](https://www.jenkins.io/doc/book/pipeline/syntax/) 、 [Jenkins archiveArtifacts Step](https://www.jenkins.io/doc/pipeline/steps/core/#archiveartifacts-archive-the-artifacts) 、 [Jenkins HTML Publisher Plugin](https://www.jenkins.io/doc/pipeline/steps/htmlpublisher/)
 
 [TOC]
 
