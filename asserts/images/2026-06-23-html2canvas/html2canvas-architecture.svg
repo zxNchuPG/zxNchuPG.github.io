@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760">
+  <rect width="1200" height="760" fill="#f8fafc"/>
+  <text x="60" y="70" font-size="34" font-family="Arial, Helvetica, sans-serif" fill="#0f172a">html2canvas 工程结构示意图</text>
+  <text x="60" y="110" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#475569">从业务数据、导出模板到文件存储的完整链路</text>
+
+  <rect x="60" y="160" width="230" height="110" rx="16" fill="#dbeafe" stroke="#60a5fa" stroke-width="2"/>
+  <text x="86" y="205" font-size="24" font-family="Arial, Helvetica, sans-serif" fill="#1e3a8a">业务页面层</text>
+  <text x="86" y="238" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#1e40af">订单详情、活动战报</text>
+
+  <rect x="350" y="160" width="230" height="110" rx="16" fill="#dcfce7" stroke="#4ade80" stroke-width="2"/>
+  <text x="376" y="205" font-size="24" font-family="Arial, Helvetica, sans-serif" fill="#166534">导出模板层</text>
+  <text x="376" y="238" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#166534">OrderShareCard 等</text>
+
+  <rect x="640" y="160" width="230" height="110" rx="16" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+  <text x="666" y="205" font-size="24" font-family="Arial, Helvetica, sans-serif" fill="#92400e">截图能力层</text>
+  <text x="666" y="238" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#92400e">html2canvas / html2pdf.js</text>
+
+  <rect x="930" y="160" width="210" height="110" rx="16" fill="#fee2e2" stroke="#f87171" stroke-width="2"/>
+  <text x="956" y="205" font-size="24" font-family="Arial, Helvetica, sans-serif" fill="#991b1b">服务存储层</text>
+  <text x="956" y="238" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#991b1b">Spring Boot / OSS</text>
+
+  <line x1="290" y1="215" x2="350" y2="215" stroke="#64748b" stroke-width="3"/>
+  <polygon points="350,215 338,208 338,222" fill="#64748b"/>
+
+  <line x1="580" y1="215" x2="640" y2="215" stroke="#64748b" stroke-width="3"/>
+  <polygon points="640,215 628,208 628,222" fill="#64748b"/>
+
+  <line x1="870" y1="215" x2="930" y2="215" stroke="#64748b" stroke-width="3"/>
+  <polygon points="930,215 918,208 918,222" fill="#64748b"/>
+
+  <rect x="120" y="350" width="290" height="240" rx="18" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="145" y="392" font-size="24" font-family="Arial, Helvetica, sans-serif" fill="#0f172a">前端关键动作</text>
+  <text x="145" y="432" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#334155">1. 拉取业务数据</text>
+  <text x="145" y="468" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#334155">2. 渲染稳定的导出 DOM</text>
+  <text x="145" y="504" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#334155">3. 等待图片 / 字体就绪</text>
+  <text x="145" y="540" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#334155">4. 导出 PNG 或 PDF</text>
+  <text x="145" y="576" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#334155">5. 下载或上传后端</text>
+
+  <rect x="460" y="350" width="280" height="240" rx="18" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="485" y="392" font-size="24" font-family="Arial, Helvetica, sans-serif" fill="#0f172a">浏览器侧限制</text>
+  <text x="485" y="432" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#334155">- 跨域图片需要 CORS</text>
+  <text x="485" y="468" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#334155">- CSS 支持度有限</text>
+  <text x="485" y="504" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#334155">- 大页面受内存影响</text>
+  <text x="485" y="540" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#334155">- PDF 仍依赖 canvas 渲染</text>
+
+  <rect x="790" y="350" width="290" height="240" rx="18" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="815" y="392" font-size="24" font-family="Arial, Helvetica, sans-serif" fill="#0f172a">后端承接职责</text>
+  <text x="815" y="432" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#334155">- 接收 multipart 文件</text>
+  <text x="815" y="468" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#334155">- 文件命名与分类</text>
+  <text x="815" y="504" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#334155">- 本地磁盘或对象存储</text>
+  <text x="815" y="540" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#334155">- 返回访问地址与元数据</text>
+
+  <line x1="410" y1="470" x2="460" y2="470" stroke="#94a3b8" stroke-width="3"/>
+  <polygon points="460,470 448,463 448,477" fill="#94a3b8"/>
+
+  <line x1="740" y1="470" x2="790" y2="470" stroke="#94a3b8" stroke-width="3"/>
+  <polygon points="790,470 778,463 778,477" fill="#94a3b8"/>
+
+  <rect x="320" y="640" width="560" height="70" rx="16" fill="#e2e8f0" stroke="#94a3b8" stroke-width="2"/>
+  <text x="347" y="684" font-size="22" font-family="Arial, Helvetica, sans-serif" fill="#0f172a">核心结论：前端负责渲染与导出，后端负责存储与治理，独立部署本质上是能力独立而不是库本身独立运行。</text>
+</svg>
