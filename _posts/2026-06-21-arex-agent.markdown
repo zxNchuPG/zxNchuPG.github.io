@@ -395,6 +395,27 @@ AREX 的默认存储路径不是：
 
 ![AREX Replay 录制用例列表](/asserts/images/2026-06-21-arex-agent/replay-app-list.png)
 
+#### case 详情页可以按什么方式理解
+
+| 页面区域 | 你会看到什么 | 对应数据模型 |
+|------|--------------|-------------|
+| 左侧调用树 | 主入口请求、Redis/Dubbo/MyBatis/HTTP/动态类等依赖请求 | `MainEntry.targetRequest`、各 `ArexMocker.targetRequest` |
+| 右侧详情面板 | 选中节点后的响应内容、返回体、差异信息 | `targetResponse`、回放结果、diff detail |
+| 顶部/列表区 | 应用、接口、时间范围、case 列表 | case 维度的检索条件和入口索引 |
+
+```mermaid
+graph LR
+    A[应用与接口列表] --> B[某条 recordId case]
+    B --> C[左侧调用树]
+    B --> D[右侧详情面板]
+    C --> E[主入口请求]
+    C --> F[Redis/Dubbo/MyBatis]
+    C --> G[动态类/时间 mock]
+    D --> H[targetResponse]
+    D --> I[回放结果]
+    D --> J[差异详情]
+```
+
 这其实正对应前面说的数据模型：
 
 - 左边更接近 `targetRequest`
@@ -802,6 +823,14 @@ AREX 对增强点做了三层抽象：
 
 - 一次完整录制快照事务号
 
+#### 录制阶段动作总览
+
+| 阶段 | Agent 在做什么 | 产物 |
+|------|----------------|------|
+| 入口进入 | 初始化上下文、创建 `recordId`、准备时间 mock 状态 | `ArexContext`、入口 trace 信息 |
+| 依赖执行中 | 在 Redis、Dubbo、MyBatis、HTTP、ES、动态类等点位拦截请求/响应 | 各类 `ArexMocker` |
+| 入口退出 | 记录主响应、收束整条调用链 | `MainEntry` + 完整 case |
+
 ---
 
 ## 十、回放阶段到底发生了什么
@@ -871,6 +900,16 @@ AREX 的回放不是把 JVM 状态整个倒回去，而是：
 
 - `recordId` 对应基线
 - `replayId` 对应验证轮次
+
+#### 录制与回放对照表
+
+| 维度 | 录制阶段 | 回放阶段 |
+|------|----------|----------|
+| 入口请求 | 来自真实流量 | 来自调度服务按 `recordId` 重放 |
+| 内部依赖调用 | 真实执行并被拦截记录 | 被 Agent 拦截并直接返回录制数据 |
+| 下游系统 | 真正访问 | 原则上不真正访问 |
+| 产出结果 | 基线 case | 一轮 `replayId` 对应的执行结果和 diff |
+| 关注重点 | 录得全不全、上下文串没串起来 | mock 命中准不准、差异是否真实 |
 
 ---
 
@@ -988,6 +1027,19 @@ Mocker #6
 - 问题大概率发生在当前服务的新聚合逻辑里
 
 这就是回放验证比普通联调更有价值的地方。
+
+#### 订单查询案例执行链
+
+```mermaid
+graph TB
+    A[GET /api/orders/detail] --> B[Caffeine]
+    B -->|未命中| C[Redis]
+    C -->|未命中| D[MyBatis]
+    D --> E[Dubbo 履约域]
+    E --> F[Feign 风控服务]
+    F --> G[Elasticsearch]
+    G --> H[聚合 OrderDetailVO]
+```
 
 ---
 
