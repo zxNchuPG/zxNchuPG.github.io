@@ -1,16 +1,18 @@
 ---
 layout:      post
-title:       "Swagger 学习笔记"
-subtitle:    "从 OpenAPI、Swagger UI 到 Spring Boot 3 实战，系统梳理接口文档的接入、使用与边界"
+title:       "Swagger 接口文档"
+subtitle:    "从 OpenAPI、Swagger UI 到 Spring Boot 3 接入实战，系统梳理接口文档生成、调试与协作边界"
 author:      "Ekko"
 header-img:  "img/bg/bg-springcloud.jpg"
 catalog:     true
 tags:
   - 学习笔记
-  - Spring Boot
   - Swagger
   - OpenAPI
-  - 工程实践
+  - Swagger UI
+  - 接口文档
+  - Spring Boot
+  - 后端工程化
 ---
 
 > 这篇笔记的目标是把 `Swagger` 放回 `Spring Boot` 的真实工程语境里重新理解一遍：它到底是什么，和 `OpenAPI`、`springdoc-openapi` 分别是什么关系，在项目里解决的核心问题是什么，以及一套完整的接入方案应该怎样落到代码、配置和团队协作流程上。

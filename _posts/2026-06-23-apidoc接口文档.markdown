@@ -1,16 +1,18 @@
 ---
 layout:      post
-title:       "apidoc 学习笔记"
-subtitle:    "从 Spring Boot 注释式接口文档到 Jenkins 自动生成发布，系统梳理 apidoc 的落地方式"
+title:       "apidoc 接口文档"
+subtitle:    "从 Spring Boot 注释式文档到 Jenkins 自动生成发布，系统梳理 apidoc 的接入方式与工程化落地"
 author:      "Ekko"
 header-img:  "img/bg/bg-springcloud.jpg"
 catalog:     true
 tags:
   - 学习笔记
-  - Spring Boot
+  - apidoc
   - API 文档
+  - 接口文档
+  - 静态文档
   - Jenkins
-  - 工程实践
+  - Spring Boot
 ---
 
 > 这篇笔记的目标是把 `apidoc` 放到 `Spring Boot` 项目里按工程化方式重新理解一遍：它到底适合解决什么问题，和 `springdoc / Swagger`、`Spring REST Docs` 有什么差异，注释应该写到什么粒度，生成链路如何放进 `Jenkins`，以及怎样把“接口文档”真正变成持续交付流程中的一个构建产物。
