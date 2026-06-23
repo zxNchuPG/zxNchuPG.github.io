@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="680" viewBox="0 0 1200 680">
+  <rect width="1200" height="680" fill="#ffffff"/>
+  <rect x="40" y="40" width="1120" height="600" rx="16" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="70" y="90" font-size="28" font-family="Arial, Helvetica, sans-serif" fill="#0f172a">Spring Boot project with apidoc</text>
+
+  <rect x="80" y="140" width="300" height="150" rx="12" fill="#e0f2fe" stroke="#0284c7" stroke-width="2"/>
+  <text x="110" y="185" font-size="24" font-family="Arial, Helvetica, sans-serif" fill="#0c4a6e">Controller layer</text>
+  <text x="110" y="225" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#0c4a6e">RequestMapping / GetMapping</text>
+  <text x="110" y="255" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#0c4a6e">apidoc comment blocks</text>
+
+  <rect x="80" y="350" width="300" height="180" rx="12" fill="#ecfccb" stroke="#65a30d" stroke-width="2"/>
+  <text x="110" y="395" font-size="24" font-family="Arial, Helvetica, sans-serif" fill="#3f6212">Shared protocol</text>
+  <text x="110" y="435" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#3f6212">Authorization</text>
+  <text x="110" y="465" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#3f6212">X-Trace-Id / X-Tenant-Id</text>
+  <text x="110" y="495" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#3f6212">CommonResponse / PageResult</text>
+
+  <rect x="470" y="210" width="260" height="120" rx="12" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/>
+  <text x="525" y="255" font-size="24" font-family="Arial, Helvetica, sans-serif" fill="#4c1d95">apidoc scan</text>
+  <text x="510" y="292" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#4c1d95">src/main/java + apidoc.json</text>
+
+  <rect x="820" y="140" width="280" height="150" rx="12" fill="#fee2e2" stroke="#dc2626" stroke-width="2"/>
+  <text x="875" y="185" font-size="24" font-family="Arial, Helvetica, sans-serif" fill="#7f1d1d">Static output</text>
+  <text x="865" y="225" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#7f1d1d">build/apidoc/index.html</text>
+  <text x="865" y="255" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#7f1d1d">api_data.js / api_project.js</text>
+
+  <rect x="820" y="360" width="280" height="150" rx="12" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
+  <text x="885" y="405" font-size="24" font-family="Arial, Helvetica, sans-serif" fill="#14532d">CI publish</text>
+  <text x="865" y="445" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#14532d">archiveArtifacts</text>
+  <text x="865" y="475" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#14532d">publishHTML / Nginx / artifact repo</text>
+
+  <line x1="380" y1="215" x2="470" y2="250" stroke="#475569" stroke-width="3"/>
+  <polygon points="470,250 452,250 460,235" fill="#475569"/>
+
+  <line x1="380" y1="420" x2="470" y2="290" stroke="#475569" stroke-width="3"/>
+  <polygon points="470,290 454,298 456,280" fill="#475569"/>
+
+  <line x1="730" y1="250" x2="820" y2="215" stroke="#475569" stroke-width="3"/>
+  <polygon points="820,215 803,227 806,209" fill="#475569"/>
+
+  <line x1="730" y1="290" x2="820" y2="430" stroke="#475569" stroke-width="3"/>
+  <polygon points="820,430 804,421 819,412" fill="#475569"/>
+
+  <text x="80" y="600" font-size="16" font-family="Arial, Helvetica, sans-serif" fill="#475569">Place this figure near the practical case section to show where apidoc belongs in a typical Spring Boot project.</text>
+</svg>

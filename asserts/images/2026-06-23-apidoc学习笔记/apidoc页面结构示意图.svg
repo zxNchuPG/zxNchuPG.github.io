@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="760" viewBox="0 0 1280 760">
+  <rect width="1280" height="760" fill="#f8fafc"/>
+  <rect x="40" y="30" width="1200" height="700" rx="18" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <rect x="40" y="30" width="1200" height="70" rx="18" fill="#0f172a"/>
+  <text x="80" y="75" font-size="28" font-family="Arial, Helvetica, sans-serif" fill="#ffffff">apidoc page layout</text>
+
+  <rect x="80" y="130" width="250" height="540" rx="12" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="120" y="175" font-size="24" font-family="Arial, Helvetica, sans-serif" fill="#334155">Group nav</text>
+  <rect x="110" y="210" width="190" height="52" rx="8" fill="#dbeafe"/>
+  <text x="145" y="242" font-size="20" font-family="Arial, Helvetica, sans-serif" fill="#1d4ed8">Admin-Order</text>
+  <rect x="110" y="280" width="190" height="52" rx="8" fill="#e2e8f0"/>
+  <text x="163" y="312" font-size="20" font-family="Arial, Helvetica, sans-serif" fill="#475569">User</text>
+  <rect x="110" y="350" width="190" height="52" rx="8" fill="#e2e8f0"/>
+  <text x="156" y="382" font-size="20" font-family="Arial, Helvetica, sans-serif" fill="#475569">Payment</text>
+
+  <rect x="370" y="130" width="830" height="120" rx="12" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+  <text x="405" y="175" font-size="24" font-family="Arial, Helvetica, sans-serif" fill="#1e3a8a">Endpoint summary</text>
+  <text x="405" y="210" font-size="20" font-family="Arial, Helvetica, sans-serif" fill="#1e3a8a">GET /api/admin/orders</text>
+  <text x="650" y="210" font-size="20" font-family="Arial, Helvetica, sans-serif" fill="#1e3a8a">Page query for admin system</text>
+
+  <rect x="370" y="280" width="390" height="390" rx="12" fill="#fefce8" stroke="#eab308" stroke-width="2"/>
+  <text x="405" y="325" font-size="24" font-family="Arial, Helvetica, sans-serif" fill="#854d0e">Request zone</text>
+  <text x="405" y="365" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#854d0e">Headers:</text>
+  <text x="425" y="395" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#854d0e">Authorization</text>
+  <text x="425" y="423" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#854d0e">X-Trace-Id</text>
+  <text x="425" y="451" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#854d0e">X-Tenant-Id</text>
+  <text x="405" y="500" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#854d0e">Query params:</text>
+  <text x="425" y="530" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#854d0e">pageNum / pageSize</text>
+  <text x="425" y="558" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#854d0e">orderNo / status</text>
+  <text x="425" y="586" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#854d0e">startTime / endTime</text>
+
+  <rect x="810" y="280" width="390" height="390" rx="12" fill="#ecfdf5" stroke="#22c55e" stroke-width="2"/>
+  <text x="845" y="325" font-size="24" font-family="Arial, Helvetica, sans-serif" fill="#166534">Response zone</text>
+  <text x="845" y="365" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#166534">Common wrapper:</text>
+  <text x="865" y="395" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#166534">code / success / message</text>
+  <text x="865" y="423" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#166534">requestId / data</text>
+  <text x="845" y="472" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#166534">Page result:</text>
+  <text x="865" y="502" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#166534">records / total / pages</text>
+  <text x="865" y="530" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#166534">pageNum / pageSize</text>
+  <text x="845" y="579" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#166534">Examples:</text>
+  <text x="865" y="609" font-size="18" font-family="Arial, Helvetica, sans-serif" fill="#166534">Success JSON / Error JSON</text>
+
+  <text x="80" y="705" font-size="16" font-family="Arial, Helvetica, sans-serif" fill="#475569">This figure can act as a placeholder until real screenshots are added to the same directory.</text>
+</svg>
