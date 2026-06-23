@@ -439,6 +439,33 @@ Prometheus 官方文档对 Pushgateway 的态度其实很明确：
 
 ## 8. TSDB 怎么理解
 
+先放一张“首屏速记图”，把这一章最容易混淆的三件事先压缩到一起：
+
+1. Prometheus 默认把数据存在本地 TSDB
+2. HA 双 Prometheus 是高可用，不是共享同一份底层存储
+3. 规模化通常靠 `Thanos / Mimir` 这类统一查询与长存储体系
+
+```text
+【形态 1：单机】
+Grafana --> Prometheus --> Local TSDB --> Targets
+
+【形态 2：HA 双 Prometheus】
+                 +--> Prom A --> Local TSDB --+
+Grafana ---------+                            +--> Same Targets
+                 +--> Prom B --> Local TSDB --+
+
+【形态 3：规模化】
+Grafana --> Thanos / Mimir --> Prom A / Prom B / Prom C --> Local TSDB
+                                |        |        |
+                                +--------+--------+--> Targets
+                                |
+                                +--------------------> Object Storage / Remote Store
+```
+
+如果只记一句话，可以记成：
+
+- `Prometheus 负责采集和本地热数据，Thanos/Mimir 负责统一查询、聚合和长存储，Grafana 负责展示`
+
 ### 8.1 Prometheus 自带本地 TSDB
 
 Prometheus 不是“只采不存”，它有自己的本地时序数据库。
@@ -448,7 +475,190 @@ Prometheus 不是“只采不存”，它有自己的本地时序数据库。
 - 针对最近时间窗口的时序数据做了高效优化
 - 适合高频写入、按时间范围查询
 
-### 8.2 Prometheus 更偏近期热数据
+更直白一点说：
+
+- Prometheus 默认就是把采集到的时序数据存到本机磁盘
+
+不是默认写进：
+
+- MySQL
+- Oracle
+- Elasticsearch
+
+它的默认存储形态就是：
+
+- Prometheus 自己的本地 TSDB 文件
+
+### 8.2 数据到底怎么存
+
+Prometheus 的一条时序数据，本质上可以理解成：
+
+- 指标名
+- 一组 labels
+- 按时间追加的 sample 值
+
+例如：
+
+```text
+http_requests_total{job="api", instance="10.0.0.8:8080", method="GET"}
+```
+
+它不是像关系型数据库那样先设计表结构，再插入行。
+
+更准确地说，Prometheus 内部更像是在维护大量：
+
+- `series = metric name + label set`
+
+然后每条 series 后面不断追加：
+
+- `(timestamp, value)` 样本点
+
+所以它存的是：
+
+- 时序序列
+
+而不是你熟悉的那种：
+
+- 关系表
+- 文档记录
+- 向量 embedding
+
+### 8.3 写入路径怎么理解
+
+Prometheus 的本地存储，大致可以按下面这个流程理解：
+
+1. scrape 到指标
+2. 先写入内存中的 head
+3. 同时顺序追加到 WAL
+4. 达到一定条件后切成 block 落盘
+5. 后续再做 compaction
+
+这里面最关键的 3 个词是：
+
+- Head
+- WAL
+- Block
+
+#### Head
+
+Head 可以理解成：
+
+- 当前正在被写入的热点数据区
+
+新采集到的样本会先进入这里，因此最近时间窗口的数据查询通常会比较快。
+
+#### WAL
+
+WAL 是：
+
+- Write-Ahead Log，预写日志
+
+它的作用不是给你直接查，而是：
+
+- 在 Prometheus 异常退出后，尽量通过日志重放恢复最近的数据
+
+这也是为什么 Prometheus 不是“只在内存里攒着”，而是会先顺序写一份日志到磁盘。
+
+#### Block
+
+当 head 中的数据满足切块条件后，会被刷成持久化 block。
+
+你可以把 block 理解成：
+
+- 一段时间范围内、已经整理好的只读数据块
+
+后续查询历史数据时，Prometheus 主要就是在这些 block 上做读取。
+
+### 8.4 它是真的落硬盘文件吗
+
+是的，默认就是落到本地磁盘目录。
+
+最常见的是启动参数里指定：
+
+```bash
+--storage.tsdb.path=/prometheus
+```
+
+或者用默认数据目录。
+
+这个目录里通常会看到类似结构：
+
+```text
+data/
+  wal/
+  chunks_head/
+  01ABC...
+  01DEF...
+  queries.active
+```
+
+可以这样理解这些内容：
+
+- `wal/`：预写日志
+- `chunks_head/`：head 阶段相关的 chunk 文件
+- `01ABC...`、`01DEF...`：已经持久化的 block 目录
+
+每个 block 目录里一般会有这几类文件：
+
+- `chunks/`：真正的样本 chunk 数据
+- `index`：series 和 labels 的索引
+- `meta.json`：这个 block 的元信息
+
+这说明 Prometheus 的本地存储不是：
+
+- 一个单独的大数据库文件
+
+而是：
+
+- 一组按 block 组织的目录和文件
+
+### 8.5 为什么 Prometheus 适合时序场景
+
+因为它的存储布局就是围绕时序查询优化的。
+
+核心优化点通常可以这样理解：
+
+- 写入基本是追加写
+- 历史数据按时间块组织
+- labels 有专门索引
+- 样本会以 chunk 形式压缩存储
+
+这和 OLTP 数据库关注的重点不一样。
+
+关系型数据库更偏：
+
+- 事务一致性
+- 复杂 join
+- 行列级通用查询
+
+Prometheus 更偏：
+
+- 高频采样写入
+- 时间范围聚合
+- label 维度过滤
+
+### 8.6 保留期、压缩和删除怎么理解
+
+Prometheus 不会无限保存本地数据。
+
+通常会受到这些策略约束：
+
+- retention time
+- retention size
+
+也就是说，本地 TSDB 更适合：
+
+- 近期热数据
+
+而不是：
+
+- 无限期归档仓库
+
+随着时间推进，Prometheus 会做 compaction，把较小的数据块合并成更大的块，以降低查询和存储开销。
+
+超过保留期或超出容量限制的数据会被删除。
+
+### 8.7 Prometheus 更偏近期热数据
 
 工程上通常把它理解成：
 
@@ -463,7 +673,7 @@ Prometheus 不是“只采不存”，它有自己的本地时序数据库。
 - `remote_write`
 - 长期存储后端
 
-### 8.3 Prometheus 是单机 TSDB，不是无限水平扩展数据库
+### 8.8 Prometheus 是单机 TSDB，不是无限水平扩展数据库
 
 这里非常容易产生误解。
 
@@ -482,6 +692,369 @@ Prometheus 非常强，但它的核心 server 设计并不是：
 - 外部兼容后端
 
 来做聚合或长存储。
+
+这里的“单机 TSDB”不是说它只能监控一台机器，而是说：
+
+- 一个 Prometheus 实例本质上有自己独立的数据目录
+- 它自己负责采集、写入、查询这份本地 TSDB
+- 它不是那种多节点共同写一个统一分布式存储面的原生数据库
+
+### 8.9 水平扩展是不是“集群模式”
+
+如果你问：
+
+- 水平扩展是不是集群模式？
+
+答案要分两层看。
+
+#### 从原生 Prometheus 角度看
+
+严格说：
+
+- Prometheus 没有一个像 MySQL 主从、ES 集群那样的“原生统一存储集群模式”
+
+也就是说，官方单个 Prometheus server 的常规用法仍然是：
+
+- 单实例持有自己的本地 TSDB
+
+当采集规模变大时，常见做法是：
+
+- 按职责拆多个 Prometheus
+- 按环境拆多个 Prometheus
+- 按业务域拆多个 Prometheus
+
+这更准确地叫：
+
+- functional sharding
+- scrape sharding
+
+而不是一个“大家共同写同一份分布式块存储”的原生集群。
+
+#### 从整套监控平台角度看
+
+如果把生态一起算上，那确实可以做成“集群化的 Prometheus 体系”，但通常依赖的是外部系统，例如：
+
+- Thanos
+- Cortex
+- Grafana Mimir
+- VictoriaMetrics
+
+这类方案的思路一般是：
+
+- 每个 Prometheus 继续本地采集和短期存储
+- 再通过 `remote_write` 或 sidecar 把数据送到外部统一存储
+- 由外部查询层把多实例数据聚合起来
+
+所以更准确的结论是：
+
+- 原生 Prometheus 不是传统意义上的分布式集群数据库
+- 但 Prometheus 生态可以组合出集群化、长存储、多副本、高可用方案
+
+#### 一个直观三层图：多个 Prometheus -> Thanos/Mimir -> Grafana
+
+如果只想先建立最直观的空间感，可以先看这个三层图：
+
+```text
++------------------------------------------------------+
+|                       Grafana                        |
+|      Dashboard / Explore / Alerting / Variables     |
++--------------------------+---------------------------+
+                           |
+                           | Query
+                           v
++------------------------------------------------------+
+|             Thanos / Mimir / Cortex Query            |
+|         统一查询入口 / 聚合 / 去重 / 长期查询         |
++--------------------+----------------+----------------+
+                     |                |
+          remote_write / sidecar      | Query fan-out
+                     |                |
+     +---------------+-----+   +------+--------------+
+     |                     |   |                     |
+     v                     v   v                     v
++-----------+         +-----------+           +-----------+
+| Prom A    |         | Prom B    |    ...    | Prom C    |
+| Prod      |         | Staging   |           | Team-X    |
+| TSDB本地  |         | TSDB本地  |           | TSDB本地  |
++-----+-----+         +-----+-----+           +-----+-----+
+      |                     |                       |
+      v                     v                       v
+  Targets A             Targets B               Targets C
+```
+
+这张图表达的是：
+
+- 最底层多个 `Prometheus` 各自采集、各自本地存储
+- 中间层 `Thanos / Mimir` 负责统一查询、聚合、去重、长存储能力
+- 最上层 `Grafana` 不一定要分别连每个 Prometheus，也可以只连中间统一入口
+
+因此在工程上更常见的结果是：
+
+- 采集层分散
+- 存储与查询能力集中
+- 展示层统一
+
+### 8.10 “集群化”以后数据怎么存
+
+这要看你用哪种扩展方案。
+
+#### 方案 1：多个 Prometheus 各存各的
+
+这是最朴素也最常见的方式。
+
+每个 Prometheus：
+
+- 采自己负责的 targets
+- 数据写自己本地磁盘
+- 必要时通过 federation 汇总部分结果
+
+这种方式下没有一个真正统一的底层存储池。
+
+#### 方案 2：Prometheus 本地存短期，外部系统存长期
+
+这是生产里更常见的“大规模方案”。
+
+例如：
+
+- Prometheus 本地只保留 7 天或 15 天
+- 同时把数据通过 `remote_write` 发到长期存储后端
+
+这时数据会变成两层：
+
+1. 近实时热点数据在 Prometheus 本地 TSDB
+2. 长期历史数据在外部后端
+
+外部后端内部可能用的是：
+
+- 对象存储
+- 分布式索引
+- 自己实现的时序存储引擎
+
+具体细节取决于 `Thanos / Mimir / Cortex / VictoriaMetrics` 的实现。
+
+#### 方案 3：高可用双 Prometheus
+
+很多团队会部署两个 Prometheus 抓同一批 targets。
+
+这主要是为了解决：
+
+- 单点故障
+
+这时两台 Prometheus 往往会：
+
+- 各自保留一份本地数据
+
+如果后面接了统一后端，查询层再负责：
+
+- 去重
+- 聚合
+
+#### 一个更容易一眼看懂的三层架构演进图
+
+你也可以把 Prometheus 的常见架构演进理解成下面 3 层：
+
+##### 形态 1：单机 Prometheus
+
+```text
++-----------+        Query        +-----------+
+| Grafana   | ------------------> | Prometheus|
++-----------+                     | 本地 TSDB |
+                                  +-----+-----+
+                                        |
+                                        v
+                                     Targets
+```
+
+特点是：
+
+- 最简单
+- 部署成本低
+- 适合个人学习、小团队、单环境
+
+局限也很直接：
+
+- 单点
+- 本地存储能力有限
+- 长期历史和多副本能力弱
+
+##### 形态 2：HA 双 Prometheus
+
+```text
+                 +----------------------+
+                 |       Grafana        |
+                 +----+------------+----+
+                      |            |
+                    Query        Query
+                      |            |
+                      v            v
+              +-----------+  +-----------+
+              | Prom A    |  | Prom B    |
+              | 本地 TSDB |  | 本地 TSDB |
+              +-----+-----+  +-----+-----+
+                    |              |
+                    +------++------+
+                           ||
+                           vv
+                        Same Targets
+```
+
+特点是：
+
+- 两台都抓同一批目标
+- 主要目的是高可用，不是为了把底层存储拼成一块
+- 任意一台挂掉，另一台还能继续采集和查询
+
+但这时仍然存在：
+
+- 数据各存各的
+- 查询入口不统一
+- 跨实例聚合和长期存储仍然不优雅
+
+##### 形态 3：Prometheus + Thanos
+
+```text
++-----------+            Query            +------------------+
+| Grafana   | --------------------------> | Thanos Query     |
++-----------+                             | 聚合 / 去重      |
+                                          +----+--------+----+
+                                               |        |
+                                               |        |
+                                        +------+        +------+
+                                        |                    |
+                                        v                    v
+                                  +-----------+        +-----------+
+                                  | Prom A    |        | Prom B    |
+                                  | + Sidecar |        | + Sidecar |
+                                  | 本地 TSDB |        | 本地 TSDB |
+                                  +-----+-----+        +-----+-----+
+                                        |                    |
+                                        +---------++---------+
+                                                  ||
+                                                  vv
+                                               Targets
+
+                     Sidecar / Store Gateway
+                              |
+                              v
+                      Object Storage (S3/MinIO ...)
+```
+
+这时体系会更成熟：
+
+- `Prometheus` 继续负责采集和短期本地查询
+- `Thanos Query` 提供统一查询入口
+- `Sidecar` 把 block 暴露出去，或配合对象存储实现长期保留
+- 多个 `Prometheus` 的数据可以被统一聚合和去重
+
+如果把 `Thanos` 换成 `Mimir`，可以理解成另一种实现路线：
+
+- `Prometheus` 通过 `remote_write` 把数据写入 `Mimir`
+- `Grafana` 再查询 `Mimir` 的统一入口
+
+可以把这 3 种形态记成一个演进路径：
+
+1. 单机：先跑起来
+2. HA 双 Prometheus：先解决单点
+3. Prometheus + Thanos/Mimir：再解决统一查询、长存储和规模化
+
+### 8.11 是否支持 MySQL、Oracle、Elasticsearch 或向量库
+
+如果你的问题是：
+
+- Prometheus 本地 TSDB 能不能直接把底层存储换成 MySQL、Oracle、Elasticsearch 或向量库？
+
+通常答案是：
+
+- 不作为官方主流方案
+
+Prometheus 默认和最核心支持的是：
+
+- 自己的本地 TSDB
+- `remote_write` 到兼容的远端时序存储系统
+
+它并不是一个“可自由切换底层数据库驱动”的框架。
+
+#### 为什么不是 MySQL / Oracle
+
+因为 Prometheus 的写入模式和查询模式决定了它更适合：
+
+- 专门的时序存储引擎
+
+而不是传统关系型数据库。
+
+关系型数据库理论上可以存时序数据，但工程上通常会遇到：
+
+- 高频写入成本高
+- 高基数标签处理不理想
+- 时间序列聚合效率不优
+- 存储和索引成本偏高
+
+所以它不是 Prometheus 官方主流落地方向。
+
+#### 为什么不是 Elasticsearch
+
+Elasticsearch 更偏：
+
+- 文档检索
+- 日志搜索
+- 全文分析
+
+它很适合日志和搜索场景，但不是 Prometheus 原生本地 TSDB 的替代目标。
+
+很多团队会出现“Prometheus + Elasticsearch”同时存在，但通常分工是：
+
+- Prometheus 负责 metrics
+- Elasticsearch 负责 logs / search
+
+而不是：
+
+- Prometheus 把 metrics 默认存进 ES
+
+#### 为什么也不是向量库
+
+向量数据库更偏：
+
+- embedding 相似度检索
+
+这和 Prometheus 的核心需求不是一个问题域。
+
+Prometheus 关心的是：
+
+- 按时间和标签查询时序样本
+
+不是：
+
+- 做语义向量召回
+
+所以向量库基本不在 Prometheus 的主流存储讨论范围内。
+
+#### 那到底应该接什么“外部存储”
+
+更常见、更合理的方向是：
+
+- Thanos
+- Cortex
+- Grafana Mimir
+- VictoriaMetrics
+
+也就是：
+
+- 专门面向 Prometheus 生态的远端时序存储方案
+
+### 8.12 一个最实用的工程结论
+
+你可以把 Prometheus 存储层记成下面这张心智图：
+
+1. 默认存储：本地磁盘上的 Prometheus TSDB
+2. 本地结构：head + WAL + blocks
+3. 默认定位：近期热数据，不是无限长存储
+4. 原生形态：单实例独立存储，不是天然分布式集群
+5. 扩展方式：分片、federation、remote write、外部时序后端
+6. 外部后端选择：优先选 Prometheus 生态时序系统，不是 MySQL / Oracle / ES / 向量库
+
+如果只记一句话，我建议记这句：
+
+- `Prometheus 默认把 metrics 存在本地 TSDB 文件里；规模变大时，不是把底座换成 MySQL，而是接专门的远端时序存储体系`
 
 ---
 

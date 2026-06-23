@@ -302,6 +302,240 @@ Grafana 官方文档提到：
 
 不是随便哪个用户都应该能改的。
 
+### 5.4 Grafana 接 Prometheus，本质上就是“把 Prometheus 配成 data source”
+
+如果你一直有个疑问：
+
+- Grafana 接 Prometheus，到底是不是“设置数据源”？
+
+答案就是：
+
+- 是，本质上就是先把 Prometheus 配成 Grafana 的 data source
+
+更准确地说，Grafana 不是“导入 Prometheus 数据”，而是：
+
+- 在 Grafana 里注册一个 Prometheus 连接
+- 让 Grafana 知道去哪个 Prometheus 发 PromQL 查询
+- 再把查询结果放到 Explore、Panel、Alerting 里使用
+
+所以你可以把整件事理解成两步：
+
+1. 先连上 Prometheus
+2. 再在 Grafana 里消费 Prometheus 的查询能力
+
+如果只记一句话，我建议记这句：
+
+- `Grafana 接 Prometheus = 把 Prometheus 配成 data source，然后在 Grafana 里写 PromQL`
+
+### 5.5 一个最小可跑通的实战案例
+
+假设你本机已经有：
+
+- Grafana：`http://localhost:3000`
+- Prometheus：`http://localhost:9090`
+
+目标是：
+
+- 让 Grafana 连上 Prometheus
+- 在 Grafana 里查到 `up`
+- 做出第一个最小监控图
+
+#### 第 1 步：在 Grafana 中添加 Prometheus 数据源
+
+进入：
+
+- `Connections -> Data sources -> Add data source -> Prometheus`
+
+然后重点填这几个配置：
+
+- Name：`Prometheus`
+- URL：`http://localhost:9090`
+
+接着点击：
+
+- `Save & test`
+
+如果配置正确，通常会看到类似成功提示，意思是：
+
+- Grafana 已经能访问 Prometheus
+
+到这一步，你就完成了“Grafana 接 Prometheus”里最核心的动作。
+
+#### 第 2 步：先不要急着做 Dashboard，先去 Explore 验证查询
+
+进入：
+
+- `Explore`
+
+选择刚才创建的 Prometheus data source，然后先试最简单的查询：
+
+```promql
+up
+```
+
+这个表达式的含义非常直接：
+
+- `up = 1` 表示目标最近一次抓取成功
+- `up = 0` 表示目标抓取失败
+
+如果这里已经能看到折线或表格结果，说明：
+
+- Grafana 到 Prometheus 的链路是通的
+- Prometheus 本身也已经抓到了目标
+
+你还可以继续试两个更像真实使用场景的查询：
+
+```promql
+sum by (job) (up)
+```
+
+```promql
+rate(http_requests_total[5m])
+```
+
+到这里你会更容易建立正确认知：
+
+- PromQL 仍然是 Prometheus 的能力
+- Grafana 只是把这个查询过程做成了更好用的界面
+
+#### 第 3 步：把 Explore 里的查询固化成一个 Panel
+
+如果 `Explore` 里已经查通，就去新建 dashboard：
+
+- `Dashboards -> New -> New dashboard -> Add visualization`
+
+选择 Prometheus data source，先做一个最小可用图表。
+
+比如你想看每个实例的请求速率，可以写：
+
+```promql
+sum by (instance) (rate(http_requests_total[5m]))
+```
+
+一个很实用的配置组合是：
+
+- Visualization：`Time series`
+- Unit：根据指标语义选择，例如 `req/s`
+- Legend：显示 `instance`
+
+如果你暂时没有业务指标，最小验证也可以直接用：
+
+```promql
+up
+```
+
+这时你就已经完成了一个完整闭环：
+
+1. Prometheus 采集指标
+2. Grafana 把 Prometheus 配成 data source
+3. 在 Explore 验证 PromQL
+4. 在 Dashboard 里把查询做成 panel
+
+#### 第 4 步：一个更贴近实际工作的服务总览小例子
+
+如果你要给某个 HTTP 服务做最小监控盘，通常至少会先放 3 个 panel：
+
+1. 请求速率
+2. 错误率
+3. 延迟
+
+例如：
+
+请求速率：
+
+```promql
+sum(rate(http_requests_total[5m]))
+```
+
+5xx 错误率：
+
+```promql
+sum(rate(http_requests_total{status=~"5.."}[5m]))
+/
+sum(rate(http_requests_total[5m]))
+```
+
+P95 延迟：
+
+```promql
+histogram_quantile(
+  0.95,
+  sum by (le) (rate(http_request_duration_seconds_bucket[5m]))
+)
+```
+
+这个例子很能说明 Grafana 和 Prometheus 的分工：
+
+- 指标名字、标签、PromQL 语义来自 Prometheus 体系
+- 图表组织、展示、变量切换、团队共享来自 Grafana
+
+### 5.6 最常见的几个踩坑
+
+很多人以为“Grafana 没连上 Prometheus”，其实问题常常出在下面几类：
+
+#### 踩坑 1：`localhost` 填对了你自己，但填错了 Grafana
+
+如果 Grafana 和 Prometheus 都跑在你本机，下面这个地址通常没问题：
+
+```text
+http://localhost:9090
+```
+
+但如果 Grafana 跑在 Docker 里，`localhost` 指的就是：
+
+- 容器自己
+
+这时往往应该写成：
+
+```text
+http://prometheus:9090
+```
+
+也就是 Docker 网络中的服务名。
+
+#### 踩坑 2：Prometheus 自己就没抓到数据
+
+Grafana 能连上 Prometheus，不等于你一定能看到业务指标。
+
+因为 Grafana 查到的数据前提是：
+
+- Prometheus 已经成功 scrape 到目标
+
+所以如果 `up` 都没有结果，先去 Prometheus 自己的页面确认：
+
+- `Status -> Targets`
+
+#### 踩坑 3：查询没结果，不一定是连接问题
+
+很常见的真实原因是：
+
+- 指标名写错
+- 当前时间范围太短
+- 标签筛选条件不匹配
+- 业务服务当前根本没流量
+
+所以排查顺序最好是：
+
+1. 先 `Save & test`
+2. 再在 `Explore` 里查 `up`
+3. 再查具体业务指标
+4. 最后再去做 dashboard 美化
+
+#### 踩坑 4：把“接入成功”和“监控做好了”混为一谈
+
+接上 Prometheus 只说明：
+
+- 查询链路通了
+
+但真正能不能支撑值班和排障，还取决于：
+
+- 指标设计是否合理
+- panel 是否回答了关键问题
+- dashboard 是否有变量和统一阈值
+- 是否能从总览继续下钻
+
+所以“接上”只是第一步，不是终点。
+
 ---
 
 ## 6. Panel 和 Visualization 怎么理解
