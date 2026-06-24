@@ -24,15 +24,15 @@ tags:
 > 参考资料：
 >
 > Docker 官方文档：[Docker Overview](https://docs.docker.com/get-started/docker-overview/) 、 [What is a Container](https://docs.docker.com/get-started/docker-concepts/the-basics/what-is-a-container/) 、 [What is an Image](https://docs.docker.com/get-started/docker-concepts/the-basics/what-is-an-image/) 、 [Publishing and Exposing Ports](https://docs.docker.com/get-started/docker-concepts/running-containers/publishing-ports/) 、 [Persisting Container Data](https://docs.docker.com/get-started/docker-concepts/running-containers/persisting-container-data/)
->
+
 > 镜像仓库资料：[Docker Image Tag](https://docs.docker.com/reference/cli/docker/image/tag/) 、 [docker login](https://docs.docker.com/reference/cli/docker/login/) 、 [docker push](https://docs.docker.com/reference/cli/docker/image/push/) 、 [Docker Hub Repositories](https://docs.docker.com/docker-hub/repos/)
->
+
 > OCI / Runtime 参考：[Open Container Initiative](https://opencontainers.org/) 、 [containerd](https://containerd.io/) 、 [runc](https://github.com/opencontainers/runc)
->
+
 > Spring 官方资料：[Spring Boot Reference Documentation](https://docs.spring.io/spring-boot/reference/) 、 [Externalized Configuration](https://docs.spring.io/spring-boot/reference/features/external-config.html) 、 [Profiles](https://docs.spring.io/spring-boot/reference/features/profiles.html)
->
+
 > 中间件官方资料：[MySQL 8.4 Reference Manual](https://dev.mysql.com/doc/refman/8.4/en/) 、 [Redis Documentation](https://redis.io/docs/latest/)
->
+
 > 站内前文：`/2025/11/27/Kubernetes容器编排/` 、 `/2025/11/27/DockerCompose与Kubernetes关系/`
 
 [TOC]

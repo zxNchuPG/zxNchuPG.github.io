@@ -21,11 +21,11 @@ tags:
 > 文章重点不放在零散名词记忆，而放在几个核心问题上：为什么 `Kubernetes` 不直接管理容器而是管理 `Pod`，`Deployment` 和 `Service` 分别解决哪一层问题，控制平面如何持续把集群拉回“声明的目标状态”，以及它和 `Docker`、`Docker Compose` 的边界分别是什么。
 
 > 参考资料：
->
+
 > Kubernetes 官方文档：[Kubernetes Documentation](https://kubernetes.io/docs/home/) 、 [Overview](https://kubernetes.io/docs/concepts/overview/) 、 [Cluster Architecture](https://kubernetes.io/docs/concepts/architecture/) 、 [Pods](https://kubernetes.io/docs/concepts/workloads/pods/) 、 [Deployments](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/) 、 [Service](https://kubernetes.io/docs/concepts/services-networking/service/) 、 [Ingress](https://kubernetes.io/docs/concepts/services-networking/ingress/)
->
+
 > Docker 官方文档：[Docker Overview](https://docs.docker.com/get-started/docker-overview/) 、 [What is a Container](https://docs.docker.com/get-started/docker-concepts/the-basics/what-is-a-container/) 、 [What is an Image](https://docs.docker.com/get-started/docker-concepts/the-basics/what-is-an-image/)
->
+
 > 站内前文：`/2025/11/27/Docker容器基础/` 、 `/2025/11/27/DockerCompose与Kubernetes关系/`
 
 [TOC]

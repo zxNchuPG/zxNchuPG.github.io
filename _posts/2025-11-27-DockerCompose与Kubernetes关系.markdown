@@ -19,11 +19,11 @@ tags:
 > 文章重点放在关系辨析，而不是做命令大全。核心问题包括：`Compose` 到底是不是简化版 `Kubernetes`，为什么很多项目本地联调用 `Compose`、线上却用 `Kubernetes`，以及两者在服务抽象、网络、存储、扩缩容和发布策略上分别走到哪一层。
 
 > 参考资料：
->
+
 > Docker 官方文档：[Docker Compose Overview](https://docs.docker.com/compose/) 、 [Compose File Reference](https://docs.docker.com/reference/compose-file/) 、 [Using Docker Compose](https://docs.docker.com/get-started/docker-concepts/running-containers/multi-container-applications/)
->
+
 > Kubernetes 官方文档：[Kubernetes Documentation](https://kubernetes.io/docs/home/) 、 [Overview](https://kubernetes.io/docs/concepts/overview/) 、 [Pods](https://kubernetes.io/docs/concepts/workloads/pods/) 、 [Deployments](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/) 、 [Service](https://kubernetes.io/docs/concepts/services-networking/service/)
->
+
 > 站内前文：`/2025/11/27/Docker容器基础/` 、 `/2025/11/27/Kubernetes容器编排/`
 
 [TOC]
