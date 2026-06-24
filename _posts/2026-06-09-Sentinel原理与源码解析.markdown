@@ -19,24 +19,12 @@ tags:
 > 正文会同时覆盖三层内容：一层是日常开发最需要的能力视图，一层是规则与统计的运行机制，一层是源码主线，包括 `SphU`、`CtSph`、`Entry`、`Context`、`Node`、`ProcessorSlotChain`、`FlowSlot`、`DegradeSlot`、`@SentinelResource` 这一整条核心链路。
 
 > 参考资料：
->
-> [Sentinel 官方仓库](https://github.com/alibaba/Sentinel)
->
-> [Sentinel 官方文档仓库](https://github.com/sentinel-group/sentinel-website)
->
-> [Spring Cloud Alibaba Sentinel Overview](https://sca.aliyun.com/en/docs/2023/user-guide/sentinel/overview/)
->
-> [Spring Cloud Alibaba Sentinel Advanced Guide](https://sca.aliyun.com/en/docs/2022/user-guide/sentinel/advanced-guide/)
->
-> [CtSph.java](https://github.com/alibaba/Sentinel/blob/master/sentinel-core/src/main/java/com/alibaba/csp/sentinel/CtSph.java)
->
-> [DefaultSlotChainBuilder.java](https://github.com/alibaba/Sentinel/blob/master/sentinel-core/src/main/java/com/alibaba/csp/sentinel/slots/DefaultSlotChainBuilder.java)
->
-> [FlowSlot.java](https://github.com/alibaba/Sentinel/blob/master/sentinel-core/src/main/java/com/alibaba/csp/sentinel/slots/block/flow/FlowSlot.java)
->
-> [DegradeSlot.java](https://github.com/alibaba/Sentinel/blob/master/sentinel-core/src/main/java/com/alibaba/csp/sentinel/slots/block/degrade/DegradeSlot.java)
->
-> [SentinelResourceAspect.java](https://github.com/alibaba/Sentinel/blob/master/sentinel-extension/sentinel-annotation-aspectj/src/main/java/com/alibaba/csp/sentinel/annotation/aspectj/SentinelResourceAspect.java)
+
+> 官方资料：[Sentinel 官方仓库](https://github.com/alibaba/Sentinel) 、 [Sentinel 官方文档仓库](https://github.com/sentinel-group/sentinel-website)
+
+> Spring Cloud Alibaba：[Spring Cloud Alibaba Sentinel Overview](https://sca.aliyun.com/en/docs/2023/user-guide/sentinel/overview/) 、 [Spring Cloud Alibaba Sentinel Advanced Guide](https://sca.aliyun.com/en/docs/2022/user-guide/sentinel/advanced-guide/)
+
+> 核心源码：[CtSph.java](https://github.com/alibaba/Sentinel/blob/master/sentinel-core/src/main/java/com/alibaba/csp/sentinel/CtSph.java) 、 [DefaultSlotChainBuilder.java](https://github.com/alibaba/Sentinel/blob/master/sentinel-core/src/main/java/com/alibaba/csp/sentinel/slots/DefaultSlotChainBuilder.java) 、 [FlowSlot.java](https://github.com/alibaba/Sentinel/blob/master/sentinel-core/src/main/java/com/alibaba/csp/sentinel/slots/block/flow/FlowSlot.java) 、 [DegradeSlot.java](https://github.com/alibaba/Sentinel/blob/master/sentinel-core/src/main/java/com/alibaba/csp/sentinel/slots/block/degrade/DegradeSlot.java) 、 [SentinelResourceAspect.java](https://github.com/alibaba/Sentinel/blob/master/sentinel-extension/sentinel-annotation-aspectj/src/main/java/com/alibaba/csp/sentinel/annotation/aspectj/SentinelResourceAspect.java)
 
 [TOC]
 

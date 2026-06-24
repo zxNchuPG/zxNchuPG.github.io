@@ -7,10 +7,12 @@ header-img:  "img/bg/bg-scattered.png"
 catalog:     true
 tags:
   - 学习笔记
-  - AI
   - RAG
+  - 知识库问答
   - Java
+  - Spring Boot
   - Spring AI
+  - pgvector
 ---
 
 > 这篇笔记的目标，不是继续解释 `RAG` 的概念，而是把问题直接落到“怎么起一个最小可行项目”上：如果现在要做一个能接文档、能入库、能检索、能回答、还能继续迭代的 RAG 服务，第一版到底应该长什么样。
@@ -18,16 +20,10 @@ tags:
 > 这篇内容会有明确的技术偏向：**优先给出 Java Spring Boot / Spring AI 的落地方案**，向量库侧默认从 `pgvector` 起步，因为它对很多已有 Java 后端团队来说心智成本最低。它更偏 MVP 方案、工程拆解和升级路线，不会把重点放在花哨的 agent 编排上。
 
 > 参考资料：
->
-> [Spring AI - Retrieval Augmented Generation](https://docs.spring.io/spring-ai/reference/api/retrieval-augmented-generation.html)
->
-> [Spring AI - Vector Databases](https://docs.spring.io/spring-ai/reference/api/vectordbs.html)
->
-> [Spring AI - PGvector](https://docs.spring.io/spring-ai/reference/api/vectordbs/pgvector.html)
->
-> [Microsoft Learn - Develop a RAG application with Spring AI and Azure OpenAI](https://learn.microsoft.com/en-us/training/modules/build-enterprise-ai-agents-with-java-spring/4-spring-ai-development/)
->
-> [Datawhale - All-in-RAG 第一节 RAG 简介](https://datawhalechina.github.io/all-in-rag/#/chapter1/01_RAG_intro)
+
+> 官方文档：[Spring AI - Retrieval Augmented Generation](https://docs.spring.io/spring-ai/reference/api/retrieval-augmented-generation.html) 、 [Spring AI - Vector Databases](https://docs.spring.io/spring-ai/reference/api/vectordbs.html) 、 [Spring AI - PGvector](https://docs.spring.io/spring-ai/reference/api/vectordbs/pgvector.html)
+
+> 实践参考：[Microsoft Learn - Develop a RAG application with Spring AI and Azure OpenAI](https://learn.microsoft.com/en-us/training/modules/build-enterprise-ai-agents-with-java-spring/4-spring-ai-development/) 、 [Datawhale - All-in-RAG 第一节 RAG 简介](https://datawhalechina.github.io/all-in-rag/#/chapter1/01_RAG_intro)
 
 [TOC]
 
@@ -35,7 +31,7 @@ tags:
 
 ## 一、先定边界：什么叫“最小 RAG 项目”
 
-我这里说的“最小”，不是指 demo 跑通一下就结束，而是指：
+这里说的“最小”，不是指 demo 跑通一下就结束，而是指：
 
 - 已经有基本的数据接入能力
 - 已经有向量化和检索能力
@@ -43,7 +39,7 @@ tags:
 - 已经能定位问题出在入库、检索还是生成
 - 但还没有把系统做复杂
 
-所以一个最小可行的 RAG 项目，我会建议至少具备下面 7 个能力：
+因此，一个最小可行的 RAG 项目至少应具备下面 7 个能力：
 
 1. 能导入一批文档
 2. 能把文档切块并写入向量库
@@ -57,7 +53,7 @@ tags:
 
 ## 二、技术选型先别铺太大：第一版为什么建议走 Spring Boot + Spring AI + pgvector
 
-如果你本身就是 Java 团队，我会更建议第一版从下面这条线起：
+对于 Java 团队，第一版更适合从下面这条技术线起步：
 
 ```text
 Spring Boot
@@ -75,13 +71,29 @@ Spring Boot
 - 第一版不需要额外引入专用向量库运维成本
 - 后续要升级到 `Qdrant`、`Milvus` 也不是推倒重来
 
-如果现在问我“最务实的启动姿势是什么”，我的答案通常会是：
+如果把“最务实的启动姿势”压缩成一句话，可以概括为：
 
 > **先用 Spring AI 把 RAG 主链跑通，向量存储先用 pgvector 验证价值。**
 
 ## 三、第一版架构别搞复杂：一条最小链路就够了
 
 一个最小 RAG 项目，建议先拆成两条链路：
+
+```mermaid
+graph LR
+    A[文档来源] --> B[文本提取]
+    B --> C[切块]
+    C --> D[Embedding]
+    D --> E[pgvector]
+    Q[用户问题] --> R[Query Embedding]
+    R --> E
+    E --> S[Top K 检索]
+    S --> T[Prompt 组装]
+    T --> U[LLM 生成]
+    U --> V[答案与来源]
+```
+
+这张图对应的就是第一版最小链路：离线侧负责把文档变成可检索的向量数据，在线侧负责把用户问题转成检索请求，再把召回结果拼进 prompt 生成答案。
 
 ### 3.1 离线链路：文档入库
 
@@ -141,7 +153,7 @@ src/main/java
 - `prompt` 负责组装上下文和回答约束
 - `controller` 只负责暴露接口
 
-如果一开始就把这些都揉在一个 Service 里，后面你很难判断到底是哪一层出了问题。
+如果一开始就把这些都揉在一个 Service 里，后面很难判断到底是哪一层出了问题。
 
 ## 五、最小数据模型怎么设计：不要只存 embedding
 
@@ -168,7 +180,7 @@ src/main/java
 
 为什么元数据重要？
 
-因为后面你一定会遇到这些需求：
+因为后面常见需求通常会落到这些方向：
 
 - 只查某个知识库
 - 只查某类文档
@@ -180,7 +192,7 @@ src/main/java
 
 ## 六、Spring AI 这条线最核心的几个对象，要先认清
 
-如果你准备用 Spring AI 做第一版 RAG，我建议先把下面几个对象关系看明白。
+如果准备用 Spring AI 做第一版 RAG，建议先把下面几个对象关系看清楚。
 
 ### 6.1 `ChatClient`
 
@@ -208,13 +220,13 @@ src/main/java
 - 把检索结果拼到用户问题里
 - 再交给模型生成答案
 
-如果你现在只做第一版，`QuestionAnswerAdvisor` 已经足够。
+如果只是第一版最小项目，`QuestionAnswerAdvisor` 已经足够。
 
 ### 6.5 `RetrievalAugmentationAdvisor`
 
 这是比 `QuestionAnswerAdvisor` 更模块化的一层。
 
-它允许你把流程拆成：
+这一层允许把流程拆成：
 
 - pre-retrieval
 - retrieval
@@ -268,7 +280,7 @@ src/main/java
 </dependencies>
 ```
 
-如果你后面想从简单问答升级到模块化 RAG，再补：
+如果后面想从简单问答升级到模块化 RAG，再补：
 
 ```xml
 <dependency>
@@ -286,13 +298,13 @@ src/main/java
 
 ## 八、数据库怎么起：pgvector 是第一版很合适的起点
 
-### 8.1 为什么第一版我更推荐 `pgvector`
+### 8.1 为什么第一版更推荐 `pgvector`
 
-因为它适合回答下面这个问题：
+它更适合回答一个很常见的问题：
 
-> 我已经是 Java + Spring Boot + PostgreSQL 团队了，能不能先不引入独立向量库？
+> 已有 Java + Spring Boot + PostgreSQL 团队，是否可以先不引入独立向量库？
 
-答案通常是可以。
+在很多 MVP 场景下，答案是可以。
 
 它的优势很直接：
 
@@ -343,10 +355,10 @@ CREATE TABLE IF NOT EXISTS vector_store (
 CREATE INDEX ON vector_store USING HNSW (embedding vector_cosine_ops);
 ```
 
-如果你使用 Spring AI 的自动 schema 初始化，也可以让它帮你建，但要注意：
+如果使用 Spring AI 的自动 schema 初始化，也可以让框架帮忙建表，但要注意：
 
 - 新版本需要显式开启 `initialize-schema`
-- embedding 维度要和你的模型一致
+- embedding 维度要和所选模型一致
 
 ## 九、配置怎么写：先保证“能接模型、能连数据库、能自动建表”
 
@@ -377,13 +389,13 @@ spring:
         dimensions: 1536
 ```
 
-如果你走的是 Azure OpenAI 或其他兼容实现，主要替换的是模型配置，不影响整体思路。
+如果使用的是 Azure OpenAI 或其他兼容实现，主要替换的是模型配置，不影响整体思路。
 
 ## 十、离线入库怎么做：最小实现先把文档读、切、存跑通
 
 ### 10.1 文档来源先收敛
 
-第一版强烈建议你只支持 1 到 2 种输入格式，比如：
+第一版强烈建议先只支持 1 到 2 种输入格式，比如：
 
 - Markdown
 - PDF
@@ -442,7 +454,7 @@ public class RagIngestService {
 }
 ```
 
-这里的重点不是 `vectorStore.add()` 这一行本身，而是你在入库前已经把：
+这里的重点不是 `vectorStore.add()` 这一行本身，而是入库前已经把：
 
 - chunk 内容
 - 文档身份
@@ -471,7 +483,7 @@ public class RagIngestService {
 
 ## 十一、在线问答怎么做：Spring AI 最小方案可以直接上 `QuestionAnswerAdvisor`
 
-这是 Spring AI 官方给的最直接 RAG 方式，也是我认为第一版最好用的方式。
+这是 Spring AI 官方给出的最直接 RAG 方式，也是第一版最容易落地的方式。
 
 ### 11.1 最小问答链路
 
@@ -529,7 +541,7 @@ var advisor = QuestionAnswerAdvisor.builder(vectorStore)
         .build();
 ```
 
-这样你就可以按：
+这样就可以按：
 
 - 知识库
 - 文档类型
@@ -542,9 +554,9 @@ var advisor = QuestionAnswerAdvisor.builder(vectorStore)
 
 Spring AI 也支持在请求时动态传 filter。
 
-这在多知识库、多租户场景里非常实用，因为你不用为每个知识库都 new 一套固定 client。
+这在多知识库、多租户场景里非常实用，因为不需要为每个知识库都创建一套固定 client。
 
-## 十二、如果你想更像“正经接口服务”，建议至少暴露这 3 类 API
+## 十二、如果希望更像“正经接口服务”，建议至少暴露这 3 类 API
 
 ### 12.1 文档入库
 
@@ -572,7 +584,7 @@ GET /api/rag/search?q=...
 
 这是线上排问题非常重要的接口。
 
-因为当用户说“答得不对”时，你必须先知道：
+因为当线上反馈“答得不对”时，必须先知道：
 
 - 是没召回到
 - 还是召回到了但没用好
@@ -599,7 +611,7 @@ POST /api/rag/ask
 
 最小 RAG 项目里，prompt 不求花哨，但一定要清楚。
 
-我建议至少表达 4 件事：
+这类 prompt 至少要表达 4 件事：
 
 1. 只能基于检索到的内容回答
 2. 证据不足时明确说不知道
@@ -630,9 +642,9 @@ POST /api/rag/ask
 - 最终拼给模型的上下文是什么
 - 回答引用了哪些来源
 
-如果没有这些信息，后面用户一说“答错了”，你基本只能靠猜。
+如果没有这些信息，后面一旦出现“答错了”的反馈，排查基本只能靠猜。
 
-所以我会建议第一版就加最基础的日志和调试开关。
+所以第一版就建议加上最基础的日志和调试开关。
 
 ## 十五、如何判断第一版是不是合格：先看这 5 个问题
 
@@ -669,9 +681,17 @@ POST /api/rag/ask
 
 都比完全不给出处强很多。
 
-## 十六、Java Spring Boot / Spring AI 的推荐落地方案，我会怎么选
+## 十六、Java Spring Boot / Spring AI 的推荐落地方案怎么选
 
-如果你问我“现在真的要做一个 Java 版 RAG 服务，最推荐哪条路”，我会给出下面这个组合。
+如果把“现在真的要做一个 Java 版 RAG 服务，最推荐哪条路”落成具体方案，可以先从下面这个组合开始。
+
+先把三个阶段放到一张表里看，会更容易判断当前项目所处的位置：
+
+| 阶段 | 核心组合 | 主要目标 | 关键能力 | 适用场景 |
+| --- | --- | --- | --- | --- |
+| 第一阶段：最小可行方案 | `Spring Boot + Spring AI + pgvector + QuestionAnswerAdvisor` | 先把 RAG 主链跑通 | 文档入库、向量检索、基础问答、来源返回 | 快速验证知识库问答价值，团队主体是 Java，且已有 PostgreSQL |
+| 第二阶段：增强方案 | `Spring Boot + Spring AI + pgvector/专用向量库 + RetrievalAugmentationAdvisor` | 提升检索可控性和扩展性 | 元数据过滤、检索调试接口、模块化 retrieval、为 query rewrite / rerank 预留扩展点 | 需要多知识库、多租户和更细粒度检索策略 |
+| 第三阶段：生产增强 | 在前两阶段基础上补齐工程能力 | 把可用系统推进到可持续运营 | 异步入库、版本控制、删除重建索引、多路召回、缓存、评估集、链路观测 | 已进入生产迭代，需要稳定性、可观测性和持续优化能力 |
 
 ### 16.1 第一阶段：最小可行方案
 
@@ -724,7 +744,7 @@ Spring Boot
 
 ## 十七、什么时候该从 `QuestionAnswerAdvisor` 升级到模块化 RAG
 
-如果你已经遇到下面这些问题，就说明该升级了：
+如果已经遇到下面这些问题，就说明该升级了：
 
 - 不同问题需要不同检索策略
 - 只靠 top k 效果波动很大
@@ -769,7 +789,7 @@ Spring Boot
 
 第一版最怕的不是技术不够高级，而是链路太长，问题定位不了。
 
-## 十九、如果我现在从 0 开一个 Java RAG 小项目，我会按这个顺序做
+## 十九、如果从 0 开一个 Java RAG 小项目，可以按这个顺序做
 
 1. 起一个 Spring Boot 工程
 2. 接入 Spring AI 和一个稳定模型
@@ -787,13 +807,13 @@ Spring Boot
 - 复杂编排
 - 多模型切换
 
-## 二十、最后收个口：最小项目真正要证明的，不是“我会调 AI API”
+## 二十、最后收个口：最小项目真正要证明的，不是“会调 AI API”
 
-如果把这篇笔记压缩成一句话，我最想强调的是：
+如果把这篇笔记压缩成一句话，核心结论是：
 
-> **最小 RAG 项目要证明的，不是“模型能回答”，而是“你的文档能被稳定入库、稳定召回、稳定约束生成”。**
+> **最小 RAG 项目要证明的，不是“模型能回答”，而是“文档能被稳定入库、稳定召回、稳定约束生成”。**
 
-而在 Java Spring Boot 生态里，我认为最务实的起步方案就是：
+而在 Java Spring Boot 生态里，更务实的起步方案可以概括为：
 
 > **Spring Boot + Spring AI + pgvector + QuestionAnswerAdvisor。**
 
