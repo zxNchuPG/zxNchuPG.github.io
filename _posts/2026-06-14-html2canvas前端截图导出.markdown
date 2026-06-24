@@ -187,7 +187,7 @@ graph TB
 
 下面这张图把文章里的工程分层单独画出来，方便快速建立整体视图：
 
-![html2canvas 结构示意图.svg](/asserts/images/2026-06-23-html2canvas/html2canvas-architecture.svg)
+![html2canvas 结构示意图.svg](/asserts/images/2026-06-14-html2canvas/html2canvas-architecture.svg)
 
 ### 3.2 常见失败点
 

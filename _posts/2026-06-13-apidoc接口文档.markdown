@@ -748,7 +748,7 @@ public CommonResponse<PageResult<OrderPageVO>> pageQuery(OrderPageQuery query) {
 3. Jenkins 页面上可以直接打开 HTML 文档
 4. 生成失败时构建失败，避免“接口变了但文档没更新”
 
-![Spring Boot 项目中的 apidoc 落位关系.svg](/asserts/images/2026-06-23-apidoc学习笔记/SpringBoot项目中的apidoc落位关系.svg)
+![Spring Boot 项目中的 apidoc 落位关系.svg](/asserts/images/2026-06-13-apidoc学习笔记/SpringBoot项目中的apidoc落位关系.svg)
 
 ### 8.2 一套推荐的工程约束
 
@@ -807,7 +807,7 @@ asserts/images/2026-06-23-apidoc学习笔记/
 
 其中第三张示意图可以先作为页面结构占位：
 
-![apidoc 页面结构示意图.svg](/asserts/images/2026-06-23-apidoc学习笔记/apidoc页面结构示意图.svg)
+![apidoc 页面结构示意图.svg](/asserts/images/2026-06-13-apidoc学习笔记/apidoc页面结构示意图.svg)
 
 ---
 
@@ -838,7 +838,7 @@ graph TD
 
 如果希望在正文里用一张静态图配合截图体系，也可以使用下面这张：
 
-![Jenkins 生成并发布 apidoc 的流程图.svg](/asserts/images/2026-06-23-apidoc学习笔记/Jenkins生成并发布apidoc流程图.svg)
+![Jenkins 生成并发布 apidoc 的流程图.svg](/asserts/images/2026-06-13-apidoc学习笔记/Jenkins生成并发布apidoc流程图.svg)
 
 ### 9.2 Jenkins 前置条件
 
