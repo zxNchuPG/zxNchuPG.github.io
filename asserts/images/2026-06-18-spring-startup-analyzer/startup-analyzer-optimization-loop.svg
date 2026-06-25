@@ -1,0 +1,44 @@
+<svg width="1280" height="720" viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1280" height="720" fill="#f8fafc"/>
+  <text x="640" y="60" text-anchor="middle" font-size="30" font-family="Arial, sans-serif" fill="#0f172a">spring-startup-analyzer 启动优化闭环</text>
+
+  <circle cx="640" cy="360" r="220" fill="#ffffff" stroke="#cbd5e1" stroke-width="3"/>
+
+  <rect x="540" y="135" width="200" height="95" rx="18" fill="#dbeafe" stroke="#60a5fa" stroke-width="3"/>
+  <text x="640" y="175" text-anchor="middle" font-size="25" font-family="Arial, sans-serif" fill="#1d4ed8">采集报告</text>
+  <text x="640" y="208" text-anchor="middle" font-size="18" font-family="Arial, sans-serif" fill="#1d4ed8">Bean / 方法 / 线程</text>
+
+  <rect x="860" y="275" width="220" height="95" rx="18" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="3"/>
+  <text x="970" y="315" text-anchor="middle" font-size="25" font-family="Arial, sans-serif" fill="#6d28d9">识别热点</text>
+  <text x="970" y="348" text-anchor="middle" font-size="18" font-family="Arial, sans-serif" fill="#6d28d9">关键路径与慢方法</text>
+
+  <rect x="760" y="505" width="240" height="95" rx="18" fill="#fee2e2" stroke="#ef4444" stroke-width="3"/>
+  <text x="880" y="545" text-anchor="middle" font-size="25" font-family="Arial, sans-serif" fill="#b91c1c">选择动作</text>
+  <text x="880" y="578" text-anchor="middle" font-size="18" font-family="Arial, sans-serif" fill="#b91c1c">改代码 / 异步 / 删依赖</text>
+
+  <rect x="280" y="505" width="240" height="95" rx="18" fill="#dcfce7" stroke="#22c55e" stroke-width="3"/>
+  <text x="400" y="545" text-anchor="middle" font-size="25" font-family="Arial, sans-serif" fill="#15803d">再次采集</text>
+  <text x="400" y="578" text-anchor="middle" font-size="18" font-family="Arial, sans-serif" fill="#15803d">前后对比验证</text>
+
+  <rect x="180" y="275" width="220" height="95" rx="18" fill="#fff7ed" stroke="#fb923c" stroke-width="3"/>
+  <text x="290" y="315" text-anchor="middle" font-size="25" font-family="Arial, sans-serif" fill="#c2410c">沉淀经验</text>
+  <text x="290" y="348" text-anchor="middle" font-size="18" font-family="Arial, sans-serif" fill="#c2410c">保留模板与准则</text>
+
+  <path d="M760 182 C850 190, 930 225, 965 275" fill="none" stroke="#64748b" stroke-width="5"/>
+  <polygon points="972,290 958,275 978,273" fill="#64748b"/>
+
+  <path d="M1030 385 C1035 450, 1000 485, 950 515" fill="none" stroke="#64748b" stroke-width="5"/>
+  <polygon points="936,522 949,507 955,525" fill="#64748b"/>
+
+  <path d="M760 565 C660 630, 520 630, 430 565" fill="none" stroke="#64748b" stroke-width="5"/>
+  <polygon points="417,555 436,558 427,573" fill="#64748b"/>
+
+  <path d="M300 505 C230 470, 210 430, 215 370" fill="none" stroke="#64748b" stroke-width="5"/>
+  <polygon points="220,355 226,373 206,371" fill="#64748b"/>
+
+  <path d="M370 250 C430 210, 500 185, 540 182" fill="none" stroke="#64748b" stroke-width="5"/>
+  <polygon points="555,182 538,190 539,174" fill="#64748b"/>
+
+  <text x="640" y="360" text-anchor="middle" font-size="28" font-family="Arial, sans-serif" fill="#334155">启动优化不是一次性动作</text>
+  <text x="640" y="398" text-anchor="middle" font-size="22" font-family="Arial, sans-serif" fill="#334155">真正有效的是可重复验证的闭环</text>
+</svg>

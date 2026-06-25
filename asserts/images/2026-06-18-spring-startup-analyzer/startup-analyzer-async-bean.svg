@@ -1,0 +1,45 @@
+<svg width="1280" height="720" viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1280" height="720" fill="#f8fafc"/>
+  <text x="640" y="60" text-anchor="middle" font-size="30" font-family="Arial, sans-serif" fill="#0f172a">同步初始化与异步 Bean 初始化对比</text>
+
+  <rect x="80" y="110" width="500" height="520" rx="24" fill="#ffffff" stroke="#cbd5e1" stroke-width="3"/>
+  <text x="330" y="155" text-anchor="middle" font-size="28" font-family="Arial, sans-serif" fill="#1f2937">默认同步初始化</text>
+  <line x1="140" y1="580" x2="520" y2="580" stroke="#94a3b8" stroke-width="3"/>
+  <text x="500" y="612" font-size="18" font-family="Arial, sans-serif" fill="#475569">时间</text>
+  <rect x="150" y="220" width="95" height="42" rx="10" fill="#93c5fd"/>
+  <rect x="260" y="220" width="150" height="42" rx="10" fill="#60a5fa"/>
+  <rect x="425" y="220" width="75" height="42" rx="10" fill="#3b82f6"/>
+  <text x="197" y="248" text-anchor="middle" font-size="18" font-family="Arial, sans-serif" fill="#0f172a">Bean A</text>
+  <text x="335" y="248" text-anchor="middle" font-size="18" font-family="Arial, sans-serif" fill="#0f172a">慢 Bean B</text>
+  <text x="462" y="248" text-anchor="middle" font-size="18" font-family="Arial, sans-serif" fill="#0f172a">Bean C</text>
+  <text x="330" y="320" text-anchor="middle" font-size="20" font-family="Arial, sans-serif" fill="#475569">主线程被慢 Bean 串行阻塞</text>
+  <text x="330" y="355" text-anchor="middle" font-size="20" font-family="Arial, sans-serif" fill="#475569">后续 Bean 只能继续等待</text>
+  <rect x="150" y="430" width="350" height="88" rx="16" fill="#fee2e2" stroke="#f87171" stroke-width="2.5"/>
+  <text x="325" y="468" text-anchor="middle" font-size="22" font-family="Arial, sans-serif" fill="#b91c1c">风险</text>
+  <text x="325" y="502" text-anchor="middle" font-size="18" font-family="Arial, sans-serif" fill="#b91c1c">只要关键链路上有长任务，总启动时间就会被直接拉长</text>
+
+  <rect x="700" y="110" width="500" height="520" rx="24" fill="#ffffff" stroke="#cbd5e1" stroke-width="3"/>
+  <text x="950" y="155" text-anchor="middle" font-size="28" font-family="Arial, sans-serif" fill="#1f2937">异步 Bean 初始化</text>
+  <line x1="760" y1="580" x2="1140" y2="580" stroke="#94a3b8" stroke-width="3"/>
+  <text x="1120" y="612" font-size="18" font-family="Arial, sans-serif" fill="#475569">时间</text>
+
+  <text x="790" y="235" font-size="18" font-family="Arial, sans-serif" fill="#475569">主线程</text>
+  <rect x="855" y="205" width="95" height="42" rx="10" fill="#93c5fd"/>
+  <rect x="965" y="205" width="75" height="42" rx="10" fill="#3b82f6"/>
+  <text x="902" y="233" text-anchor="middle" font-size="18" font-family="Arial, sans-serif" fill="#0f172a">Bean A</text>
+  <text x="1002" y="233" text-anchor="middle" font-size="18" font-family="Arial, sans-serif" fill="#0f172a">Bean C</text>
+
+  <text x="790" y="330" font-size="18" font-family="Arial, sans-serif" fill="#475569">异步线程</text>
+  <rect x="885" y="300" width="170" height="42" rx="10" fill="#f59e0b"/>
+  <text x="970" y="328" text-anchor="middle" font-size="18" font-family="Arial, sans-serif" fill="#0f172a">慢 Bean B init</text>
+
+  <line x1="855" y1="225" x2="855" y2="320" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="8 8"/>
+  <line x1="1040" y1="225" x2="1040" y2="320" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="8 8"/>
+
+  <text x="950" y="400" text-anchor="middle" font-size="20" font-family="Arial, sans-serif" fill="#475569">非关键依赖 Bean 可以脱离主路径执行</text>
+  <text x="950" y="435" text-anchor="middle" font-size="20" font-family="Arial, sans-serif" fill="#475569">总启动时间通常会缩短，但前提是依赖关系安全</text>
+
+  <rect x="770" y="470" width="360" height="88" rx="16" fill="#dcfce7" stroke="#4ade80" stroke-width="2.5"/>
+  <text x="950" y="508" text-anchor="middle" font-size="22" font-family="Arial, sans-serif" fill="#166534">适用前提</text>
+  <text x="950" y="542" text-anchor="middle" font-size="18" font-family="Arial, sans-serif" fill="#166534">Bean 不在强依赖关键链路上，且启动后不会立即被调用</text>
+</svg>
